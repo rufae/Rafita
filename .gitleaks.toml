@@ -1,0 +1,7 @@
+[allowlist]
+  description = "Allowlisted test data patterns (not real secrets)"
+  paths = [
+    '''agent/tests/.*''',
+    '''scripts/test_.*''',
+    '''whatsapp_chat.txt''',
+  ]

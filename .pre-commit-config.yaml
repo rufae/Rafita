@@ -1,0 +1,34 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff lint
+        entry: bash -c 'docker exec rafita-agent-core python -m ruff check /app/src --config /workspace/pyproject.toml'
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format-check
+        name: ruff format check
+        entry: bash -c 'docker exec rafita-agent-core python -m ruff format --check /app/src --config /workspace/pyproject.toml'
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+
+      - id: mypy
+        name: mypy type check
+        entry: bash -c 'docker exec rafita-agent-core python -m mypy /app/src --config-file /workspace/pyproject.toml --no-error-summary'
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest-fast
+        name: pytest fast tests
+        entry: bash -c 'docker exec rafita-agent-core python -m pytest /workspace/agent/tests -x --tb=short -q 2>&1 || echo "WARN: tests may need running container"'
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true

@@ -1,0 +1,27 @@
+telegram:
+  allowed_users: []
+  admin_ids: []
+ollama:
+  model: gemma4:12b
+  vision_model: llava:7b
+  embedding_model: nomic-embed-text
+  host: http://ollama:11434/v1
+database:
+  path: /data/db/rafita.db
+logging:
+  level: DEBUG
+  path: /data/logs
+storage:
+  data_path: /data
+  obsidian_vault: /data/obsidian_vault
+voice:
+  whisper_model: base
+  voice_replies_default: false
+finance:
+  default_currency: MXN
+rag:
+  chunk_size: 1000
+  chunk_overlap: 200
+  top_k: 3
+google:
+  credentials_dir: /workspace/credentials

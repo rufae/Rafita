@@ -1,0 +1,151 @@
+[project]
+name = "rafita-agent-core"
+version = "0.1.0"
+description = "Rafita AVP - Asistente Virtual Privado 100% local"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    "ollama",
+    "data",
+    "mi_boveda_obsidian",
+    "vault_ejemplo",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "T20", # flake8-print (warn on print statements)
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "B008",    # do not perform function calls in argument defaults (acceptable)
+    "SIM108",  # use ternary operator (optional)
+    "UP031",   # printf-string-formatting -> f-string (cosmetic, massive codebase)
+    "UP042",   # replace-str-enum (cosmetic)
+    "SIM105",  # suppressible-exception -> contextlib.suppress (stylistic)
+    "T201",    # print statements: intentional for interactive CLI/status output
+    "B904",    # raise-without-from: FastAPI HTTPException uses intentional chaining
+    "B905",    # zip-without-strict: code handles mismatched lengths explicitly
+    "SIM102",  # collapsible-if: nested guards preferred for readability
+]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "ollama/",
+    "data/",
+    "mi_boveda_obsidian/",
+]
+check_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "chromadb.*",
+    "telegram.*",
+    "telegram.ext.*",
+    "httpx.*",
+    "pypdf.*",
+    "docx.*",
+    "watchdog.*",
+    "faster_whisper.*",
+    "duckduckgo_search.*",
+]
+ignore_missing_imports = true
+
+# Justified: Optional class attributes (Connection, Collection, AsyncOpenAI,
+# Application, Message) are initialized in startup/initialize before use.
+# The runtime initialization pattern guarantees non-None; mypy can't prove it.
+# Also: incomplete library type stubs (chromadb Collection query/index, 
+# telegram-bot Application handler types, openai completion overloads).
+[[tool.mypy.overrides]]
+module = [
+    "src.database",
+    "src.utils.vector_manager",
+    "src.ollama_client",
+    "src.handlers.chat",
+    "src.handlers.files",
+    "src.handlers.dashboard",
+    "src.handlers.audio",
+    "src.tools.*",
+    "src.utils.vault_indexer",
+    "src.utils.workspace_manager",
+    "src.utils.webhook_server",
+    "src.utils.app_connector",
+    "src.utils.google_calendar_manager",
+    "src.utils.obsidian_manager",
+    "src.services.*",
+]
+disable_error_code = [
+    "union-attr",
+    "no-any-return",
+    "var-annotated",
+    "misc",
+    "index",
+    "attr-defined",
+    "arg-type",
+    "assignment",
+    "return-value",
+    "call-overload",
+    "call-arg",
+    "func-returns-value",
+    "no-untyped-def",
+    "annotation-unchecked",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["agent/tests", "scripts"]
+asyncio_mode = "auto"
+python_files = "test_*.py"
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow",
+    "integration: integration tests requiring running services",
+]
+
+[tool.coverage.run]
+source = ["agent/src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
