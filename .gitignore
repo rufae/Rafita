@@ -1,0 +1,59 @@
+# === Environment ===
+.env
+.env.local
+*.env.local
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# === Data (persistent volumes) ===
+data/db/
+data/excels/
+data/exports/
+data/logs/
+!data/db/.gitkeep
+!data/excels/.gitkeep
+!data/exports/.gitkeep
+!data/logs/.gitkeep
+
+# === Ollama models ===
+ollama/models/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# === Docker ===
+.docker/
+
+# === Temp / Diagnostics ===
+agent/diagnostics/
+whatsapp_chat.txt
+whatsapp_chat_*.txt
+*.log
+!data/logs/.gitkeep
+
+# === ChromaDB / Vector DB ===
+data/vector_db/
+
+# === Obsidian ===
+mi_boveda_obsidian/
+
+# === TTS Models ===
+piper-models/
