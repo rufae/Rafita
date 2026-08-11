@@ -1,0 +1,10 @@
+services:
+  rafita-agent-core:
+    environment:
+      - LOG_LEVEL=DEBUG
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
