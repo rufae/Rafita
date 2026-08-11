@@ -226,14 +226,12 @@ class VectorManager:
         _t0 = time.perf_counter()
 
         where_filter = None
-        if filter_tags:
-            tag_conditions = []
-            for tag in filter_tags:
-                tag_conditions.append({"tags_str": {"$contains": tag}})
-            if len(tag_conditions) == 1:
-                where_filter = tag_conditions[0]
-            elif tag_conditions:
-                where_filter = {"$and": tag_conditions}  # type: ignore[dict-item]
+        if filter_tags and isinstance(filter_tags, list) and len(filter_tags) > 0:
+            tag = filter_tags[0]
+            where_filter = {"tags_str": tag}
+            # Nota: solo filtra por el primer tag (exact match).
+            # ChromaDB 0.5.0 no soporta $contains ni $in para strings.
+            # Para filtro multi-tag se necesitaria ChromaDB >=0.6.0 o un campo de lista.
 
         try:
             results = await loop.run_in_executor(
