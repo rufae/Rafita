@@ -226,12 +226,6 @@ class VectorManager:
         _t0 = time.perf_counter()
 
         where_filter = None
-        if filter_tags and isinstance(filter_tags, list) and len(filter_tags) > 0:
-            tag = filter_tags[0]
-            where_filter = {"tags_str": tag}
-            # Nota: solo filtra por el primer tag (exact match).
-            # ChromaDB 0.5.0 no soporta $contains ni $in para strings.
-            # Para filtro multi-tag se necesitaria ChromaDB >=0.6.0 o un campo de lista.
 
         try:
             results = await loop.run_in_executor(
@@ -267,6 +261,12 @@ class VectorManager:
                 "relevance": "%.3f" % max(0.0, 1.0 - distance / 2.0),
             })
         metrics.observe("embedding_query_latency", time.perf_counter() - _t0)
+        if filter_tags:
+            formatted = [
+                r for r in formatted
+                if any(t in r["tags"] for t in filter_tags)
+            ]
+            seen_notes = {r["note_path"] for r in formatted}
         return {
             "success": True,
             "results": formatted,
