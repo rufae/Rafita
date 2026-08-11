@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Llamar a Rafita</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .card { background: #1e293b; border-radius: 24px; padding: 40px; width: 380px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+  .status { font-size: 13px; padding: 8px 16px; border-radius: 20px; margin-bottom: 16px; min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s; }
+  .status.idle { background: #334155; color: #94a3b8; }
+  .status.connecting { background: #1e3a5f; color: #60a5fa; }
+  .status.listening { background: #14532d; color: #4ade80; }
+  .status.processing { background: #713f12; color: #fbbf24; }
+  .status.speaking { background: #1e3a5f; color: #93c5fd; }
+  .status.error { background: #450a0a; color: #fca5a5; }
+  .btn-group { display: flex; gap: 12px; justify-content: center; margin: 8px 0; }
+  .btn { width: 120px; height: 120px; border-radius: 60px; border: 4px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 16px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; user-select: none; }
+  .btn:hover { border-color: #60a5fa; }
+  .btn.active { border-color: #ef4444; background: #7f1d1d; animation: pulse 1.5s infinite; }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn .icon { font-size: 36px; line-height: 1; }
+  .btn .label { font-size: 12px; }
+  .btn .sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+  .btn.ptt { width: 80px; height: 80px; }
+  .btn.ptt .icon { font-size: 24px; }
+  .btn.ptt.pressed { border-color: #4ade80; background: #14532d; box-shadow: 0 0 20px rgba(74,222,128,0.3); }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } }
+  .transcript { background: #0f172a; border-radius: 12px; padding: 16px; margin-top: 20px; max-height: 200px; overflow-y: auto; text-align: left; font-size: 13px; display: none; }
+  .transcript .tu { color: #60a5fa; margin-bottom: 4px; }
+  .transcript .rafita { color: #4ade80; margin-bottom: 12px; }
+  .log { color: #64748b; font-size: 11px; margin-top: 12px; max-height: 100px; overflow-y: auto; text-align: left; padding: 0 8px; }
+  .settings { margin-top: 12px; font-size: 13px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .settings label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .server-row { margin: 8px 0; display: flex; gap: 6px; justify-content: center; align-items: center; }
+  .server-row input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 4px 10px; border-radius: 8px; font-size: 12px; width: 180px; }
+  .server-row button { background: #334155; border: none; color: #e2e8f0; padding: 4px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  .server-row button:hover { background: #475569; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Rafita</h1>
+  <p class="subtitle">Llamada de voz con IA local &middot; Streaming</p>
+
+  <div id="status" class="status idle">Presiona Iniciar para llamar</div>
+
+  <div class="btn-group">
+    <button id="callBtn" class="btn" onclick="toggleCall()">
+      <span class="icon">&#128222;</span>
+      <span class="label">Iniciar</span>
+    </button>
+    <button id="pttBtn" class="btn ptt" disabled style="opacity:0.3">
+      <span class="icon">&#127908;</span>
+      <span class="label">PTT</span>
+      <span class="sub">mantener</span>
+    </button>
+  </div>
+
+  <div class="settings">
+    <label><input type="checkbox" id="vadMode" checked> VAD automatico</label>
+    <label><input type="checkbox" id="echoCancel" checked> Cancelar eco</label>
+  </div>
+  <div class="server-row">
+    <input type="text" id="serverUrl" placeholder="vacio = mismo servidor" >
+    <button onclick="testTTS()">Probar TTS</button>
+  </div>
+
+  <div id="transcript" class="transcript"></div>
+  <div id="log" class="log"></div>
+</div>
+
+<script>
+// === URL RESOLUTION — always derive from window.location ===
+function getApiBase() {
+  const custom = document.getElementById('serverUrl').value.trim();
+  if (custom) {
+    if (custom.startsWith('http')) return custom.replace(/\/$/, '');
+    return (window.location.protocol === 'https:' ? 'https://' : 'http://') + custom;
+  }
+  return window.location.origin;
+}
+function getWsBase() {
+  const custom = document.getElementById('serverUrl').value.trim();
+  if (custom) {
+    let host = custom.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '');
+    return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + host;
+  }
+  return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
+}
+
+const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
+let ws = null, sessionId = null, audioContext = null, micStream = null, gainNode = null;
+let isCallActive = false, isSpeaking = false;
+let audioQueue = [], isAudioPlaying = false;
+let rafitaTextBuffer = '';
+
+const statusDiv = document.getElementById('status');
+const logDiv = document.getElementById('log');
+const transcriptDiv = document.getElementById('transcript');
+const callBtn = document.getElementById('callBtn');
+const pttBtn = document.getElementById('pttBtn');
+const vadMode = document.getElementById('vadMode');
+const echoCancel = document.getElementById('echoCancel');
+
+function setStatus(state, msg) {
+  statusDiv.className = 'status ' + state;
+  statusDiv.textContent = msg;
+}
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logDiv.innerHTML = '<div>[' + t + '] ' + msg + '</div>' + logDiv.innerHTML;
+}
+function addTranscript(role, text) {
+  transcriptDiv.style.display = 'block';
+  const cls = role === 'tu' ? 'tu' : 'rafita';
+  const prefix = role === 'tu' ? 'Tu' : 'Rafita';
+  transcriptDiv.innerHTML += '<div class="' + cls + '"><strong>' + prefix + ':</strong> ' + text + '</div>';
+  transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+}
+
+async function ensureAudioContext() {
+  if (!audioContext) {
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      log('AudioContext creado a 16kHz');
+    } catch (e) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      log('AudioContext fallback a ' + audioContext.sampleRate + 'Hz (browser no soporta 16kHz forzado)');
+    }
+  }
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+  return audioContext;
+}
+
+async function startCall() {
+  const apiBase = getApiBase();
+  const wsBase = getWsBase();
+
+  setStatus(STATUS.CONNECTING, 'Conectando...');
+  log('API: ' + apiBase + ' | WS: ' + wsBase);
+
+  await ensureAudioContext();
+
+  try {
+    const resp = await fetch(apiBase + '/call/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    sessionId = data.session_id;
+    log('Sesion: ' + sessionId.slice(0, 8) + '...');
+  } catch (e) {
+    setStatus(STATUS.ERROR, 'Error al iniciar: ' + e.message);
+    return false;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: echoCancel.checked,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    micStream = stream;
+    log('Microfono activo');
+  } catch (e) {
+    setStatus(STATUS.ERROR, 'Permiso de microfono denegado');
+    return false;
+  }
+
+  return new Promise(function(resolve) {
+    ws = new WebSocket(wsBase + '/call/ws/' + sessionId);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = function() {
+      log('WebSocket conectado');
+      isCallActive = true;
+      var actualRate = audioContext ? audioContext.sampleRate : 48000;
+      ws.send(JSON.stringify({ type: 'audio_config', sample_rate: actualRate }));
+      log('Enviado audio_config: ' + actualRate + 'Hz');
+      startAudioCapture();
+      pttBtn.disabled = false;
+      pttBtn.style.opacity = '1';
+      pttBtn.addEventListener('mousedown', pttDown);
+      pttBtn.addEventListener('mouseup', pttUp);
+      pttBtn.addEventListener('mouseleave', pttUp);
+      pttBtn.addEventListener('touchstart', pttDown);
+      pttBtn.addEventListener('touchend', pttUp);
+      setStatus(STATUS.LISTENING, 'Escuchando... Habla');
+      resolve(true);
+    };
+
+    ws.onclose = function() {
+      log('WebSocket cerrado');
+      if (isCallActive) setStatus(STATUS.IDLE, 'Llamada finalizada');
+      isCallActive = false;
+      resolve(false);
+    };
+
+    ws.onerror = function() {
+      setStatus(STATUS.ERROR, 'Error de conexion');
+      resolve(false);
+    };
+
+    ws.onmessage = async function(event) {
+      if (event.data instanceof ArrayBuffer) {
+        audioQueue.push(event.data);
+        if (!isAudioPlaying) processAudioQueue();
+      } else {
+        try {
+          const msg = JSON.parse(event.data);
+          handleServerMessage(msg);
+        } catch (e) {}
+      }
+    };
+  });
+}
+
+function handleServerMessage(msg) {
+  switch (msg.type) {
+    case 'ready':
+      break;
+    case 'transcribing':
+      setStatus(STATUS.PROCESSING, 'Transcribiendo...');
+      break;
+    case 'transcript':
+      if (msg.text) addTranscript('tu', msg.text);
+      setStatus(STATUS.PROCESSING, 'Pensando...');
+      log('STT: ' + (msg.stt_time || 0).toFixed(1) + 's');
+      break;
+    case 'thinking':
+      setStatus(STATUS.PROCESSING, 'Pensando...');
+      rafitaTextBuffer = '';
+      break;
+    case 'token':
+      rafitaTextBuffer += msg.text;
+      setStatus(STATUS.SPEAKING, 'Respondiendo...');
+      isSpeaking = true;
+      break;
+    case 'speaking_fragment':
+      isSpeaking = true;
+      setStatus(STATUS.SPEAKING, 'Hablando...');
+      break;
+    case 'response_text':
+      if (msg.text) addTranscript('rafita', msg.text);
+      log('LLM: ' + (msg.llm_time || 0).toFixed(1) + 's');
+      break;
+    case 'latency_report':
+      log('STT=' + msg.stt_ms + 'ms LLM=' + msg.llm_ms + 'ms TTS=' + msg.tts_ms + 'ms Total=' + msg.total_ms + 'ms Fragments=' + (msg.fragments || 0));
+      setStatus(STATUS.LISTENING, 'Escuchando...');
+      isSpeaking = false;
+      break;
+    case 'error':
+      setStatus(STATUS.ERROR, msg.message);
+      break;
+    default:
+      log('Tipo: ' + msg.type);
+  }
+}
+
+let pttActive = false;
+function pttDown(e) {
+  if (!isCallActive) return;
+  if (e) e.preventDefault();
+  pttActive = true;
+  pttBtn.className = 'btn ptt pressed';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'ptt_start' }));
+  }
+}
+function pttUp(e) {
+  if (!isCallActive) return;
+  if (e) e.preventDefault();
+  pttActive = false;
+  pttBtn.className = 'btn ptt';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'end_speech' }));
+  }
+}
+
+function startAudioCapture() {
+  if (!micStream || !audioContext) return;
+  var ctx = audioContext;
+  var source = ctx.createMediaStreamSource(micStream);
+
+  gainNode = ctx.createGain();
+  gainNode.gain.value = 0;
+
+  var processor = ctx.createScriptProcessor(4096, 1, 1);
+
+  source.connect(processor);
+  processor.connect(gainNode);
+  gainNode.connect(ctx.destination);
+
+  processor.onaudioprocess = function(e) {
+    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (isSpeaking || (pttActive === false && !vadMode.checked)) return;
+
+    var input = e.inputBuffer.getChannelData(0);
+    var len = input.length;
+    var pcm = new Int16Array(len);
+    for (var i = 0; i < len; i++) {
+      var s = Math.max(-1, Math.min(1, input[i]));
+      pcm[i] = s < 0 ? s * 32768 : s * 32767;
+    }
+    ws.send(pcm.buffer);
+  };
+
+  log('Audio capture: ' + ctx.sampleRate + ' Hz');
+}
+
+function stopAudioCapture() {
+  if (micStream) { micStream.getTracks().forEach(function(t) { t.stop(); }); micStream = null; }
+}
+
+async function endCall() {
+  if (!sessionId) return;
+  try {
+    await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST' });
+  } catch (e) {}
+  sessionId = null;
+}
+
+async function toggleCall() {
+  if (isCallActive) {
+    callBtn.disabled = true;
+    isCallActive = false;
+    stopAudioCapture();
+    if (ws) { ws.onclose = null; ws.close(); ws = null; }
+    await endCall();
+    pttBtn.disabled = true;
+    pttBtn.style.opacity = '0.3';
+    callBtn.innerHTML = '<span class="icon">&#128222;</span><span class="label">Iniciar</span>';
+    callBtn.className = 'btn';
+    setStatus(STATUS.IDLE, 'Llamada finalizada');
+    callBtn.disabled = false;
+  } else {
+    callBtn.disabled = true;
+    callBtn.innerHTML = '<span class="icon">&#9203;</span><span class="label">Conectando...</span>';
+    var ok = await startCall();
+    if (ok) {
+      callBtn.innerHTML = '<span class="icon">&#128308;</span><span class="label">Colgar</span>';
+      callBtn.className = 'btn active';
+    } else {
+      callBtn.innerHTML = '<span class="icon">&#128222;</span><span class="label">Iniciar</span>';
+      callBtn.className = 'btn';
+    }
+    callBtn.disabled = false;
+  }
+}
+
+// === Streaming audio playback queue (Sesame-style) ===
+async function processAudioQueue() {
+  isAudioPlaying = true;
+  var nextPlayTime = audioContext.currentTime;
+
+  while (audioQueue.length > 0) {
+    var buf = audioQueue.shift();
+    try {
+      await ensureAudioContext();
+      var audioBuf = await audioContext.decodeAudioData(buf.slice(0));
+      var src = audioContext.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(audioContext.destination);
+
+      // Schedule playback seamlessly after previous chunk
+      var startAt = Math.max(nextPlayTime, audioContext.currentTime);
+      src.start(startAt);
+      nextPlayTime = startAt + audioBuf.duration;
+
+      // Wait for this chunk to finish before decoding next
+      await new Promise(function(resolve) { src.onended = resolve; });
+    } catch (e) {
+      log('Error audio: ' + e.message);
+    }
+  }
+  isAudioPlaying = false;
+}
+
+window.addEventListener('beforeunload', function() {
+  if (isCallActive) {
+    isCallActive = false;
+    stopAudioCapture();
+    if (ws) ws.close();
+  }
+});
+
+transcriptDiv.addEventListener('click', function() { transcriptDiv.innerHTML = ''; transcriptDiv.style.display = 'none'; });
+
+async function testTTS() {
+  var apiBase = getApiBase();
+  setStatus(STATUS.PROCESSING, 'Probando TTS...');
+  log('Probando TTS en ' + apiBase + '...');
+  try {
+    var resp = await fetch(apiBase + '/call/test_tts');
+    if (!resp.ok) {
+      var err = await resp.json().catch(function() { return { reason: resp.statusText }; });
+      throw new Error(err.reason || 'HTTP ' + resp.status);
+    }
+    var blob = await resp.blob();
+    var dur = resp.headers.get('X-TTS-Duration') || '?';
+    log('TTS OK: ' + blob.size + ' bytes en ' + dur + 's');
+    await ensureAudioContext();
+    var buf = await blob.arrayBuffer();
+    var audioBuf = await audioContext.decodeAudioData(buf);
+    var source = audioContext.createBufferSource();
+    source.buffer = audioBuf;
+    source.connect(audioContext.destination);
+    source.start(0);
+    setStatus(STATUS.LISTENING, 'TTS funciona!');
+  } catch (e) {
+    setStatus(STATUS.ERROR, 'TTS fallo: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>
