@@ -25,7 +25,7 @@ class TestOllamaEmbeddingFunction:
 
     def test_different_texts_produce_different_embeddings(self):
         ef = OllamaEmbeddingFunction()
-        texts = ["gasto en gasolina mensual", "DNI 29560575D", "Audi A3 comprado"]
+        texts = ["gasto en gasolina mensual", "DNI 12345678A", "Audi A3 comprado"]
         result = ef(texts)
         for i in range(len(result)):
             for j in range(i + 1, len(result)):
