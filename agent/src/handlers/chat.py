@@ -279,7 +279,7 @@ async def _process_ai_message(update: Update, user_text: str, context, from_voic
                     tools=TOOLS_DEFINITIONS,
                     max_tokens=512,
                 ),
-                timeout=300.0,
+                timeout=600.0,
             )
         except TimeoutError:
             logger.error("[TIMEOUT] chat_with_tools supero 120s para user %d", chat_id)
