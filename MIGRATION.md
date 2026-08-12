@@ -335,14 +335,17 @@ sudo systemctl restart docker
 
 #### Paso 2: Habilitar GPU en docker-compose.yml
 
-Edita `docker-compose.yml` y descomenta las líneas de GPU:
+**MANUAL**: El bloque de GPU **no se activa solo**. Debes editar `docker-compose.yml`
+en la máquina de destino antes de `docker compose up -d`.
+
+**Qué tocar** — en el servicio `ollama-service`, líneas 17-23 del archivo:
 
 ```yaml
-services:
   ollama-service:
-    # ... otras configuraciones ...
-    
-    # Descomentar estas líneas para GPU NVIDIA:
+    ...
+    volumes:
+      - ./ollama/models:/root/.ollama
+    # Descomentar estas 6 líneas para GPU NVIDIA:
     deploy:
       resources:
         reservations:
@@ -350,9 +353,32 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
+      ...
 ```
 
-#### Paso 3: Verificar Detección GPU
+Cambia las 6 líneas del bloque `deploy` de comentadas a activas:
+
+```yaml
+  ollama-service:
+    ...
+    volumes:
+      - ./ollama/models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
+      ...
+```
+
+Si además quieres subir el límite de memoria de Ollama para gemma4:12b
+(requiere ~8-9GB RAM del host):
 
 Después de iniciar Rafita, verifica en los logs que se detectó la GPU:
 
