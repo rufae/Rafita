@@ -45,6 +45,8 @@ def _get_whisper():
             from faster_whisper import WhisperModel
 
             model_name = getattr(settings, "whisper_model", None) or "base"
+            if model_name == "tiny":
+                model_name = "base"  # voice stream needs better accuracy
             _whisper_model = WhisperModel(
                 model_name,
                 device="cpu",
@@ -382,28 +384,16 @@ def _is_sentence_boundary(text: str) -> bool:
 
 
 async def _generate_response_stream(text: str, chat_id: int):
+    """Generate AI response using the shared orchestrator (tools + RAG)."""
     try:
-        from src.ollama_client import llm
+        from src.core import generate_response
 
-        if not llm._client:
-            await llm.initialize()
-        async for token in llm.chat_stream_tokens(
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres Rafita. Responde en español de forma muy breve y conversacional. "
-                        "Maximo 2 frases. No uses markdown ni caracteres especiales."
-                    ),
-                },
-                {"role": "user", "content": text},
-            ],
-            max_tokens=120,
-            temperature=0.7,
-        ):
-            yield token
+        response = await generate_response(text, chat_id)
+        words = response.split()
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
     except Exception as e:
-        logger.warning("VoiceStream LLM stream error: %s", e)
+        logger.warning("VoiceStream LLM error: %s", e)
         yield "Lo siento, no pude procesar eso."
 
 
