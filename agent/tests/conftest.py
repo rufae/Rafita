@@ -1,10 +1,34 @@
 """Shared fixtures for Rafita AVP tests."""
 
-import tempfile
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
+
+
+def _ollama_available() -> bool:
+    """Check if Ollama is reachable (skip embedding tests in CI)."""
+    if os.environ.get("CI"):
+        return False
+    try:
+        import httpx
+
+        r = httpx.get("http://ollama:11434/api/tags", timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip Ollama-dependent tests when Ollama is not reachable."""
+    if _ollama_available():
+        return
+    skip_marker = pytest.mark.skip(reason="Ollama not available (CI environment)")
+    for item in items:
+        if "OllamaEmbeddingFunction" in item.parent.name if item.parent else "":
+            item.add_marker(skip_marker)
 
 
 @pytest.fixture
