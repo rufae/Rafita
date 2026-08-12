@@ -2,7 +2,9 @@
 Bateria completa de tests para RafAI - Segundo Cerebro.
 Ejecuta desde dentro del contenedor: python /workspace/scripts/test_suite.py
 """
+
 import sys, asyncio, json
+
 sys.path.insert(0, "/app/src")
 from pathlib import Path
 from datetime import datetime
@@ -11,9 +13,11 @@ PASS = "✅"
 FAIL = "❌"
 results = []
 
+
 def test(name, condition):
     results.append((name, condition))
     print("  %s %s" % (PASS if condition else FAIL, name))
+
 
 async def run_tests():
     print("=" * 60)
@@ -23,10 +27,12 @@ async def run_tests():
     # === TEST 1: Database ===
     print("\n📦 TEST 1: Base de datos")
     from src.database import db
+
     await db.initialize()
     test("SQLite initialized", db._conn is not None)
 
     from src.utils.vector_manager import vector_db
+
     await vector_db.initialize()
     stats = await vector_db.get_stats()
     test("ChromaDB initialized", stats["total_chunks"] > 0)
@@ -45,7 +51,10 @@ async def run_tests():
         test("Has relevance", float(r.get("relevance", 0)) > 0)
 
     r2 = await vector_db.query("chunking semantico", top_k=3)
-    test("Semantic search finds Zettelkasten", any("Chunking" in r.get("note_path", "") for r in r2.get("results", [])))
+    test(
+        "Semantic search finds Zettelkasten",
+        any("Chunking" in r.get("note_path", "") for r in r2.get("results", [])),
+    )
 
     # === TEST 3: Credentials ===
     print("\n🔐 TEST 3: Credenciales (AES-256)")
@@ -84,11 +93,15 @@ async def run_tests():
     from src.handlers.files import _extract_text_from_file, _create_companion_note
 
     test_txt = vault / "03-Recursos" / "_test_companion.txt"
-    test_txt.write_text("Documento de prueba del segundo cerebro.\n## Seccion 1\nContenido importante.\n## Seccion 2\nMas contenido.")
+    test_txt.write_text(
+        "Documento de prueba del segundo cerebro.\n## Seccion 1\nContenido importante.\n## Seccion 2\nMas contenido."
+    )
     text = _extract_text_from_file(test_txt)
     test("Text extracted from TXT", len(text) > 0 and "Documento de prueba" in text)
 
-    note = _create_companion_note(vault, test_txt, text, "recurso", ["test", "prueba"], "Resumen de prueba")
+    note = _create_companion_note(
+        vault, test_txt, text, "recurso", ["test", "prueba"], "Resumen de prueba"
+    )
     test("Companion note created", note is not None and note.exists())
     if note:
         content = note.read_text()
@@ -97,7 +110,10 @@ async def run_tests():
         test("Has type field", "type: recurso" in content)
         test("Has tags field", "tags: [test, prueba]" in content)
         test("Has source_file field", "source_file:" in content)
-        test("Has link to original", "!_test_companion.txt" in content or "[[_test_companion.txt]]" in content)
+        test(
+            "Has link to original",
+            "!_test_companion.txt" in content or "[[_test_companion.txt]]" in content,
+        )
         note.unlink()
     test_txt.unlink()
 
@@ -122,6 +138,7 @@ async def run_tests():
     # === TEST 7: Frontmatter YAML ===
     print("\n🏷️ TEST 7: Frontmatter YAML")
     import yaml
+
     all_valid = True
     for md_file in vault.rglob("*.md"):
         if any(d in str(md_file) for d in [".obsidian", "templates"]):
@@ -148,9 +165,12 @@ async def run_tests():
     # === TEST 8: Auto-enlazado ===
     print("\n🔗 TEST 8: Auto-enlazado semantico")
     from src.utils.vault_indexer import VaultIndexer
+
     idx = VaultIndexer()
     # Index a note and check if related was updated
-    note_path = vault / "05-Zettelkasten" / "Chunking semantico vs chunking por palabras para RAG.md"
+    note_path = (
+        vault / "05-Zettelkasten" / "Chunking semantico vs chunking por palabras para RAG.md"
+    )
     result = await idx.index_note(note_path)
     content = note_path.read_text()
     related_line = [l for l in content.split("\n") if "related:" in l]
@@ -162,6 +182,7 @@ async def run_tests():
     # === TEST 9: Catch-up scan ===
     print("\n📡 TEST 9: Catch-up scan")
     from src.utils.message_scanner import scan_messages
+
     # Should return 0 messages (already scanned) or handle gracefully
     scan_result = await scan_messages(chat_id, limit=5)
     test("Scan executes without error", scan_result.get("success"))
@@ -182,7 +203,7 @@ async def run_tests():
     print("\n" + "=" * 60)
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
-    print("RESUMEN: %d/%d tests OK (%d%%)\n" % (passed, total, int(passed/total*100)))
+    print("RESUMEN: %d/%d tests OK (%d%%)\n" % (passed, total, int(passed / total * 100)))
 
     if passed == total:
         print("🎉 TODOS LOS TESTS PASARON!")
@@ -194,6 +215,7 @@ async def run_tests():
 
     await db.close()
     return passed == total
+
 
 if __name__ == "__main__":
     ok = asyncio.run(run_tests())

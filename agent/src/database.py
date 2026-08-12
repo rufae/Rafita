@@ -276,18 +276,14 @@ class DatabaseManager:
     async def execute_insert(self, sql: str, params: tuple = ()) -> int:
         return await self.insert(sql, params)
 
-    async def save_chat_message(
-        self, chat_id: int, role: str, content: str
-    ) -> int:
+    async def save_chat_message(self, chat_id: int, role: str, content: str) -> int:
         sql = """
             INSERT INTO chat_history (chat_id, role, content, created_at)
             VALUES (?, ?, ?, datetime('now'))
         """
         return await self.insert(sql, (chat_id, role, content))
 
-    async def update_last_chat_message(
-        self, chat_id: int, role: str, new_content: str
-    ) -> None:
+    async def update_last_chat_message(self, chat_id: int, role: str, new_content: str) -> None:
         sql = """
             UPDATE chat_history
             SET content = ?
@@ -300,9 +296,7 @@ class DatabaseManager:
         await self.execute(sql, (new_content, chat_id, role))
         await self._conn.commit()
 
-    async def get_chat_history(
-        self, chat_id: int, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    async def get_chat_history(self, chat_id: int, limit: int = 50) -> list[dict[str, Any]]:
         sql = """
             SELECT id, chat_id, role, content, created_at
             FROM chat_history
@@ -315,14 +309,11 @@ class DatabaseManager:
         return rows
 
     async def clear_chat_history(self, chat_id: int) -> None:
-        await self.execute(
-            "DELETE FROM chat_history WHERE chat_id = ?", (chat_id,)
-        )
+        await self.execute("DELETE FROM chat_history WHERE chat_id = ?", (chat_id,))
         await self._conn.commit()
 
     async def add_event(
-        self, chat_id: int, title: str, event_datetime: str,
-        description: str | None = None
+        self, chat_id: int, title: str, event_datetime: str, description: str | None = None
     ) -> int:
         sql = """
             INSERT INTO events (chat_id, title, description, event_datetime)
@@ -330,9 +321,7 @@ class DatabaseManager:
         """
         return await self.insert(sql, (chat_id, title, description, event_datetime))
 
-    async def get_upcoming_events(
-        self, chat_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def get_upcoming_events(self, chat_id: int, limit: int = 10) -> list[dict[str, Any]]:
         sql = """
             SELECT * FROM events
             WHERE chat_id = ? AND is_active = 1
@@ -343,9 +332,7 @@ class DatabaseManager:
         return await self.fetchall(sql, (chat_id, limit))
 
     async def add_alert(
-        self, chat_id: int, message: str,
-        alert_type: str = "info",
-        expires_at: str | None = None
+        self, chat_id: int, message: str, alert_type: str = "info", expires_at: str | None = None
     ) -> int:
         sql = """
             INSERT INTO alerts (chat_id, message, alert_type, expires_at)
@@ -363,17 +350,18 @@ class DatabaseManager:
         return await self.fetchall(sql, (chat_id,))
 
     async def mark_alert_read(self, alert_id: int) -> None:
-        await self.execute(
-            "UPDATE alerts SET is_read = 1 WHERE id = ?", (alert_id,)
-        )
+        await self.execute("UPDATE alerts SET is_read = 1 WHERE id = ?", (alert_id,))
         await self._conn.commit()
 
     async def add_finance_record(
-        self, chat_id: int, amount: float, category: str,
+        self,
+        chat_id: int,
+        amount: float,
+        category: str,
         subcategory: str | None = None,
         description: str | None = None,
         currency: str = "MXN",
-        recorded_at: str | None = None
+        recorded_at: str | None = None,
     ) -> int:
         if recorded_at is None:
             recorded_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -387,9 +375,7 @@ class DatabaseManager:
         )
 
     async def get_finance_summary(
-        self, chat_id: int,
-        start_date: str | None = None,
-        end_date: str | None = None
+        self, chat_id: int, start_date: str | None = None, end_date: str | None = None
     ) -> dict[str, Any]:
         if not end_date:
             end_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -449,11 +435,12 @@ class DatabaseManager:
         }
 
     async def get_finance_records(
-        self, chat_id: int,
+        self,
+        chat_id: int,
         start_date: str | None = None,
         end_date: str | None = None,
         category: str | None = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         conditions = ["chat_id = ?"]
         params: list = [chat_id]
@@ -476,9 +463,7 @@ class DatabaseManager:
         params.append(limit)
         return await self.fetchall(sql, tuple(params))
 
-    async def create_export(
-        self, chat_id: int, export_type: str
-    ) -> int:
+    async def create_export(self, chat_id: int, export_type: str) -> int:
         sql = """
             INSERT INTO exports (chat_id, export_type, status)
             VALUES (?, ?, 'pending')
@@ -486,9 +471,11 @@ class DatabaseManager:
         return await self.insert(sql, (chat_id, export_type))
 
     async def update_export(
-        self, export_id: int, status: str,
+        self,
+        export_id: int,
+        status: str,
         file_path: str | None = None,
-        error_message: str | None = None
+        error_message: str | None = None,
     ) -> None:
         updates = ["status = ?"]
         params: list = [status]
@@ -507,14 +494,15 @@ class DatabaseManager:
 
     async def get_or_create_preferences(self, chat_id: int) -> dict[str, Any]:
         row = await self.fetchone(
-            "SELECT preferences FROM user_preferences WHERE chat_id = ?",
-            (chat_id,)
+            "SELECT preferences FROM user_preferences WHERE chat_id = ?", (chat_id,)
         )
         if row is None:
-            default_prefs = json.dumps({"currency": settings.default_currency, "voice_replies": False})
+            default_prefs = json.dumps(
+                {"currency": settings.default_currency, "voice_replies": False}
+            )
             await self.insert(
                 "INSERT INTO user_preferences (chat_id, preferences) VALUES (?, ?)",
-                (chat_id, default_prefs)
+                (chat_id, default_prefs),
             )
             return json.loads(default_prefs)
         return json.loads(row["preferences"])
@@ -555,7 +543,6 @@ class DatabaseManager:
         await self.execute(delete_sql, (cutoff_str,))
         await self._conn.commit()
         return row["count"] if row else 0
-
 
     async def get_expiring_events(self, days_from_now: int) -> list[dict[str, Any]]:
         target = datetime.utcnow().timestamp() + (days_from_now * 86400)
@@ -661,7 +648,9 @@ class DatabaseManager:
         return row["count"] if row else 0
 
     async def add_recurring_alert(
-        self, chat_id: int, message: str,
+        self,
+        chat_id: int,
+        message: str,
         pattern: str = "daily",
         alert_type: str = "info",
         first_run: str | None = None,
@@ -715,9 +704,7 @@ class DatabaseManager:
         return None
 
     async def update_alert_next_run(self, alert_id: int, next_run: str) -> None:
-        await self.execute(
-            "UPDATE alerts SET next_run = ? WHERE id = ?", (next_run, alert_id)
-        )
+        await self.execute("UPDATE alerts SET next_run = ? WHERE id = ?", (next_run, alert_id))
         await self._conn.commit()
 
     async def get_events_missing_google_sync(self) -> list[dict[str, Any]]:
@@ -746,14 +733,13 @@ class DatabaseManager:
         await self._conn.commit()
 
     async def kv_get(self, key: str) -> str | None:
-        row = await self.fetchone(
-            "SELECT value, expires_at FROM kv_store WHERE key = ?", (key,)
-        )
+        row = await self.fetchone("SELECT value, expires_at FROM kv_store WHERE key = ?", (key,))
         if row is None:
             return None
         if row.get("expires_at"):
             try:
                 from datetime import datetime as _dt
+
                 exp = _dt.fromisoformat(row["expires_at"])
                 if _dt.utcnow() > exp:
                     await self.execute("DELETE FROM kv_store WHERE key = ?", (key,))
@@ -767,7 +753,9 @@ class DatabaseManager:
         await self.execute("DELETE FROM kv_store WHERE key = ?", (key,))
         await self._conn.commit()
 
-    async def save_voice_session(self, session_id: str, chat_id: int, state: str, transcript: str) -> None:
+    async def save_voice_session(
+        self, session_id: str, chat_id: int, state: str, transcript: str
+    ) -> None:
         await self.execute(
             "INSERT OR REPLACE INTO voice_sessions (session_id, chat_id, state, transcript, started_at, ended_at) "
             "VALUES (?, ?, ?, ?, datetime('now'), NULL)",
@@ -782,20 +770,28 @@ class DatabaseManager:
         )
         await self._conn.commit()
 
-
     async def log_second_brain_query(
-        self, query_text: str, chat_id: int | None,
-        notes_found: list[str], chunks_retrieved: int, top_relevance: float,
+        self,
+        query_text: str,
+        chat_id: int | None,
+        notes_found: list[str],
+        chunks_retrieved: int,
+        top_relevance: float,
     ) -> int:
         sql = """
             INSERT INTO second_brain_log (query_text, chat_id, notes_found, chunks_retrieved, top_relevance)
             VALUES (?, ?, ?, ?, ?)
         """
-        return await self.insert(sql, (
-            query_text[:300], chat_id,
-            ",".join(notes_found[:10]) if notes_found else "",
-            chunks_retrieved, top_relevance,
-        ))
+        return await self.insert(
+            sql,
+            (
+                query_text[:300],
+                chat_id,
+                ",".join(notes_found[:10]) if notes_found else "",
+                chunks_retrieved,
+                top_relevance,
+            ),
+        )
 
     async def get_second_brain_stats(self) -> dict[str, Any]:
         total = await self.fetchone("SELECT COUNT(*) as c FROM second_brain_log")

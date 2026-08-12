@@ -43,6 +43,7 @@ def _get_whisper():
     if _whisper_model is None:
         try:
             from faster_whisper import WhisperModel
+
             model_name = getattr(settings, "whisper_model", None) or "base"
             _whisper_model = WhisperModel(
                 model_name,
@@ -63,7 +64,10 @@ def _get_whisper():
 async def serve_call_page():
     if _HTML_FILE_PATH.exists():
         return FileResponse(str(_HTML_FILE_PATH), media_type="text/html")
-    return JSONResponse(status_code=404, content={"error": "call_rafita.html not found at %s" % str(_HTML_FILE_PATH)})
+    return JSONResponse(
+        status_code=404,
+        content={"error": "call_rafita.html not found at %s" % str(_HTML_FILE_PATH)},
+    )
 
 
 @app.get("/health")
@@ -80,19 +84,32 @@ async def health():
 async def test_tts():
     try:
         from src.utils.tts_manager import convert_to_ogg, text_to_speech
+
         t0 = time.time()
         wav = await text_to_speech("Hola, soy Rafita. Prueba de voz.")
         if wav is None:
-            return JSONResponse(status_code=500, content={"status": "error", "reason": "text_to_speech returned None (Piper y espeak fallaron)"})
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "reason": "text_to_speech returned None (Piper y espeak fallaron)",
+                },
+            )
         ogg = await convert_to_ogg(wav)
         if ogg and ogg.exists():
             dur = round(time.time() - t0, 2)
-            return Response(content=ogg.read_bytes(), media_type="audio/ogg", headers={
-                "X-TTS-Duration": str(dur),
-                "X-TTS-Bytes": str(ogg.stat().st_size),
-                "Content-Disposition": "inline; filename=test.ogg",
-            })
-        return JSONResponse(status_code=500, content={"status": "error", "reason": "converted file not found"})
+            return Response(
+                content=ogg.read_bytes(),
+                media_type="audio/ogg",
+                headers={
+                    "X-TTS-Duration": str(dur),
+                    "X-TTS-Bytes": str(ogg.stat().st_size),
+                    "Content-Disposition": "inline; filename=test.ogg",
+                },
+            )
+        return JSONResponse(
+            status_code=500, content={"status": "error", "reason": "converted file not found"}
+        )
     except Exception as e:
         logger.exception("VoiceStream test_tts error")
         return JSONResponse(status_code=500, content={"status": "error", "reason": str(e)})
@@ -224,13 +241,18 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
 
     rms = _compute_rms(audio_data)
     if rms < SILENCE_RMS_THRESHOLD:
-        logger.info("VoiceStream: silence detected (RMS=%.0f), skipping STT session=%s", rms, session_id)
+        logger.info(
+            "VoiceStream: silence detected (RMS=%.0f), skipping STT session=%s", rms, session_id
+        )
         return
 
     source_rate = session.get("sample_rate", 48000)
     logger.info(
         "VoiceStream: processing utterance %d bytes RMS=%.0f source=%dHz session=%s",
-        len(audio_data), rms, source_rate, session_id,
+        len(audio_data),
+        rms,
+        source_rate,
+        session_id,
     )
 
     await websocket.send_json({"type": "transcribing", "timestamp": time.time()})
@@ -249,7 +271,9 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
 
     session["transcript"] += transcript + " "
     logger.info("VoiceStream: STT done [%.1fs] text=%s", t_stt, transcript[:100])
-    await websocket.send_json({"type": "transcript", "text": transcript, "stt_time": round(t_stt, 2)})
+    await websocket.send_json(
+        {"type": "transcript", "text": transcript, "stt_time": round(t_stt, 2)}
+    )
 
     await websocket.send_json({"type": "thinking", "timestamp": time.time()})
 
@@ -271,11 +295,13 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
                 fragment_buffer = ""
 
                 if fragment:
-                    await websocket.send_json({
-                        "type": "speaking_fragment",
-                        "text": fragment,
-                        "index": fragment_count,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "speaking_fragment",
+                            "text": fragment,
+                            "index": fragment_count,
+                        }
+                    )
 
                     t_tts_start = time.time()
                     audio_chunk = await _synthesize_speech_bytes(fragment)
@@ -286,7 +312,10 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
                         await websocket.send_bytes(audio_chunk)
                         logger.info(
                             "VoiceStream: fragment %d TTS [%.1fs] %d bytes: %s",
-                            fragment_count, t_tts_frag, len(audio_chunk), fragment[:60],
+                            fragment_count,
+                            t_tts_frag,
+                            len(audio_chunk),
+                            fragment[:60],
                         )
                     fragment_count += 1
 
@@ -297,11 +326,13 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
 
     if fragment_buffer.strip():
         fragment = fragment_buffer.strip()
-        await websocket.send_json({
-            "type": "speaking_fragment",
-            "text": fragment,
-            "index": fragment_count,
-        })
+        await websocket.send_json(
+            {
+                "type": "speaking_fragment",
+                "text": fragment,
+                "index": fragment_count,
+            }
+        )
         t_tts_start = time.time()
         audio_chunk = await _synthesize_speech_bytes(fragment)
         t_tts_total += time.time() - t_tts_start
@@ -311,24 +342,30 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
 
     t_llm = time.time() - t1
 
-    await websocket.send_json({
-        "type": "response_text",
-        "text": full_response,
-        "llm_time": round(t_llm, 2),
-    })
+    await websocket.send_json(
+        {
+            "type": "response_text",
+            "text": full_response,
+            "llm_time": round(t_llm, 2),
+        }
+    )
 
     total_latency = time.time() - t0
-    await websocket.send_json({
-        "type": "latency_report",
-        "stt_ms": round(t_stt * 1000),
-        "llm_ms": round(t_llm * 1000),
-        "tts_ms": round(t_tts_total * 1000),
-        "total_ms": round(total_latency * 1000),
-        "fragments": fragment_count,
-    })
+    await websocket.send_json(
+        {
+            "type": "latency_report",
+            "stt_ms": round(t_stt * 1000),
+            "llm_ms": round(t_llm * 1000),
+            "tts_ms": round(t_tts_total * 1000),
+            "total_ms": round(total_latency * 1000),
+            "fragments": fragment_count,
+        }
+    )
     logger.info(
         "VoiceStream: utterance complete total=%.0fms fragments=%d response=%s",
-        total_latency * 1000, fragment_count, full_response[:100],
+        total_latency * 1000,
+        fragment_count,
+        full_response[:100],
     )
 
 
@@ -347,14 +384,18 @@ def _is_sentence_boundary(text: str) -> bool:
 async def _generate_response_stream(text: str, chat_id: int):
     try:
         from src.ollama_client import llm
+
         if not llm._client:
             await llm.initialize()
         async for token in llm.chat_stream_tokens(
             messages=[
-                {"role": "system", "content": (
-                    "Eres Rafita. Responde en español de forma muy breve y conversacional. "
-                    "Maximo 2 frases. No uses markdown ni caracteres especiales."
-                )},
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres Rafita. Responde en español de forma muy breve y conversacional. "
+                        "Maximo 2 frases. No uses markdown ni caracteres especiales."
+                    ),
+                },
                 {"role": "user", "content": text},
             ],
             max_tokens=120,
@@ -373,16 +414,18 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
 
     import os
     import tempfile
+
     fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voicestream_")
     os.close(fd)
     try:
         if source_rate != TARGET_SAMPLE_RATE:
-            resampled, _ = audioop.ratecv(
-                audio_bytes, 2, 1, source_rate, TARGET_SAMPLE_RATE, None
-            )
+            resampled, _ = audioop.ratecv(audio_bytes, 2, 1, source_rate, TARGET_SAMPLE_RATE, None)
             logger.info(
                 "VoiceStream: resampled %d -> %d Hz (%d -> %d bytes)",
-                source_rate, TARGET_SAMPLE_RATE, len(audio_bytes), len(resampled),
+                source_rate,
+                TARGET_SAMPLE_RATE,
+                len(audio_bytes),
+                len(resampled),
             )
         else:
             resampled = audio_bytes
@@ -392,9 +435,19 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
         data_size = len(resampled)
         header = struct.pack(
             "<4sI4s4sIHHIihh4sI",
-            b"RIFF", 36 + data_size, b"WAVE",
-            b"fmt ", 16, 1, 1, TARGET_SAMPLE_RATE, byte_rate, block_align, 16,
-            b"data", data_size,
+            b"RIFF",
+            36 + data_size,
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
+            1,
+            TARGET_SAMPLE_RATE,
+            byte_rate,
+            block_align,
+            16,
+            b"data",
+            data_size,
         )
 
         with open(tmp_path, "wb") as f:
@@ -445,6 +498,7 @@ def _compute_rms(audio_bytes: bytes) -> float:
 async def _synthesize_speech_bytes(text: str) -> bytes | None:
     try:
         from src.utils.tts_manager import convert_to_ogg, text_to_speech
+
         wav_path = await text_to_speech(text)
         if wav_path is None:
             return None
@@ -459,9 +513,14 @@ async def _synthesize_speech_bytes(text: str) -> bytes | None:
 
 async def start_voice_stream_server(host: str = "0.0.0.0", port: int = 8001):
     import uvicorn
+
     config_obj = uvicorn.Config(
-        app, host=host, port=port, log_level="info",
-        access_log=False, lifespan="on",
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=False,
+        lifespan="on",
     )
     server = uvicorn.Server(config_obj)
     logger.info("Starting Rafita Voice Stream on %s:%d", host, port)

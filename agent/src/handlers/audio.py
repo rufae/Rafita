@@ -19,6 +19,7 @@ def _get_whisper_model():
     if _whisper_model is None:
         try:
             from faster_whisper import WhisperModel
+
             model_size = settings.whisper_model
             if model_size == "tiny":
                 model_size = "base"
@@ -51,7 +52,13 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     t_start = time.time()
     ts_a = time.strftime("%H:%M:%S")
-    logger.info("[AUDIO A] Nota de voz recibida [%s] user=%d duration=%ds file_id=%s", ts_a, chat_id, voice.duration, voice.file_id[:20])
+    logger.info(
+        "[AUDIO A] Nota de voz recibida [%s] user=%d duration=%ds file_id=%s",
+        ts_a,
+        chat_id,
+        voice.duration,
+        voice.file_id[:20],
+    )
 
     await message.reply_text("🎙️ Transcribiendo audio... Por favor, espera.")
     await message.reply_chat_action("typing")
@@ -84,15 +91,26 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await message.reply_text("✅ Escuché: %s" % transcribed)
 
         from src.handlers.chat import _process_ai_message
+
         response_text = await _process_ai_message(update, transcribed, context, from_voice=True)
 
         t_llm = time.time() - t_start
-        logger.info("[AUDIO D] LLM completado [%.1fs] response=%s", t_llm, (response_text or "")[:80])
+        logger.info(
+            "[AUDIO D] LLM completado [%.1fs] response=%s", t_llm, (response_text or "")[:80]
+        )
 
         text_request_keywords = [
-            "escribemelo", "escríbemelo", "responde en texto", "respondeme en texto",
-            "en texto", "no me hables", "ponlo por escrito", "escribelo",
-            "escríbelo", "texto plano", "solo texto",
+            "escribemelo",
+            "escríbemelo",
+            "responde en texto",
+            "respondeme en texto",
+            "en texto",
+            "no me hables",
+            "ponlo por escrito",
+            "escribelo",
+            "escríbelo",
+            "texto plano",
+            "solo texto",
         ]
         user_wants_text = any(kw in transcribed.lower() for kw in text_request_keywords)
 
@@ -153,7 +171,9 @@ async def _transcribe_file(audio_path: Path) -> str | None:
         return None
 
 
-async def _send_voice_reply_fast(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+async def _send_voice_reply_fast(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+) -> None:
     message = update.effective_message
     if not message:
         return
@@ -173,7 +193,12 @@ async def _send_voice_reply_fast(update: Update, context: ContextTypes.DEFAULT_T
                 try:
                     audio_data = ogg_path.read_bytes()
                     audio_parts.append(audio_data)
-                    logger.info("[AUDIO STREAM] Chunk %d/%d generado (%d bytes)", i + 1, len(chunks), len(audio_data))
+                    logger.info(
+                        "[AUDIO STREAM] Chunk %d/%d generado (%d bytes)",
+                        i + 1,
+                        len(chunks),
+                        len(audio_data),
+                    )
                 except Exception as e:
                     logger.warning("Failed to read audio chunk: %s", e)
 
@@ -187,7 +212,9 @@ async def _send_voice_reply_fast(update: Update, context: ContextTypes.DEFAULT_T
         combined.seek(0)
 
         await message.reply_voice(voice=combined, read_timeout=60, write_timeout=60)
-        logger.info("[AUDIO STREAM] Respuesta de voz enviada (%d bytes total)", combined.getbuffer().nbytes)
+        logger.info(
+            "[AUDIO STREAM] Respuesta de voz enviada (%d bytes total)", combined.getbuffer().nbytes
+        )
 
     except Exception as e:
         logger.exception("[AUDIO ERROR] TTS/envío de voz falló: %s", e)
