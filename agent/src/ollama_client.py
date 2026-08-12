@@ -61,7 +61,8 @@ class OllamaCircuitBreaker:
             wait = self.get_backoff(operation)
             logger.warning(
                 "Circuit breaker open for '%s'. Waiting %.1fs before retry.",
-                operation, wait,
+                operation,
+                wait,
             )
             await asyncio.sleep(wait)
         last_exc = None
@@ -77,7 +78,11 @@ class OllamaCircuitBreaker:
                     backoff = self.get_backoff(operation)
                     logger.warning(
                         "Ollama %s (attempt %d/%d): %s. Backoff %.1fs.",
-                        operation, attempt + 1, max_retries, e, backoff,
+                        operation,
+                        attempt + 1,
+                        max_retries,
+                        e,
+                        backoff,
                     )
                     await asyncio.sleep(backoff)
             except APIError as e:
@@ -89,7 +94,11 @@ class OllamaCircuitBreaker:
                         backoff = self.get_backoff(operation)
                         logger.warning(
                             "Ollama server error %s (attempt %d/%d): %s. Backoff %.1fs.",
-                            status_code, attempt + 1, max_retries, e, backoff,
+                            status_code,
+                            attempt + 1,
+                            max_retries,
+                            e,
+                            backoff,
                         )
                         await asyncio.sleep(backoff)
                 else:
@@ -98,9 +107,7 @@ class OllamaCircuitBreaker:
             except Exception as e:
                 self.record_failure(operation)
                 raise OllamaClientError("Error inesperado: %s" % e)
-        raise OllamaClientError(
-            "Ollama no responde tras %d intentos: %s" % (max_retries, last_exc)
-        )
+        raise OllamaClientError("Ollama no responde tras %d intentos: %s" % (max_retries, last_exc))
 
 
 class OllamaClient:
@@ -126,7 +133,9 @@ class OllamaClient:
         self._ready = True
         logger.info(
             "Ollama client initialized: model=%s vision=%s host=%s",
-            self.model, self.vision_model, self.base_url,
+            self.model,
+            self.vision_model,
+            self.base_url,
         )
 
     async def _check_model_available(self) -> None:
@@ -136,16 +145,18 @@ class OllamaClient:
             logger.info("Model %s is available", self.model)
         else:
             logger.warning(
-                "Model %s not found. Available: %s. "
-                "Run: docker exec ollama-service ollama pull %s",
-                self.model, model_ids, self.model,
+                "Model %s not found. Available: %s. Run: docker exec ollama-service ollama pull %s",
+                self.model,
+                model_ids,
+                self.model,
             )
         if self.vision_model in model_ids:
             logger.info("Vision model %s is available", self.vision_model)
         else:
             logger.warning(
                 "Vision model %s not found. Available: %s.",
-                self.vision_model, model_ids,
+                self.vision_model,
+                model_ids,
             )
 
     async def _prewarm_model(self) -> None:
@@ -157,6 +168,7 @@ class OllamaClient:
     async def _prewarm_specific(self, model_name: str, label: str) -> None:
         try:
             import httpx
+
             logger.info("Pre-warming %s model '%s' (forcing load into RAM)...", label, model_name)
             async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=120.0)) as hc:
                 resp = await hc.post(
@@ -172,11 +184,14 @@ class OllamaClient:
                 resp.raise_for_status()
             logger.info("%s model '%s' pre-warmed and ready", label.capitalize(), model_name)
         except Exception as e:
-            logger.warning("%s model pre-warm failed (will load on first request): %s", label.capitalize(), e)
+            logger.warning(
+                "%s model pre-warm failed (will load on first request): %s", label.capitalize(), e
+            )
 
     async def unload_model(self, model_name: str) -> None:
         try:
             import httpx
+
             logger.info("[HOT-SWAP] Unloading model '%s' from RAM (keep_alive=0)...", model_name)
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as hc:
                 resp = await hc.post(
@@ -197,11 +212,15 @@ class OllamaClient:
         logger.info("[HOT-SWAP] Swapping Qwen -> llava (freeing RAM for vision model)...")
         await self.unload_model(self.model)
         import gc as _gc
+
         _gc.collect()
 
     async def hot_swap_to_text(self) -> None:
-        logger.info("[HOT-SWAP] Reloading Qwen after vision (llava already unloaded via keep_alive=0)...")
+        logger.info(
+            "[HOT-SWAP] Reloading Qwen after vision (llava already unloaded via keep_alive=0)..."
+        )
         import gc as _gc
+
         _gc.collect()
         await self._prewarm_specific(self.model, "main")
 
@@ -212,9 +231,7 @@ class OllamaClient:
         raw = path.read_bytes()
         return base64.b64encode(raw).decode("utf-8")
 
-    def _build_multimodal_content(
-        self, text: str, images: list[str]
-    ) -> list[dict[str, Any]]:
+    def _build_multimodal_content(self, text: str, images: list[str]) -> list[dict[str, Any]]:
         content: list[dict[str, Any]] = []
         if text:
             content.append({"type": "text", "text": text})
@@ -227,10 +244,12 @@ class OllamaClient:
                 mime = "image/webp"
             elif img.lower().endswith(".gif"):
                 mime = "image/gif"
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": "data:%s;base64,%s" % (mime, b64)},
-            })
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:%s;base64,%s" % (mime, b64)},
+                }
+            )
         return content
 
     async def chat(
@@ -309,17 +328,15 @@ class OllamaClient:
         result = list(messages)
         if result and result[-1]["role"] == "user":
             last = dict(result[-1])
-            last["content"] = self._build_multimodal_content(
-                last.get("content", ""), images
-            )
+            last["content"] = self._build_multimodal_content(last.get("content", ""), images)
             result[-1] = last
         else:
-            result.append({
-                "role": "user",
-                "content": self._build_multimodal_content(
-                    "Analiza esta imagen.", images
-                ),
-            })
+            result.append(
+                {
+                    "role": "user",
+                    "content": self._build_multimodal_content("Analiza esta imagen.", images),
+                }
+            )
         return result
 
     async def _chat_sync(self, params: dict[str, Any]) -> str:
@@ -328,14 +345,16 @@ class OllamaClient:
             extra_body={
                 "keep_alive": -1,
                 "options": {"num_ctx": 2048},
-            }
+            },
         )
         content = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
         if usage:
             logger.debug(
                 "Ollama usage: prompt=%d completion=%d total=%d",
-                usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens,
             )
         return content
 
@@ -346,7 +365,7 @@ class OllamaClient:
             extra_body={
                 "keep_alive": -1,
                 "options": {"num_ctx": 2048},
-            }
+            },
         )
         async for chunk in stream_response:
             if chunk.choices and len(chunk.choices) > 0:
@@ -396,10 +415,14 @@ class OllamaClient:
         }
 
         import time as _time
+
         _ts_b2 = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
         logger.info(
             "[TELEMETRY B2] chat_with_tools -> API Ollama [%s] model=%s msgs=%d tools=%d",
-            _ts_b2, self.model, len(messages), len(tools),
+            _ts_b2,
+            self.model,
+            len(messages),
+            len(tools),
         )
         _t_api_start = _time.time()
 
@@ -409,13 +432,14 @@ class OllamaClient:
                 extra_body={
                     "keep_alive": -1,
                     "options": {"num_ctx": 4096},
-                }
+                },
             )
             _elapsed_api = _time.time() - _t_api_start
             _ts_d = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
             logger.info(
                 "[TELEMETRY D] Respuesta cruda de Ollama tras %.1f segundos [%s]",
-                _elapsed_api, _ts_d,
+                _elapsed_api,
+                _ts_d,
             )
             message = response.choices[0].message
             content = message.content or ""
@@ -423,14 +447,16 @@ class OllamaClient:
             if message.tool_calls and len(message.tool_calls) > 0:
                 tool_calls = []
                 for tc in message.tool_calls:
-                    tool_calls.append({
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    })
+                    tool_calls.append(
+                        {
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                    )
             return content, tool_calls
 
         try:
@@ -469,12 +495,19 @@ class OllamaClient:
                 extra_body={
                     "keep_alive": 0,
                     "options": {"num_ctx": 2048, "num_thread": 8},
-                }
+                },
             )
             content = response.choices[0].message.content or ""
             return content
-        except (TimeoutError, httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
-            logger.warning("[VISION] Error de red (%s), reconstruyendo cliente HTTPX...", type(e).__name__)
+        except (
+            TimeoutError,
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.RemoteProtocolError,
+        ) as e:
+            logger.warning(
+                "[VISION] Error de red (%s), reconstruyendo cliente HTTPX...", type(e).__name__
+            )
             try:
                 await self._client.close()
             except Exception:

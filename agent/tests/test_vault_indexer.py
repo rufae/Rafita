@@ -1,4 +1,5 @@
 """Tests for vault_indexer.py — chunking, parsing, indexing logic."""
+
 import pytest
 
 from src.utils.vault_indexer import (
@@ -44,7 +45,9 @@ class TestChunkByHeadings:
         chunks = chunk_by_headings(sample_md_content, max_tokens=500, overlap_tokens=50)
         assert len(chunks) > 0
         headings = [c["heading"] for c in chunks]
-        assert "Ingresos" in headings or any("Ingresos" in c.get("heading_path", "") for c in chunks)
+        assert "Ingresos" in headings or any(
+            "Ingresos" in c.get("heading_path", "") for c in chunks
+        )
 
     def test_chunks_h3_subheadings(self):
         content = """---

@@ -40,7 +40,8 @@ async def create_backup(chat_id: int) -> bytes | None:
         size_bytes = buffer.getbuffer().nbytes
         logger.info(
             "Backup created for chat %d: %d bytes",
-            chat_id, size_bytes,
+            chat_id,
+            size_bytes,
         )
         return buffer.getvalue()
 
@@ -72,13 +73,15 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             document=io.BytesIO(backup_data),
             filename=filename,
             caption=f"📦 Respaldo Rafita - {timestamp}\n"
-                    f"• Base de datos: rafita.db\n"
-                    f"• Archivos: excels, exports\n"
-                    f"• Tamaño: {len(backup_data) / 1024:.1f} KB",
+            f"• Base de datos: rafita.db\n"
+            f"• Archivos: excels, exports\n"
+            f"• Tamaño: {len(backup_data) / 1024:.1f} KB",
         )
         logger.info(
             "Backup sent to user %d: %s (%d bytes)",
-            user.id, filename, len(backup_data),
+            user.id,
+            filename,
+            len(backup_data),
         )
     except Exception as e:
         logger.exception("Failed to send backup to user %d: %s", user.id, e)

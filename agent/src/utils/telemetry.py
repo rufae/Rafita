@@ -10,9 +10,7 @@ import uuid
 from threading import Lock
 from typing import Any
 
-_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "correlation_id", default=""
-)
+_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlation_id", default="")
 
 
 def new_correlation_id() -> str:
@@ -78,10 +76,7 @@ class MetricsRegistry:
         return {
             "counters": self.get_counters(),
             "gauges": self.get_gauges(),
-            "histograms": {
-                name: self.get_histogram_stats(name)
-                for name in self._histograms
-            },
+            "histograms": {name: self.get_histogram_stats(name) for name in self._histograms},
         }
 
     def reset(self) -> None:
