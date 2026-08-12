@@ -10,7 +10,10 @@ def setup_logging(log_dir: Path | None = None) -> logging.Logger:
     if log_dir is None:
         log_dir = settings.log_path
 
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        pass
 
     log_format = "%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
@@ -28,25 +31,31 @@ def setup_logging(log_dir: Path | None = None) -> logging.Logger:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    file_handler = RotatingFileHandler(
-        filename=str(log_dir / "rafita.log"),
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
+    try:
+        file_handler = RotatingFileHandler(
+            filename=str(log_dir / "rafita.log"),
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except (PermissionError, OSError):
+        pass
 
-    error_handler = RotatingFileHandler(
-        filename=str(log_dir / "error.log"),
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
-        encoding="utf-8",
-    )
-    error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter(formatter)
-    root_logger.addHandler(error_handler)
+    try:
+        error_handler = RotatingFileHandler(
+            filename=str(log_dir / "error.log"),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(formatter)
+        root_logger.addHandler(error_handler)
+    except (PermissionError, OSError):
+        pass
 
     httpx_logger = logging.getLogger("httpx")
     httpx_logger.setLevel(logging.WARNING)
