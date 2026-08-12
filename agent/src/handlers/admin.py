@@ -47,7 +47,7 @@ async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     title = args[title_start_idx]
-    description = " ".join(args[title_start_idx + 1:]) if len(args) > title_start_idx + 1 else None
+    description = " ".join(args[title_start_idx + 1 :]) if len(args) > title_start_idx + 1 else None
 
     event_id = await db.add_event(
         chat_id=user.id,
@@ -58,7 +58,10 @@ async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(
         "Event created: user=%d title=%s datetime=%s id=%d",
-        user.id, title, event_dt, event_id,
+        user.id,
+        title,
+        event_dt,
+        event_id,
     )
 
     await message.reply_text(
@@ -121,9 +124,7 @@ async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 exp_date = datetime.strptime(arg.split(":", 1)[1], "%Y-%m-%d")
                 expires_at = exp_date.strftime("%Y-%m-%d %H:%M:%S")
             except ValueError:
-                await message.reply_text(
-                    "Formato de expiración inválido. Usa: expira:YYYY-MM-DD"
-                )
+                await message.reply_text("Formato de expiración inválido. Usa: expira:YYYY-MM-DD")
                 return
         elif arg in ("info", "warning", "urgent"):
             alert_type = arg
@@ -148,7 +149,9 @@ async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(
         "Alert created: user=%d type=%s id=%d",
-        user.id, alert_type, alert_id,
+        user.id,
+        alert_type,
+        alert_id,
     )
 
     await message.reply_text(
@@ -225,9 +228,7 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     admin_ids = settings.admin_ids
     if admin_ids and user.id not in admin_ids:
-        await message.reply_text(
-            " Solo los administradores pueden configurar Google Calendar."
-        )
+        await message.reply_text(" Solo los administradores pueden configurar Google Calendar.")
         return
 
     instructions = (

@@ -128,13 +128,13 @@ class VectorManager:
         if new_ids:
             await loop.run_in_executor(
                 None,
-                lambda: self._collection.add(
-                    ids=new_ids, documents=new_docs, metadatas=new_metas
-                ),
+                lambda: self._collection.add(ids=new_ids, documents=new_docs, metadatas=new_metas),
             )
         logger.info(
             "Vector DB: added %d chunks from %s (%d already existed)",
-            len(new_ids), file_path, len(ids) - len(new_ids),
+            len(new_ids),
+            file_path,
+            len(ids) - len(new_ids),
         )
         return {
             "success": True,
@@ -192,31 +192,45 @@ class VectorManager:
                     break
                 except Exception as e:
                     if attempt < 2:
-                        wait = 2 ** attempt
+                        wait = 2**attempt
                         logger.warning(
                             "Embedding chunk %d/%d of '%s' failed (attempt %d/3): %s. Retrying in %ds...",
-                            i + 1, len(chunks), note_path, attempt + 1, e, wait,
+                            i + 1,
+                            len(chunks),
+                            note_path,
+                            attempt + 1,
+                            e,
+                            wait,
                         )
                         await asyncio.sleep(wait)
                     else:
                         logger.error(
                             "Chunk %d/%d of '%s' FAILED after 3 attempts: %s. Skipping.",
-                            i + 1, len(chunks), note_path, e,
+                            i + 1,
+                            len(chunks),
+                            note_path,
+                            e,
                         )
                         skipped += 1
         if added > 0:
             logger.info(
                 "Vector DB: indexed %d chunks for %s (%d skipped)",
-                added, note_path, skipped,
+                added,
+                note_path,
+                skipped,
             )
         return {
             "success": True,
             "chunks_added": added,
             "chunks_skipped": skipped,
-            "message": "Indexados %d fragmentos (%d omitidos)." % (added, skipped) if skipped else "Indexados %d fragmentos." % added,
+            "message": "Indexados %d fragmentos (%d omitidos)." % (added, skipped)
+            if skipped
+            else "Indexados %d fragmentos." % added,
         }
 
-    async def query(self, query_text: str, top_k: int = 5, filter_tags: list[str] | None = None) -> dict[str, Any]:
+    async def query(
+        self, query_text: str, top_k: int = 5, filter_tags: list[str] | None = None
+    ) -> dict[str, Any]:
         if not self._initialized:
             return {"success": False, "results": [], "message": "Vector DB no inicializada."}
         if self._collection.count() == 0:
@@ -251,29 +265,27 @@ class VectorManager:
             distance = (results["distances"][0][i]) if results.get("distances") else 0.0
             note_path = meta.get("note_path", meta.get("source", "desconocido"))
             seen_notes.add(note_path)
-            formatted.append({
-                "content": doc[:800],
-                "source": meta.get("filename", note_path),
-                "note_path": note_path,
-                "heading": meta.get("heading", ""),
-                "obsidian_uri": meta.get("obsidian_uri", ""),
-                "tags": meta.get("tags_str", "").split(",") if meta.get("tags_str") else [],
-                "relevance": "%.3f" % max(0.0, 1.0 - distance / 2.0),
-            })
+            formatted.append(
+                {
+                    "content": doc[:800],
+                    "source": meta.get("filename", note_path),
+                    "note_path": note_path,
+                    "heading": meta.get("heading", ""),
+                    "obsidian_uri": meta.get("obsidian_uri", ""),
+                    "tags": meta.get("tags_str", "").split(",") if meta.get("tags_str") else [],
+                    "relevance": "%.3f" % max(0.0, 1.0 - distance / 2.0),
+                }
+            )
         metrics.observe("embedding_query_latency", time.perf_counter() - _t0)
         if filter_tags:
-            formatted = [
-                r for r in formatted
-                if any(t in r["tags"] for t in filter_tags)
-            ]
+            formatted = [r for r in formatted if any(t in r["tags"] for t in filter_tags)]
             seen_notes = {r["note_path"] for r in formatted}
         return {
             "success": True,
             "results": formatted,
             "notes_found": list(seen_notes),
-            "message": "Encontrados %d fragmentos relevantes en %d nota%s." % (
-                len(formatted), len(seen_notes), "s" if len(seen_notes) != 1 else ""
-            ),
+            "message": "Encontrados %d fragmentos relevantes en %d nota%s."
+            % (len(formatted), len(seen_notes), "s" if len(seen_notes) != 1 else ""),
         }
 
     async def document_exists(self, file_path: str) -> bool:

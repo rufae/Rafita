@@ -2,6 +2,7 @@
 
 These tests run BEFORE splitting chat.py to catch regressions.
 """
+
 import asyncio
 import tempfile
 import shutil

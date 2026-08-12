@@ -74,6 +74,7 @@ class RafitaBot:
 
     async def _ensure_logged_in(self) -> None:
         import httpx
+
         token = settings.telegram_token
         async with httpx.AsyncClient() as client:
             r = await client.get(f"https://api.telegram.org/bot{token}/getMe")
@@ -184,17 +185,11 @@ class RafitaBot:
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._wrap(handle_message))
         )
 
-        self._app.add_handler(
-            MessageHandler(filters.VOICE, self._wrap(audio_voice_handler))
-        )
+        self._app.add_handler(MessageHandler(filters.VOICE, self._wrap(audio_voice_handler)))
 
-        self._app.add_handler(
-            MessageHandler(filters.Document.ALL, self._wrap(document_handler))
-        )
+        self._app.add_handler(MessageHandler(filters.Document.ALL, self._wrap(document_handler)))
 
-        self._app.add_handler(
-            MessageHandler(filters.PHOTO, self._wrap(photo_handler))
-        )
+        self._app.add_handler(MessageHandler(filters.PHOTO, self._wrap(photo_handler)))
 
         self._app.add_error_handler(self._error_handler)
 
@@ -212,9 +207,8 @@ class RafitaBot:
                 return await handler_fn(update, context)
             except Exception as e:
                 logger.exception("Handler error for user %d: %s", user_id, e)
-                await self._reply(
-                    update, "Ocurrió un error interno. El equipo ha sido notificado."
-                )
+                await self._reply(update, "Ocurrió un error interno. El equipo ha sido notificado.")
+
         return wrapper
 
     async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:  # type: ignore[override]
@@ -234,8 +228,11 @@ class RafitaBot:
 
     async def _raw_poll_loop(self) -> None:
         import httpx
+
         last_id = 0
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=60, write=10, pool=10)) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10, read=60, write=10, pool=10)
+        ) as client:
             while True:
                 try:
                     params = {"timeout": 50, "limit": 10}
@@ -265,6 +262,7 @@ class RafitaBot:
         chat_id = msg.get("chat", {}).get("id")
         user = msg.get("from", {})
         import time as _time
+
         _ts = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
 
         msg_type = "text"
@@ -275,9 +273,17 @@ class RafitaBot:
         elif msg.get("document"):
             msg_type = "document"
 
-        logger.info("[TELEMETRY A] Mensaje recibido [%s] [%s] chat=%d user=@%s type=%s", _ts, msg_type, chat_id, user.get("username","?"), msg_type)
+        logger.info(
+            "[TELEMETRY A] Mensaje recibido [%s] [%s] chat=%d user=@%s type=%s",
+            _ts,
+            msg_type,
+            chat_id,
+            user.get("username", "?"),
+            msg_type,
+        )
 
         from telegram import Update
+
         assert self._app is not None
         bot = self._app.bot
         update = Update.de_json(upd, bot)
@@ -305,9 +311,7 @@ class RafitaBot:
                 pass
             logger.info("RafitaBot destroyed")
 
-    async def send_proactive_message(
-        self, chat_id: int, text: str
-    ) -> bool:
+    async def send_proactive_message(self, chat_id: int, text: str) -> bool:
         if not self._app:
             logger.warning("Bot not initialized, cannot send proactive message")
             return False
@@ -323,16 +327,15 @@ class RafitaBot:
         except Exception as e:
             logger.warning(
                 "Failed to send proactive message to chat %d: %s",
-                chat_id, e,
+                chat_id,
+                e,
             )
             return False
 
     @staticmethod
     async def _reply(update: Update, text: str) -> None:
         if update.effective_message:
-            await update.effective_message.reply_text(
-                text, disable_web_page_preview=True
-            )
+            await update.effective_message.reply_text(text, disable_web_page_preview=True)
 
     @staticmethod
     async def _reply_markdown(update: Update, text: str) -> None:

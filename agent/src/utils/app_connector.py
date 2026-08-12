@@ -30,7 +30,9 @@ class AppConnector:
         for row in rows:
             self._connectors[row["name"]] = {
                 "type": row["connector_type"],
-                "credentials": json.loads(decrypt_value(row["credentials_enc"])) if row["credentials_enc"] else {},
+                "credentials": json.loads(decrypt_value(row["credentials_enc"]))
+                if row["credentials_enc"]
+                else {},
                 "config": json.loads(row["config_json"]) if row["config_json"] else {},
                 "is_active": bool(row["is_active"]),
             }
@@ -44,9 +46,7 @@ class AppConnector:
     ) -> int:
         cred_enc = encrypt_value(json.dumps(credentials, ensure_ascii=False))
         config_json = json.dumps(config, ensure_ascii=False)
-        row = await db.execute_fetchone(
-            "SELECT id FROM app_connectors WHERE name = ?", (name,)
-        )
+        row = await db.execute_fetchone("SELECT id FROM app_connectors WHERE name = ?", (name,))
         if row:
             await db.execute(
                 "UPDATE app_connectors SET connector_type=?, credentials_enc=?, config_json=?, is_active=1, updated_at=? WHERE name=?",
@@ -56,7 +56,14 @@ class AppConnector:
             return row["id"]
         record_id = await db.execute_insert(
             "INSERT INTO app_connectors (name, connector_type, credentials_enc, config_json, is_active, created_at, updated_at) VALUES (?,?,?,?,1,?,?)",
-            (name, connector_type, cred_enc, config_json, datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
+            (
+                name,
+                connector_type,
+                cred_enc,
+                config_json,
+                datetime.utcnow().isoformat(),
+                datetime.utcnow().isoformat(),
+            ),
         )
         self._connectors[name] = {
             "type": connector_type,
@@ -78,12 +85,14 @@ class AppConnector:
     def list_connectors(self) -> list[dict[str, Any]]:
         result = []
         for name, info in self._connectors.items():
-            result.append({
-                "name": name,
-                "type": info["type"],
-                "is_active": info["is_active"],
-                "config": info["config"],
-            })
+            result.append(
+                {
+                    "name": name,
+                    "type": info["type"],
+                    "is_active": info["is_active"],
+                    "config": info["config"],
+                }
+            )
         return result
 
     def get_connector(self, name: str) -> dict[str, Any] | None:
@@ -132,12 +141,14 @@ class AppConnector:
                     headers_list = msg_data.get("payload", {}).get("headers", [])
                     subject = next((h["value"] for h in headers_list if h["name"] == "Subject"), "")
                     sender = next((h["value"] for h in headers_list if h["name"] == "From"), "")
-                    results.append({
-                        "id": msg_id,
-                        "subject": subject,
-                        "from": sender,
-                        "snippet": msg_data.get("snippet", ""),
-                    })
+                    results.append(
+                        {
+                            "id": msg_id,
+                            "subject": subject,
+                            "from": sender,
+                            "snippet": msg_data.get("snippet", ""),
+                        }
+                    )
             logger.info("Gmail: fetched %d urgent emails", len(results))
             return results
         except Exception as e:

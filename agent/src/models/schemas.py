@@ -40,7 +40,7 @@ class ConversationContext(BaseModel):
         )
         self.messages.append(msg)
         if len(self.messages) > self.max_history:
-            self.messages = self.messages[-self.max_history:]
+            self.messages = self.messages[-self.max_history :]
         return msg
 
     def to_ollama_messages(self) -> list[dict[str, str]]:

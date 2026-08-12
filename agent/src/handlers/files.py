@@ -68,7 +68,6 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 EXTRACTABLE_EXTENSIONS = {".pdf", ".txt", ".md", ".csv", ".docx"}
 
 
-
 def _safe_filename(name: str) -> str:
     name = name.strip()
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
@@ -92,6 +91,7 @@ def _extract_text_from_file(file_path: Path) -> str:
     try:
         if ext == ".pdf":
             from pypdf import PdfReader
+
             reader = PdfReader(str(file_path))
             parts = []
             for page in reader.pages:
@@ -101,6 +101,7 @@ def _extract_text_from_file(file_path: Path) -> str:
             return "\n\n".join(parts)
         elif ext == ".docx":
             from docx import Document
+
             doc = Document(str(file_path))
             parts = []
             for para in doc.paragraphs:
@@ -129,7 +130,7 @@ def _generate_frontmatter(
     tags_yaml = "[%s]" % ", ".join(tags) if tags else "[]"
     fm = (
         "---\n"
-        'id: %s\n'
+        "id: %s\n"
         'title: "%s"\n'
         "type: %s\n"
         "tags: %s\n"
@@ -152,8 +153,12 @@ def _generate_frontmatter(
 
 
 def _create_companion_note(
-    vault_path: Path, saved_file: Path, extracted_text: str,
-    note_type: str, tags: list, summary: str,
+    vault_path: Path,
+    saved_file: Path,
+    extracted_text: str,
+    note_type: str,
+    tags: list,
+    summary: str,
 ) -> Path | None:
     if not saved_file.exists():
         return None
@@ -196,7 +201,9 @@ def _create_companion_note(
     note_path.write_text("\n".join(content_parts), encoding="utf-8")
     logger.info(
         "Companion note created: %s -> %s (%d chars extracted)",
-        saved_file.name, note_name, len(extracted_text),
+        saved_file.name,
+        note_name,
+        len(extracted_text),
     )
     return note_path
 
@@ -238,6 +245,7 @@ async def _classify_file_with_ai(
             max_tokens=200,
         )
         import json
+
         match = re.search(r"\{.*\}", content, re.DOTALL)
         if match:
             result = json.loads(match.group())
@@ -248,8 +256,13 @@ async def _classify_file_with_ai(
 
 
 async def _process_uploaded_file(
-    update: Update, file_path: Path, original_name: str, ext: str,
-    caption: str | None, file_size: int, chat_id: int,
+    update: Update,
+    file_path: Path,
+    original_name: str,
+    ext: str,
+    caption: str | None,
+    file_size: int,
+    chat_id: int,
 ) -> None:
     is_image = ext.lower() in IMAGE_EXTENSIONS
     if is_image:
@@ -263,7 +276,11 @@ async def _process_uploaded_file(
         logger.info("Text extracted from %s: %d chars", original_name, len(extracted_text))
 
     ai_result = await _classify_file_with_ai(
-        original_name, caption or "", ext, file_size, extracted_text,
+        original_name,
+        caption or "",
+        ext,
+        file_size,
+        extracted_text,
     )
     ai_name = ai_result.get("name", "")
     ai_folder = ai_result.get("folder", "")
@@ -300,8 +317,12 @@ async def _process_uploaded_file(
     note_path = None
     if extracted_text:
         note_path = _create_companion_note(
-            vault_path, dest_path, extracted_text,
-            ai_type, ai_tags, ai_summary,
+            vault_path,
+            dest_path,
+            extracted_text,
+            ai_type,
+            ai_tags,
+            ai_summary,
         )
 
     lines = [
@@ -337,9 +358,7 @@ async def _process_uploaded_file(
         except Exception as e:
             logger.debug("Voice reply failed for file ingest: %s", e)
 
-    logger.info(
-        "File ingested: %s -> %s (AI: %s)", original_name, relative, ai_reason or "default"
-    )
+    logger.info("File ingested: %s -> %s (AI: %s)", original_name, relative, ai_reason or "default")
 
 
 def _format_size(size_bytes: int) -> str:
@@ -367,6 +386,7 @@ async def _handle_credentials_file(
     CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
     dest = CREDENTIALS_DIR / filename
     import shutil
+
     shutil.copy2(str(file_path), str(dest))
     await update.effective_message.reply_text(
         "✅ *Credencial guardada exitosamente!*"
@@ -404,8 +424,13 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
         await message.reply_text("Descargando y clasificando archivo...")
         await _process_uploaded_file(
-            update, file_path, original_name, ext,
-            message.caption, doc.file_size or 0, user.id,
+            update,
+            file_path,
+            original_name,
+            ext,
+            message.caption,
+            doc.file_size or 0,
+            user.id,
         )
     except Exception as e:
         logger.exception("Document handler error for user %d", user.id)
@@ -442,8 +467,13 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             await message.reply_text("Descargando y clasificando imagen...")
             await _process_uploaded_file(
-                update, file_path, file_name, ".jpg",
-                None, photo.file_size or 0, user.id,
+                update,
+                file_path,
+                file_name,
+                ".jpg",
+                None,
+                photo.file_size or 0,
+                user.id,
             )
     except Exception as e:
         logger.exception("Photo handler error for user %d", user.id)
@@ -454,17 +484,91 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 _SEMANTIC_STOP_WORDS = {
-    "guarda", "guardame", "guárdame", "guardar", "imagen", "foto", "picture",
-    "siguiente", "esta", "ese", "esa", "del", "de", "la", "el", "las", "los",
-    "un", "una", "unos", "unas", "y", "o", "a", "en", "por", "para", "con",
-    "sin", "sobre", "tras", "me", "te", "se", "le", "les", "lo", "mi", "tu",
-    "su", "es", "son", "ser", "estar", "este", "estos", "estas",
-    "que", "como", "cual", "cuales", "cuando", "donde", "quien", "quiero",
-    "puedes", "puede", "haz", "hazme", "dame", "muestra", "ver",
-    "the", "an", "of", "in", "on", "at", "to", "for", "with",
-    "analiza", "describe", "mira", "observa", "chequea", "revisa",
-    "porfavor", "favor", "esto", "dela",
-    "escudo", "logo", "simbolo", "captura",
+    "guarda",
+    "guardame",
+    "guárdame",
+    "guardar",
+    "imagen",
+    "foto",
+    "picture",
+    "siguiente",
+    "esta",
+    "ese",
+    "esa",
+    "del",
+    "de",
+    "la",
+    "el",
+    "las",
+    "los",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "y",
+    "o",
+    "a",
+    "en",
+    "por",
+    "para",
+    "con",
+    "sin",
+    "sobre",
+    "tras",
+    "me",
+    "te",
+    "se",
+    "le",
+    "les",
+    "lo",
+    "mi",
+    "tu",
+    "su",
+    "es",
+    "son",
+    "ser",
+    "estar",
+    "este",
+    "estos",
+    "estas",
+    "que",
+    "como",
+    "cual",
+    "cuales",
+    "cuando",
+    "donde",
+    "quien",
+    "quiero",
+    "puedes",
+    "puede",
+    "haz",
+    "hazme",
+    "dame",
+    "muestra",
+    "ver",
+    "the",
+    "an",
+    "of",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "with",
+    "analiza",
+    "describe",
+    "mira",
+    "observa",
+    "chequea",
+    "revisa",
+    "porfavor",
+    "favor",
+    "esto",
+    "dela",
+    "escudo",
+    "logo",
+    "simbolo",
+    "captura",
 }
 
 
@@ -476,32 +580,29 @@ def _extract_semantic_name(caption: str, extracted_text: str = "") -> str:
         return "imagen_%s" % datetime.now().strftime("%Y%m%d_%H%M%S")
 
     patterns = [
-        r'(?:escudo|logo|símbolo)\s+(?:del?\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ]?[a-záéíóúñ]+)*)',
-        r'(?:club|equipo|asociación)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ]?[a-záéíóúñ]+)*)',
-        r'([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*)',
+        r"(?:escudo|logo|símbolo)\s+(?:del?\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ]?[a-záéíóúñ]+)*)",
+        r"(?:club|equipo|asociación)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ]?[a-záéíóúñ]+)*)",
+        r"([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*)",
     ]
     for pattern in patterns:
         matches = re.findall(pattern, source)
         if matches:
             name = matches[0].strip()
-            name = re.sub(r'\s+', '_', name)
-            name = re.sub(r'[^\w]', '', name)
+            name = re.sub(r"\s+", "_", name)
+            name = re.sub(r"[^\w]", "", name)
             if len(name) > 2:
                 timestamp = datetime.now().strftime("%Y%m%d")
                 return "%s_%s" % (name, timestamp)
 
-    words = re.findall(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]+', source)
-    significant = [
-        w for w in words
-        if w.lower() not in _SEMANTIC_STOP_WORDS and len(w) > 2
-    ]
+    words = re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ]+", source)
+    significant = [w for w in words if w.lower() not in _SEMANTIC_STOP_WORDS and len(w) > 2]
     if not significant:
         significant = [w for w in words if len(w) > 2]
     if not significant:
         return "imagen_%s" % datetime.now().strftime("%Y%m%d_%H%M%S")
     name_parts = significant[:3]
     semantic = "_".join(name_parts)
-    semantic = re.sub(r'[^\w]', '', semantic)
+    semantic = re.sub(r"[^\w]", "", semantic)
     timestamp = datetime.now().strftime("%Y%m%d")
     return "%s_%s" % (semantic, timestamp)
 
@@ -514,11 +615,10 @@ async def _process_vision_image(
     from src.utils.obsidian_manager import create_note_with_image, save_attachment
 
     if context is not None:
-        context.user_data['processing_image'] = True
+        context.user_data["processing_image"] = True
 
     await db.save_chat_message(
-        chat_id, MessageRole.user.value,
-        "[Envió una imagen. Caption: %s]" % caption[:200]
+        chat_id, MessageRole.user.value, "[Envió una imagen. Caption: %s]" % caption[:200]
     )
 
     await update.effective_message.reply_text(
@@ -574,15 +674,13 @@ async def _process_vision_image(
                 "❌ El análisis de imagen superó el tiempo límite. Intenta con una imagen más pequeña."
             )
             if context is not None:
-                context.user_data['processing_image'] = False
+                context.user_data["processing_image"] = False
             return
     except Exception as e:
         logger.exception("Vision extraction error for user %d", chat_id)
-        await update.effective_message.reply_text(
-            "Error al analizar la imagen: %s" % e
-        )
+        await update.effective_message.reply_text("Error al analizar la imagen: %s" % e)
         if context is not None:
-            context.user_data['processing_image'] = False
+            context.user_data["processing_image"] = False
         return
 
     gc.collect()
@@ -601,11 +699,12 @@ async def _process_vision_image(
             "No pude extraer información relevante de la imagen."
         )
         await db.save_chat_message(
-            chat_id, MessageRole.assistant.value,
-            "No pude extraer información relevante de la imagen."
+            chat_id,
+            MessageRole.assistant.value,
+            "No pude extraer información relevante de la imagen.",
         )
         if context is not None:
-            context.user_data['processing_image'] = False
+            context.user_data["processing_image"] = False
         return
 
     clean_name = _extract_semantic_name(caption, extracted_text)
@@ -615,7 +714,10 @@ async def _process_vision_image(
     if not attach_result.get("success"):
         logger.warning("[VISION] No se pudo guardar attachment: %s", attach_result.get("message"))
         await update.effective_message.reply_text(
-            "⚠️ %s" % attach_result.get("message", "No se pudo escribir en la carpeta Attachments de Obsidian.")
+            "⚠️ %s"
+            % attach_result.get(
+                "message", "No se pudo escribir en la carpeta Attachments de Obsidian."
+            )
         )
     else:
         logger.info("[VISION] Imagen guardada en Obsidian: %s", attach_result.get("filename"))
@@ -629,11 +731,12 @@ async def _process_vision_image(
     del image_path
 
     if context is not None:
-        context.user_data['processing_image'] = False
+        context.user_data["processing_image"] = False
 
     await db.update_last_chat_message(
-        chat_id, MessageRole.user.value,
-        "[Envió una imagen. Descripción de la IA: %s]" % extracted_text.strip()[:300]
+        chat_id,
+        MessageRole.user.value,
+        "[Envió una imagen. Descripción de la IA: %s]" % extracted_text.strip()[:300],
     )
 
     await update.effective_message.reply_text(
@@ -657,16 +760,19 @@ async def _process_vision_image(
     )
 
     augmented_user_msg = "Contenido extraído de la imagen:\n%s\n\nInstrucción del usuario: %s" % (
-        extracted_text.strip(), caption
+        extracted_text.strip(),
+        caption,
     )
 
     messages_for_llm = [{"role": "system", "content": system_prompt}]
     for msg in history[:-1]:
         c = msg.get("content", "")
-        messages_for_llm.append({
-            "role": msg["role"],
-            "content": c[:MAX_CONTENT_LEN] + ("..." if len(c) > MAX_CONTENT_LEN else ""),
-        })
+        messages_for_llm.append(
+            {
+                "role": msg["role"],
+                "content": c[:MAX_CONTENT_LEN] + ("..." if len(c) > MAX_CONTENT_LEN else ""),
+            }
+        )
     messages_for_llm.append({"role": "user", "content": augmented_user_msg})
 
     try:
@@ -692,7 +798,7 @@ async def _process_vision_image(
             "Error al procesar la imagen con herramientas: %s" % e
         )
         if context is not None:
-            context.user_data['processing_image'] = False
+            context.user_data["processing_image"] = False
         return
 
     if tool_calls:
@@ -701,6 +807,7 @@ async def _process_vision_image(
             func_name = tc["function"]["name"]
             try:
                 import json
+
                 args = json.loads(tc["function"]["arguments"])
             except json.JSONDecodeError:
                 args = {}
@@ -715,7 +822,9 @@ async def _process_vision_image(
             parts.append(r.get("message", ""))
         text_to_save = "\n\n".join(parts)
     else:
-        text_to_save = content if content else "Procesé la imagen pero no se requirió ninguna acción."
+        text_to_save = (
+            content if content else "Procesé la imagen pero no se requirió ninguna acción."
+        )
 
     note_title = "Imagen %s" % datetime.now().strftime("%Y-%m-%d %H%M")
     if attach_result.get("success"):
@@ -729,10 +838,12 @@ async def _process_vision_image(
             text_to_save += "\n\n📎 Guardado en Obsidian: %s" % note_result.get("filepath", "")
         else:
             logger.warning("[VISION] No se pudo crear nota: %s", note_result.get("message"))
-            text_to_save += "\n\n⚠️ %s" % note_result.get("message", "No se pudo crear la nota en Obsidian.")
+            text_to_save += "\n\n⚠️ %s" % note_result.get(
+                "message", "No se pudo crear la nota en Obsidian."
+            )
 
     await db.save_chat_message(chat_id, MessageRole.assistant.value, text_to_save[:2000])
     await update.effective_message.reply_text(text_to_save[:4096])
 
     if context is not None:
-        context.user_data['processing_image'] = False
+        context.user_data["processing_image"] = False

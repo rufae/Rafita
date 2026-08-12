@@ -64,7 +64,9 @@ class Settings(BaseSettings):
                 continue
         return result
 
-    @field_validator("data_dir", "db_path", "excel_dir", "export_dir", "log_dir", "vector_db_dir", mode="before")
+    @field_validator(
+        "data_dir", "db_path", "excel_dir", "export_dir", "log_dir", "vector_db_dir", mode="before"
+    )
     @classmethod
     def validate_paths(cls, v: str) -> str:
         return v.strip().rstrip("/\\")
@@ -110,6 +112,7 @@ class Settings(BaseSettings):
         if not self.encryption_key:
             return b""
         import base64
+
         return base64.urlsafe_b64decode(self.encryption_key)
 
 

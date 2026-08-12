@@ -26,10 +26,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     lines.append("*🤖 Estado General*")
     health_raw = await llm.check_health()
     if health_raw.get("status") == "healthy":
-        lines.append("  IA (Ollama): ✅ %s (%dms)" % (
-            health_raw.get("model", "N/A"),
-            health_raw.get("latency_ms", 0),
-        ))
+        lines.append(
+            "  IA (Ollama): ✅ %s (%dms)"
+            % (
+                health_raw.get("model", "N/A"),
+                health_raw.get("latency_ms", 0),
+            )
+        )
     else:
         lines.append("  IA (Ollama): ❌ %s" % health_raw.get("error", "desconocido"))
     lines.append("  Telegram Bot: ✅ polling activo")
@@ -61,12 +64,15 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         total_size = sum(f.stat().st_size for f in vault.rglob("*") if f.is_file())
         lines.append("  Notas .md: %d" % len(md_files))
         lines.append("  Tamaño total: %s" % _format_size(total_size))
-        folder_count = len([d for d in vault.iterdir() if d.is_dir() and not d.name.startswith(".")])
+        folder_count = len(
+            [d for d in vault.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        )
         lines.append("  Subcarpetas: %d" % folder_count)
     lines.append("")
 
     lines.append("*⚙️ Herramientas (Tools)*")
     from src.handlers.chat import TOOLS_DEFINITIONS
+
     tool_names = [t["function"]["name"] for t in TOOLS_DEFINITIONS]
     lines.append("  Registradas: %d" % len(tool_names))
     for name in tool_names:
@@ -77,7 +83,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         usage = shutil.disk_usage(str(vault if vault.exists() else "/"))
         lines.append("  Total: %s" % _format_size(usage.total))
-        lines.append("  Usado: %s (%d%%)" % (_format_size(usage.used), round(usage.used / usage.total * 100)))
+        lines.append(
+            "  Usado: %s (%d%%)" % (_format_size(usage.used), round(usage.used / usage.total * 100))
+        )
         lines.append("  Libre: %s" % _format_size(usage.free))
     except Exception:
         pass
@@ -97,11 +105,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     piper_ok = False
     try:
         from faster_whisper import WhisperModel  # noqa: F401
+
         whisper_ok = True
     except ImportError:
         pass
     try:
         from piper import PiperVoice  # noqa: F401
+
         piper_ok = True
     except ImportError:
         pass
@@ -139,7 +149,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     max_len = 4096
     if len(text) > max_len:
         for i in range(0, len(text), max_len):
-            await message.reply_text(text[i:i + max_len], parse_mode="Markdown")
+            await message.reply_text(text[i : i + max_len], parse_mode="Markdown")
     else:
         await message.reply_text(text, parse_mode="Markdown")
     logger.info("Status panel sent to user %d", user.id)
@@ -204,7 +214,8 @@ async def cerebro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             for q in brain_stats["recent_queries"][:5]:
                 query_preview = q["query_text"][:60]
                 lines.append(
-                    "    *%s* → %d chunks (%.0f%%)" % (
+                    "    *%s* → %d chunks (%.0f%%)"
+                    % (
                         query_preview,
                         q["chunks_retrieved"],
                         q["top_relevance"] * 100,
@@ -252,6 +263,7 @@ async def escanear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     try:
         from src.utils.message_scanner import scan_messages
+
         result = await scan_messages(user.id, since=since, limit=50)
     except Exception as e:
         logger.exception("Escanear error for user %d", user.id)
@@ -271,7 +283,8 @@ async def escanear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if result["messages_scanned"] == 0:
             lines.append("\n⚠️ No se encontraron mensajes nuevos para procesar.")
         await message.reply_text(
-            "\n".join(lines), parse_mode="Markdown",
+            "\n".join(lines),
+            parse_mode="Markdown",
         )
     else:
         await message.reply_text("❌ %s" % result.get("message", "Error"))
@@ -296,7 +309,8 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
     value = " ".join(args[1:])
     await db.store_credential(user.id, service, value)
     await message.reply_text(
-        "🔐 Clave guardada para `%s` (cifrada AES-256).\nUsa `/claves` para ver tus servicios." % service,
+        "🔐 Clave guardada para `%s` (cifrada AES-256).\nUsa `/claves` para ver tus servicios."
+        % service,
         parse_mode="Markdown",
     )
     logger.info("Credential stored: user=%d service=%s", user.id, service)
@@ -330,7 +344,9 @@ async def claves_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     creds = await db.list_credentials(user.id)
     if not creds:
-        await message.reply_text("No tienes claves guardadas.\nUsa `/guardar_clave <servicio> <valor>`.")
+        await message.reply_text(
+            "No tienes claves guardadas.\nUsa `/guardar_clave <servicio> <valor>`."
+        )
         return
     lines = ["🔐 *Tus claves guardadas (AES-256)*\n"]
     for c in creds:
@@ -371,9 +387,13 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         vstats = await vector_db.get_stats()
-        brain_data.append("Chunks indexados: %d en %d documentos" % (
-            vstats["total_chunks"], vstats["total_documents"],
-        ))
+        brain_data.append(
+            "Chunks indexados: %d en %d documentos"
+            % (
+                vstats["total_chunks"],
+                vstats["total_documents"],
+            )
+        )
     except Exception:
         pass
 
@@ -402,9 +422,13 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                                     elif tag:
                                         topics[tag] += 1
                 mtime = md_file.stat().st_mtime
-                brain_data.append("nota: %s mtime: %.0f" % (
-                    str(md_file.relative_to(vault)), mtime,
-                ))
+                brain_data.append(
+                    "nota: %s mtime: %.0f"
+                    % (
+                        str(md_file.relative_to(vault)),
+                        mtime,
+                    )
+                )
             except Exception:
                 pass
 
@@ -416,25 +440,31 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if brain_stats["recent_queries"]:
             brain_data.append("Consultas recientes:")
             for q in brain_stats["recent_queries"][:5]:
-                brain_data.append("  - '%s' (%d chunks)" % (q["query_text"][:80], q["chunks_retrieved"]))
+                brain_data.append(
+                    "  - '%s' (%d chunks)" % (q["query_text"][:80], q["chunks_retrieved"])
+                )
     except Exception:
         pass
 
     brain_text = "\n".join(brain_data)
 
     from src.ollama_client import llm
+
     try:
         summary = await llm.chat(
             messages=[
-                {"role": "system", "content": (
-                    "Eres un analista de segundo cerebro. Genera un resumen claro y util "
-                    "en español a partir de estos datos. Estructura tu respuesta asi:\n"
-                    "1. *Tamaño del cerebro*: cuantas notas y chunks\n"
-                    "2. *Temas principales*: que topics dominan (por tipo y tags)\n"
-                    "3. *Actividad reciente*: consultas y notas nuevas\n"
-                    "4. *Sugerencias*: que falta o que se podria mejorar\n"
-                    "Se breve pero informativo. Max 2000 caracteres."
-                )},
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un analista de segundo cerebro. Genera un resumen claro y util "
+                        "en español a partir de estos datos. Estructura tu respuesta asi:\n"
+                        "1. *Tamaño del cerebro*: cuantas notas y chunks\n"
+                        "2. *Temas principales*: que topics dominan (por tipo y tags)\n"
+                        "3. *Actividad reciente*: consultas y notas nuevas\n"
+                        "4. *Sugerencias*: que falta o que se podria mejorar\n"
+                        "Se breve pero informativo. Max 2000 caracteres."
+                    ),
+                },
                 {"role": "user", "content": brain_text[:4000]},
             ],
             temperature=0.4,
@@ -479,7 +509,10 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         ) % topic[:400]
         title = await llm.chat(
             messages=[
-                {"role": "system", "content": "Eres un titulador de notas. Responde solo el titulo."},
+                {
+                    "role": "system",
+                    "content": "Eres un titulador de notas. Responde solo el titulo.",
+                },
                 {"role": "user", "content": title_prompt},
             ],
             temperature=0.3,
@@ -508,8 +541,13 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "## Contenido\n\n"
         "%s\n"
     ) % (
-        note_id, title, now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"),
-        title, now.strftime("%Y-%m-%d %H:%M"), topic[:3000],
+        note_id,
+        title,
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%Y-%m-%d"),
+        title,
+        now.strftime("%Y-%m-%d %H:%M"),
+        topic[:3000],
     )
 
     result = await create_or_append_note(

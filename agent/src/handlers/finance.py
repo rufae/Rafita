@@ -51,7 +51,10 @@ async def gasto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     logger.info(
         "Expense recorded: user=%d amount=%.2f category=%s id=%d",
-        user.id, amount, category, record_id,
+        user.id,
+        amount,
+        category,
+        record_id,
     )
 
     await message.reply_text(
@@ -101,7 +104,10 @@ async def ingreso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     logger.info(
         "Income recorded: user=%d amount=%.2f source=%s id=%d",
-        user.id, amount, source, record_id,
+        user.id,
+        amount,
+        source,
+        record_id,
     )
 
     await message.reply_text(
@@ -131,8 +137,7 @@ async def finanzas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if summary["transaction_count"] == 0:
         await message.reply_text(
-            "No hay registros financieros este mes. "
-            "Usa /gasto o /ingreso para comenzar."
+            "No hay registros financieros este mes. Usa /gasto o /ingreso para comenzar."
         )
         return
 
@@ -190,9 +195,7 @@ async def exportar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
 
 
-async def _export_finances(
-    update: Update, chat_id: int, full_history: bool = False
-) -> None:
+async def _export_finances(update: Update, chat_id: int, full_history: bool = False) -> None:
     message = update.effective_message
     if not message:
         return
@@ -251,7 +254,9 @@ async def _export_finances(
                 cell.alignment = Alignment(horizontal="center")
                 cell.border = thin_border
 
-            for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column):
+            for row in worksheet.iter_rows(
+                min_row=2, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column
+            ):
                 for cell in row:
                     cell.border = thin_border
 
@@ -263,16 +268,22 @@ async def _export_finances(
                 worksheet.column_dimensions[chr(64 + col_idx)].width = min(max_len + 4, 50)
 
         summary = await db.get_finance_summary(chat_id)
-        summary_df = pd.DataFrame([{
-            "Concepto": "Ingresos",
-            "Monto": summary["total_income"],
-        }, {
-            "Concepto": "Gastos",
-            "Monto": summary["total_expenses"],
-        }, {
-            "Concepto": "Balance",
-            "Monto": summary["balance"],
-        }])
+        summary_df = pd.DataFrame(
+            [
+                {
+                    "Concepto": "Ingresos",
+                    "Monto": summary["total_income"],
+                },
+                {
+                    "Concepto": "Gastos",
+                    "Monto": summary["total_expenses"],
+                },
+                {
+                    "Concepto": "Balance",
+                    "Monto": summary["balance"],
+                },
+            ]
+        )
 
         with pd.ExcelWriter(str(filepath), engine="openpyxl", mode="a") as writer:
             summary_df.to_excel(writer, sheet_name="Resumen", index=False)
@@ -296,7 +307,9 @@ async def _export_finances(
 
         logger.info(
             "Export completed: user=%d file=%s records=%d",
-            chat_id, filename, len(records),
+            chat_id,
+            filename,
+            len(records),
         )
 
     except Exception as e:

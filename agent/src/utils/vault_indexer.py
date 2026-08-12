@@ -31,7 +31,7 @@ def parse_frontmatter(content: str) -> tuple:
     if second_delim == -1:
         return {}, content
     fm_text = content[3:second_delim].strip()
-    body = content[second_delim + 3:].strip()
+    body = content[second_delim + 3 :].strip()
     try:
         metadata = yaml.safe_load(fm_text) or {}
     except yaml.YAMLError:
@@ -41,7 +41,9 @@ def parse_frontmatter(content: str) -> tuple:
     return metadata, body
 
 
-def chunk_by_headings(body: str, max_tokens: int = 500, overlap_tokens: int = 50) -> list[dict[str, Any]]:
+def chunk_by_headings(
+    body: str, max_tokens: int = 500, overlap_tokens: int = 50
+) -> list[dict[str, Any]]:
     if not body or not body.strip():
         return []
 
@@ -57,29 +59,39 @@ def chunk_by_headings(body: str, max_tokens: int = 500, overlap_tokens: int = 50
         match = heading_pattern.match(line)
         if match:
             if current_lines:
-                sections.append({
-                    "heading": current_heading,
-                    "heading_path": current_heading_path,
-                    "text": "\n".join(current_lines).strip(),
-                })
+                sections.append(
+                    {
+                        "heading": current_heading,
+                        "heading_path": current_heading_path,
+                        "text": "\n".join(current_lines).strip(),
+                    }
+                )
             level = len(match.group(1))
             heading_text = match.group(2).strip()
             current_heading = "#" * level + " " + heading_text
             if level == 1:
                 current_heading_path = heading_text
             else:
-                prefix = " > ".join(current_heading_path.split(" > ")[:-1]) if " > " in current_heading_path else current_heading_path.split(" > ")[0] if current_heading_path else ""
+                prefix = (
+                    " > ".join(current_heading_path.split(" > ")[:-1])
+                    if " > " in current_heading_path
+                    else current_heading_path.split(" > ")[0]
+                    if current_heading_path
+                    else ""
+                )
                 current_heading_path = (prefix + " > " + heading_text) if prefix else heading_text
             current_lines = []
         else:
             current_lines.append(line)
 
     if current_lines:
-        sections.append({
-            "heading": current_heading,
-            "heading_path": current_heading_path or "",
-            "text": "\n".join(current_lines).strip(),
-        })
+        sections.append(
+            {
+                "heading": current_heading,
+                "heading_path": current_heading_path or "",
+                "text": "\n".join(current_lines).strip(),
+            }
+        )
 
     if not sections:
         text = body.strip()
@@ -94,22 +106,29 @@ def chunk_by_headings(body: str, max_tokens: int = 500, overlap_tokens: int = 50
             continue
         tokens = estimate_tokens(section_text)
         if tokens <= max_tokens:
-            chunks.append({
-                "heading": section["heading"],
-                "heading_path": section["heading_path"],
-                "text": section_text,
-            })
+            chunks.append(
+                {
+                    "heading": section["heading"],
+                    "heading_path": section["heading_path"],
+                    "text": section_text,
+                }
+            )
         else:
             sub_chunks = _split_long_section(
-                section["heading"], section["heading_path"],
-                section_text, max_tokens, overlap_tokens,
+                section["heading"],
+                section["heading_path"],
+                section_text,
+                max_tokens,
+                overlap_tokens,
             )
             chunks.extend(sub_chunks)
 
     return chunks
 
 
-def _split_long_section(heading: str, heading_path: str, text: str, max_tokens: int, overlap_tokens: int) -> list[dict[str, Any]]:
+def _split_long_section(
+    heading: str, heading_path: str, text: str, max_tokens: int, overlap_tokens: int
+) -> list[dict[str, Any]]:
     words = text.split()
     max_words = int(max_tokens / TOKENS_PER_WORD_ES)
     overlap_words = int(overlap_tokens / TOKENS_PER_WORD_ES)
@@ -124,11 +143,13 @@ def _split_long_section(heading: str, heading_path: str, text: str, max_tokens: 
     while start < len(words):
         end = min(start + max_words, len(words))
         chunk_words = words[start:end]
-        chunks.append({
-            "heading": heading,
-            "heading_path": heading_path,
-            "text": " ".join(chunk_words),
-        })
+        chunks.append(
+            {
+                "heading": heading,
+                "heading_path": heading_path,
+                "text": " ".join(chunk_words),
+            }
+        )
         if end >= len(words):
             break
         start = end - overlap_words
@@ -156,7 +177,11 @@ class VaultIndexer:
     async def index_note(self, note_path: Path) -> dict[str, Any]:
         from src.utils.vector_manager import vector_db
 
-        rel_path = str(note_path.relative_to(VAULT_PATH)) if str(note_path).startswith(str(VAULT_PATH)) else note_path.name
+        rel_path = (
+            str(note_path.relative_to(VAULT_PATH))
+            if str(note_path).startswith(str(VAULT_PATH))
+            else note_path.name
+        )
         try:
             content = note_path.read_text(encoding="utf-8", errors="replace")
         except Exception as e:
@@ -178,7 +203,9 @@ class VaultIndexer:
                 "note_path": rel_path,
                 "filename": note_path.name,
                 "heading": chunk["heading_path"] or chunk["heading"],
-                "tags_str": ",".join(metadata.get("tags", [])) if isinstance(metadata.get("tags"), list) else "",
+                "tags_str": ",".join(metadata.get("tags", []))
+                if isinstance(metadata.get("tags"), list)
+                else "",
                 "note_type": str(metadata.get("type", "")),
                 "status": str(metadata.get("status", "")),
                 "updated_at": str(metadata.get("updated", "")),
@@ -190,11 +217,15 @@ class VaultIndexer:
         result = await vector_db.index_chunks(chunks_to_index)
         logger.info(
             "VaultIndexer: %s -> %d chunks (%s)",
-            rel_path, result.get("chunks_added", 0), metadata.get("type", "nota"),
+            rel_path,
+            result.get("chunks_added", 0),
+            metadata.get("type", "nota"),
         )
 
         if result.get("chunks_added", 0) > 0:
-            linked = await self._auto_link_related(note_path, rel_path, chunks_data[0]["text"][:500])
+            linked = await self._auto_link_related(
+                note_path, rel_path, chunks_data[0]["text"][:500]
+            )
             if linked > 0:
                 logger.info("VaultIndexer: %s -> auto-linked to %d notes", rel_path, linked)
 
@@ -232,7 +263,7 @@ class VaultIndexer:
         existing_paths = set()
         for item in existing:
             if isinstance(item, str):
-                match = re.search(r'\[\[([^]]+)\]\]', item)
+                match = re.search(r"\[\[([^]]+)\]\]", item)
                 if match:
                     p = match.group(1)
                     existing_paths.add(p)
@@ -243,7 +274,11 @@ class VaultIndexer:
         for p in related_paths:
             name = Path(p).name
             stem = Path(p).stem
-            if p not in existing_paths and name not in existing_paths and stem not in existing_paths:
+            if (
+                p not in existing_paths
+                and name not in existing_paths
+                and stem not in existing_paths
+            ):
                 new_links.append("[[%s]]" % p)
                 existing_paths.add(p)
                 existing_paths.add(name)
@@ -310,20 +345,26 @@ class VaultIndexer:
 
         logger.info(
             "Backfill complete: %d notas, %d chunks, %d fallos",
-            total_indexed, total_chunks, failures,
+            total_indexed,
+            total_chunks,
+            failures,
         )
         return {
             "success": True,
             "notes_indexed": total_indexed,
             "total_chunks": total_chunks,
             "failures": failures,
-            "message": "Backfill: %d notas indexadas (%d chunks), %d fallos." % (
-                total_indexed, total_chunks, failures,
+            "message": "Backfill: %d notas indexadas (%d chunks), %d fallos."
+            % (
+                total_indexed,
+                total_chunks,
+                failures,
             ),
         }
 
     async def delete_note_chunks(self, note_path: Path) -> int:
         from src.utils.vector_manager import vector_db
+
         rel_path = str(note_path.relative_to(VAULT_PATH))
         deleted = await vector_db.delete_by_source(rel_path)
         if deleted:
@@ -380,8 +421,11 @@ class VaultIndexer:
         self._shutdown_event = shutdown_event
 
         from src.utils.vector_manager import vector_db
+
         if not vector_db._initialized:
-            logger.warning("Vector DB not initialized, vault indexer will start without persistence")
+            logger.warning(
+                "Vector DB not initialized, vault indexer will start without persistence"
+            )
 
         observer = Observer()
         handler = _VaultEventHandler(self)
