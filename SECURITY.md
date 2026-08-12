@@ -126,6 +126,33 @@ exponer los puertos directamente a internet.
 ### Pipeline de ingesta de archivos
 - (Ver F2.5 para auditoría de path traversal / injection.)
 
+### Privacidad en llamadas de voz (call_rafita.html)
+
+El modo de voz usa síntesis TTS (Piper) para leer las respuestas en voz alta
+por los altavoces. Esto introduce un riesgo de privacidad distinto al del
+chat por Telegram:
+
+- **Las respuestas se pronuncian en voz alta** en el entorno físico donde esté
+  el dispositivo. Cualquier persona presente puede escucharlas.
+- **El RAG semántico puede recuperar información sin que lo anticipes**:
+  una pregunta aparentemente inocente puede hacer que `search_second_brain`
+  encuentre una nota con datos de salud, finanzas o información personal, y
+  Rafita la leerá en voz alta antes de que puedas reaccionar. A diferencia
+  de leer en pantalla (donde ves el texto y decides si seguir leyendo), aquí
+  no hay vista previa del resultado.
+- **Recomendación**: no uses el modo de voz en espacios públicos o compartidos
+  si tu vault contiene información sensible (salud, finanzas, datos personales).
+  Usa el chat de Telegram para consultas que puedan devolver datos confidenciales.
+- **Futuro (v0.2.0)**: se planea añadir filtrado por tags sensibles
+  (`salud`, `finanzas`) en el pipeline de voz para excluir automáticamente
+  esos resultados de las respuestas por audio, manteniéndolos accesibles solo
+  por texto.
+
+### Verificación de cifrado Fernet
+- Test dedicado: `agent/tests/test_fernet.py` (4 tests: roundtrip, clave inválida,
+  multi-valor con UTF-8, token manipulado). Se ejecuta en CI para verificar
+  que las actualizaciones de `cryptography` no rompan el cifrado.
+
 ---
 
 ## Checklist de seguridad para nuevas instalaciones
