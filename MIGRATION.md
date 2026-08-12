@@ -258,6 +258,55 @@ grep ENCRYPTION_KEY .env
 
 Si migras de un equipo sin GPU a uno con GPU (ej: RTX 3060):
 
+### ⚠️ Verificación Previa de GPU en Docker (CRÍTICO)
+
+**ANTES de instalar NVIDIA Container Toolkit o levantar el stack de Rafita**, verifica que Docker puede ver la GPU en absoluto. Esto te ahorrará 10+ minutos de logs confusos.
+
+#### Paso 0: Verificar que Docker ve la GPU
+
+```bash
+# Este comando debe ejecutarse ANTES de cualquier otra configuración
+docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
+```
+
+**Resultado esperado** (debe mostrar tu GPU):
+```
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.54.14              Driver Version: 550.54.14      CUDA Version: 12.6     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3060        Off |   00000000:01:00.0 Off |                  N/A |
+| 30%   35C    P8             15W /  170W |       1MiB /  12288MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+```
+
+**Si este comando falla**, significa que:
+- Docker no tiene acceso a la GPU (NVIDIA Container Toolkit no instalado o mal configurado)
+- Los drivers NVIDIA no están instalados en el host
+- La GPU no está disponible para Docker
+
+**No continúes** hasta que este comando funcione. Soluciona el problema primero.
+
+#### Troubleshooting del Paso 0
+
+**Error**: `docker: Error response from daemon: could not select device driver "" with capabilities: [[gpu]]`
+- **Causa**: NVIDIA Container Toolkit no está instalado
+- **Solución**: Instala el toolkit (ver Paso 1 abajo)
+
+**Error**: `docker: Error response from daemon: could not select device driver "nvidia"`
+- **Causa**: Docker no puede comunicarse con el driver NVIDIA
+- **Solución**: Verifica que los drivers NVIDIA están instalados en el host (`nvidia-smi` debe funcionar fuera de Docker)
+
+**Error**: `docker: Error response from daemon: error gathering device information`
+- **Causa**: Permisos insuficientes o configuración incorrecta
+- **Solución**: Reinicia Docker (`sudo systemctl restart docker`) y verifica permisos
+
+---
+
 ### Cambios Automáticos
 
 La detección automática de hardware (Fase 4) seleccionará el perfil óptimo:
@@ -318,6 +367,27 @@ Recommended profile: gpu-high (chat=gemma4:12b, embed=bge-m3/1024d, vision=llava
 ```
 
 Si ves `gpu-high` con `gemma4:12b`, la detección funcionó correctamente.
+
+### ⚠️ Lo que NO está probado todavía
+
+**Importante**: Los tests de detección de hardware (`test_hardware_detect.py`) están **mockeados**. Prueban la lógica de selección de perfiles, pero **NO validan contra hardware real**.
+
+**Lo que SÍ está probado**:
+- ✅ Lógica de selección de perfiles (gpu-high, gpu-mid, cpu-high, etc.)
+- ✅ Cálculo de VRAM desde salida de `nvidia-smi`
+- ✅ Fallbacks cuando no hay GPU
+
+**Lo que NO está probado**:
+- ❌ Detección real de RTX 3060 en el PC destino
+- ❌ Rendimiento real con gemma4:12b en GPU
+- ❌ Validación de F0.5 (relevancia RAG >60% con bge-m3)
+- ❌ Validación de F9.5/F9.6 (voz con RAG)
+
+**Estas validaciones pendientes requieren ejecutar Rafita en el PC con RTX 3060** y confirmar que:
+1. La detección de hardware identifica correctamente la GPU
+2. gemma4:12b se carga y responde en tiempo razonable
+3. Las tools se invocan fiablemente (a diferencia de qwen2.5:7b en CPU)
+4. El RAG funciona con relevancia >60% en español
 
 ### Cambios Manuales (Opcional)
 
