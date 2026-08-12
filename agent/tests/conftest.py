@@ -2,8 +2,14 @@
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+# Ensure agent/src is importable (CI environment)
+_src_dir = Path(__file__).resolve().parent.parent / "src"
+if str(_src_dir) not in sys.path:
+    sys.path.insert(0, str(_src_dir))
 
 import pytest
 
