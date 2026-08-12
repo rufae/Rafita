@@ -10,9 +10,18 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ./ollama/models:/root/.ollama
-    # Dispositivos GPU comentados: /dev/dri no disponible en WSL2
-    # Descomentar tras instalar drivers AMD para WSL2:
-    # https://www.amd.com/en/support/kb/release-notes/amdgpu-installation
+    # GPU support for NVIDIA GPUs (RTX 3060, etc.)
+    # Descomentar las siguientes líneas si tienes GPU NVIDIA y Docker >= 19.03
+    # Requiere: NVIDIA Container Toolkit instalado en el host
+    # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    # Para AMD GPUs en Linux, descomentar:
     # devices:
     #   - /dev/dri:/dev/dri
     environment:
