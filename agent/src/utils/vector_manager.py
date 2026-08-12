@@ -58,6 +58,14 @@ class OllamaEmbeddingFunction:
         return [r for r in results if r is not None]
 
 
+def _parse_tags(meta: dict[str, Any]) -> list[str]:
+    """Safely extract tags list from ChromaDB metadata (mypy-safe)."""
+    raw = meta.get("tags_str", "")
+    if isinstance(raw, str) and raw.strip():
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return []
+
+
 class VectorManager:
     def __init__(self):
         self._client: chromadb.Client | None = None
@@ -272,13 +280,17 @@ class VectorManager:
                     "note_path": note_path,
                     "heading": meta.get("heading", ""),
                     "obsidian_uri": meta.get("obsidian_uri", ""),
-                    "tags": meta.get("tags_str", "").split(",") if meta.get("tags_str") else [],
+                    "tags": _parse_tags(meta),
                     "relevance": "%.3f" % max(0.0, 1.0 - distance / 2.0),
                 }
             )
         metrics.observe("embedding_query_latency", time.perf_counter() - _t0)
         if filter_tags:
-            formatted = [r for r in formatted if any(t in r["tags"] for t in filter_tags)]
+            formatted = [
+                r
+                for r in formatted
+                if any(t in r["tags"] for t in filter_tags)  # type: ignore[operator]
+            ]
             seen_notes = {r["note_path"] for r in formatted}
         return {
             "success": True,
