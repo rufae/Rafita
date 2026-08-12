@@ -109,8 +109,12 @@ Detalle del presupuesto.
 
 class TestBuildObsidianUri:
     def test_returns_non_empty_for_valid_path(self, temp_dir):
-        """build_obsidian_uri needs vault context; test only basic structure."""
-        from src.utils.vault_indexer import build_obsidian_uri, VAULT_PATH
+        """build_obsidian_uri needs vault context; skip in CI."""
+        import os
+
+        if os.environ.get("CI"):
+            pytest.skip("Vault path not available in CI")
+        from src.utils.vault_indexer import VAULT_PATH, build_obsidian_uri
 
         note = VAULT_PATH / "test.md"
         note.touch()

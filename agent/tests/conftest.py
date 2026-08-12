@@ -32,8 +32,14 @@ def pytest_collection_modifyitems(config, items):
     if _ollama_available():
         return
     skip_marker = pytest.mark.skip(reason="Ollama not available (CI environment)")
+    ollama_classes = {
+        "TestOllamaEmbeddingFunction",
+        "TestVectorManager",
+    }
     for item in items:
-        if "OllamaEmbeddingFunction" in item.parent.name if item.parent else "":
+        if item.parent and item.parent.name in ollama_classes:
+            item.add_marker(skip_marker)
+        elif "ollama" in item.nodeid.lower():
             item.add_marker(skip_marker)
 
 
