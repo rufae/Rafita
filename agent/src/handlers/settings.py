@@ -39,6 +39,4 @@ async def modo_voz_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         logger.info("Voice replies disabled for user %d", chat_id)
     else:
-        await message.reply_text(
-            "Usa: /modo_voz on  o  /modo_voz off"
-        )
+        await message.reply_text("Usa: /modo_voz on  o  /modo_voz off")

@@ -49,12 +49,8 @@ class ProactiveWorker:
         try:
             while True:
                 now = datetime.now()
-                check_hour, check_minute = map(
-                    int, settings.proactive_check_time.split(":")
-                )
-                target = now.replace(
-                    hour=check_hour, minute=check_minute, second=0, microsecond=0
-                )
+                check_hour, check_minute = map(int, settings.proactive_check_time.split(":"))
+                target = now.replace(hour=check_hour, minute=check_minute, second=0, microsecond=0)
                 if now >= target:
                     target = target.replace(day=target.day + 1)
                 wait_seconds = (target - now).total_seconds()
@@ -78,7 +74,12 @@ class ProactiveWorker:
                 except Exception as e:
                     self._consecutive_failures += 1
                     backoff = min(self._consecutive_failures * 60, 600)
-                    logger.exception("Proactive check failed (%d): %s. Backoff %ds", self._consecutive_failures, e, backoff)
+                    logger.exception(
+                        "Proactive check failed (%d): %s. Backoff %ds",
+                        self._consecutive_failures,
+                        e,
+                        backoff,
+                    )
                     await asyncio.sleep(backoff)
         except asyncio.CancelledError:
             logger.info("ProactiveWorker loop cancelled")
@@ -136,7 +137,9 @@ class ProactiveWorker:
                 logger.info("Database VACUUM completed")
             except Exception as e:
                 logger.warning("Database VACUUM failed: %s", e)
-        logger.info("Garbage collection done: %d files removed (run #%d)", deleted, self._gc_run_count)
+        logger.info(
+            "Garbage collection done: %d files removed (run #%d)", deleted, self._gc_run_count
+        )
 
     async def _notify_recurring_alerts(self, chat_id: int) -> None:
         due = await db.get_due_recurring_alerts()
@@ -164,9 +167,7 @@ class ProactiveWorker:
             label = "hoy" if days == 1 else f"en {days} días"
             lines = [f"📅 *Recordatorio: Eventos {label}*"]
             for ev in events_for_chat:
-                lines.append(
-                    f"  • {ev['title']} - {ev['event_datetime']}"
-                )
+                lines.append(f"  • {ev['title']} - {ev['event_datetime']}")
             await bot.send_proactive_message(chat_id, "\n".join(lines))
 
     async def _notify_unread_alerts(self, chat_id: int) -> None:
@@ -188,9 +189,7 @@ class ProactiveWorker:
             label = "hoy" if days == 1 else f"en {days} días"
             lines = [f"⚠️ *Alertas por expirar {label}*"]
             for al in alerts_for_chat:
-                lines.append(
-                    f"  • {al['message']} (expira: {al['expires_at']})"
-                )
+                lines.append(f"  • {al['message']} (expira: {al['expires_at']})")
             await bot.send_proactive_message(chat_id, "\n".join(lines))
 
 
@@ -199,6 +198,7 @@ class BackgroundIndexer:
 
     def __init__(self):
         from src.utils.vault_indexer import VaultIndexer
+
         self._indexer = VaultIndexer()
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
@@ -222,6 +222,7 @@ class Application:
     async def _ensure_embedding_model(self) -> None:
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=30.0) as hc:
                 resp = await hc.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
                 resp.raise_for_status()
@@ -239,7 +240,9 @@ class Application:
                         timeout=300.0,
                     )
                     pull_resp.raise_for_status()
-                    logger.info("Embedding model '%s' pulled successfully.", settings.embedding_model)
+                    logger.info(
+                        "Embedding model '%s' pulled successfully.", settings.embedding_model
+                    )
                 if settings.ollama_model not in model_ids:
                     logger.info(
                         "Pulling main model '%s' (this may take a while)...",
@@ -263,7 +266,9 @@ class Application:
                         timeout=1800.0,
                     )
                     pull_resp.raise_for_status()
-                    logger.info("Vision model '%s' pulled successfully.", settings.ollama_vision_model)
+                    logger.info(
+                        "Vision model '%s' pulled successfully.", settings.ollama_vision_model
+                    )
         except Exception:
             logger.warning("Could not verify/pull models.")
 
@@ -273,6 +278,7 @@ class Application:
         logger.info("=" * 50)
 
         from src.utils.hardware_detect import detect_and_log
+
         detect_and_log()
 
         logger.info("Step 0/9: Initializing Obsidian vault structure...")
@@ -287,7 +293,8 @@ class Application:
         health = await llm.check_health()
         logger.info(
             "Ollama health: %s (latency: %dms)",
-            health["status"], health.get("latency_ms", 0),
+            health["status"],
+            health.get("latency_ms", 0),
         )
 
         await self._ensure_embedding_model()
@@ -298,7 +305,8 @@ class Application:
             stats = await vector_db.get_stats()
             logger.info(
                 "Vector DB ready: %d chunks from %d documents",
-                stats["total_chunks"], stats["total_documents"],
+                stats["total_chunks"],
+                stats["total_documents"],
             )
             if stats["total_chunks"] == 0:
                 logger.info("Vector DB empty - running initial vault backfill...")
@@ -319,6 +327,7 @@ class Application:
         logger.info("Step 5/9: Initializing App Connectors...")
         try:
             from src.utils.app_connector import connector
+
             await connector.initialize()
             conns = connector.list_connectors()
             logger.info("App connectors loaded: %d active", len(conns))
@@ -328,6 +337,7 @@ class Application:
         logger.info("Step 5.5/9: Initializing Google Service...")
         try:
             from src.services.google_service import google_service
+
             g_ok = await google_service.initialize()
             if g_ok:
                 logger.info("Google Service: autenticado y listo")
@@ -341,6 +351,7 @@ class Application:
             import os as _os
 
             from src.utils.webhook_server import configure_gateway, start_gateway_server
+
             webhook_secret = _os.environ.get("WEBHOOK_SECRET", "rafita-secure-2026")
             configure_gateway(webhook_secret, bot_ref=bot)
             self._gateway_task = asyncio.create_task(start_gateway_server(port=8000))
@@ -351,6 +362,7 @@ class Application:
         logger.info("Step 7/9: Starting Voice Stream Server (port 8001)...")
         try:
             from src.voice_stream.server import start_voice_stream_server
+
             self._voice_stream_task = asyncio.create_task(start_voice_stream_server(port=8001))
             logger.info("Voice Stream started on port 8001")
         except Exception as e:
@@ -395,6 +407,7 @@ class Application:
             logger.error("Error stopping proactive worker: %s", e)
         try:
             from src.utils.app_connector import connector
+
             await connector.close()
         except Exception:
             pass
@@ -454,7 +467,9 @@ class Application:
                 backoff = min(5 * reconnect_attempt, 60)
                 logger.exception(
                     "Bot polling error (attempt %d). Reconnecting in %ds: %s",
-                    reconnect_attempt, backoff, e,
+                    reconnect_attempt,
+                    backoff,
+                    e,
                 )
                 try:
                     await bot.stop()
@@ -485,6 +500,7 @@ async def _health_monitor() -> None:
         await asyncio.sleep(300)  # every 5 minutes
         try:
             from src.utils.vector_manager import vector_db
+
             vstats = await vector_db.get_stats()
             msnap = metrics.snapshot()
             fail_count = msnap.get("counters", {}).get("tool_calls_failed", 0)
@@ -506,13 +522,15 @@ async def _catch_up_scan() -> None:
     try:
         from src.database import db
         from src.utils.message_scanner import scan_messages
+
         chat_ids = await db.get_all_chat_ids()
         for cid in chat_ids:
             result = await scan_messages(cid, limit=30)
             if result.get("messages_scanned", 0) > 0:
                 logger.info(
                     "Catch-up scan: chat %d -> %d messages processed",
-                    cid, result["messages_scanned"],
+                    cid,
+                    result["messages_scanned"],
                 )
     except Exception as e:
         logger.debug("Catch-up scan skipped: %s", e)

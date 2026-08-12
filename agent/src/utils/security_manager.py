@@ -27,7 +27,7 @@ def get_or_create_encryption_key() -> bytes:
                 new_lines = []
                 for line in content.splitlines(keepends=True):
                     if line.strip().startswith("ENCRYPTION_KEY=") and (
-                        "ENCRYPTION_KEY=\"\"" in line or "ENCRYPTION_KEY=" in line.strip(" '\"")
+                        'ENCRYPTION_KEY=""' in line or "ENCRYPTION_KEY=" in line.strip(" '\"")
                     ):
                         new_lines.append("ENCRYPTION_KEY=%s\n" % key_b64)
                     else:

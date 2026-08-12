@@ -31,9 +31,7 @@ class GoogleCalendarManager:
             result = await loop.run_in_executor(None, self._authenticate)
             self._ready = result
             if self._ready:
-                logger.info(
-                    "Google Calendar authenticated via %s", self._auth_method
-                )
+                logger.info("Google Calendar authenticated via %s", self._auth_method)
             else:
                 logger.warning(
                     "Google Calendar not configured. "
@@ -63,9 +61,7 @@ class GoogleCalendarManager:
                 creds = None
                 if OAUTH_TOKEN_FILE.exists():
                     with open(OAUTH_TOKEN_FILE) as f:
-                        creds = Credentials.from_authorized_user_file(
-                            str(OAUTH_TOKEN_FILE), SCOPES
-                        )
+                        creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_FILE), SCOPES)
                 if not creds or not creds.valid:
                     if creds and creds.expired and creds.refresh_token:
                         creds.refresh(Request())
@@ -118,11 +114,7 @@ class GoogleCalendarManager:
         loop = asyncio.get_running_loop()
 
         def _do_insert():
-            return (
-                self._service.events()
-                .insert(calendarId="primary", body=event_body)
-                .execute()
-            )
+            return self._service.events().insert(calendarId="primary", body=event_body).execute()
 
         try:
             event = await loop.run_in_executor(None, _do_insert)

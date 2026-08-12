@@ -1,4 +1,5 @@
 """Shared fixtures for Rafita AVP tests."""
+
 import tempfile
 import shutil
 from pathlib import Path

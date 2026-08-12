@@ -10,15 +10,18 @@ MAX_CONTENT_CHARS = 3000
 async def search_duckduckgo(query: str, max_results: int = 5) -> list[dict[str, str]]:
     try:
         from duckduckgo_search import DDGS
+
         with DDGS() as ddgs:
             raw = list(ddgs.text(query, max_results=max_results))
         results = []
         for r in raw:
-            results.append({
-                "title": r.get("title", ""),
-                "url": r.get("href", ""),
-                "snippet": r.get("body", ""),
-            })
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                }
+            )
         return results
     except Exception as e:
         logger.warning("DuckDuckGo search failed: %s", e)

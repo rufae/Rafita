@@ -93,6 +93,7 @@ def check_config() -> bool:
         os.environ.setdefault("TELEGRAM_TOKEN", "test_token_123")
         os.environ.setdefault("OLLAMA_HOST", "http://localhost:11434")
         from src.config import settings
+
         assert settings.telegram_token == "test_token_123"
         assert settings.ollama_host == "http://localhost:11434"
         print(f"  [OK] Config loaded: model={settings.ollama_model}")
@@ -105,10 +106,18 @@ def check_config() -> bool:
 def check_schema_models() -> bool:
     try:
         from src.models.schemas import (
-            ChatMessage, Event, Alert, FinanceRecord,
-            FinanceSummary, ExportRequest, BotCommand,
-            MessageRole, FinanceCategory, COMMANDS_REGISTRY,
+            ChatMessage,
+            Event,
+            Alert,
+            FinanceRecord,
+            FinanceSummary,
+            ExportRequest,
+            BotCommand,
+            MessageRole,
+            FinanceCategory,
+            COMMANDS_REGISTRY,
         )
+
         assert len(COMMANDS_REGISTRY) == 12
         msg = ChatMessage(chat_id=123, role=MessageRole.user, content="test")
         assert msg.role.value == "user"
@@ -204,9 +213,9 @@ def main() -> int:
 
     print("\n" + "=" * 55)
     if errors == 0:
-        print("  RESULTADO: VERIFICACIÓN COMPLETA [OK]" )
+        print("  RESULTADO: VERIFICACIÓN COMPLETA [OK]")
     else:
-        print(f"  RESULTADO: {errors} ERROR(ES) ENCONTRADO(S)" )
+        print(f"  RESULTADO: {errors} ERROR(ES) ENCONTRADO(S)")
     print("=" * 55)
 
     return 1 if errors > 0 else 0

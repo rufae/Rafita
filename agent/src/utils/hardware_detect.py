@@ -37,7 +37,9 @@ def detect_hardware() -> HardwareProfile:
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip():
                 parts = result.stdout.strip().split(",")
@@ -50,7 +52,9 @@ def detect_hardware() -> HardwareProfile:
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip():
                 parts = result.stdout.strip().split(",")
@@ -64,7 +68,10 @@ def detect_hardware() -> HardwareProfile:
     if not has_gpu:
         try:
             result = subprocess.run(
-                ["lspci"], capture_output=True, text=True, timeout=5,
+                ["lspci"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0 and any(
                 tag in result.stdout.lower() for tag in ["vga", "3d", "display"]
@@ -96,7 +103,9 @@ def _get_total_ram_gb() -> float:
         try:
             result = subprocess.run(
                 ["wmic", "computersystem", "get", "totalphysicalmemory"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             for line in result.stdout.splitlines():
                 line = line.strip()
@@ -108,6 +117,7 @@ def _get_total_ram_gb() -> float:
 
     try:
         import os as _os
+
         mem_bytes = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
         return mem_bytes / (1024**3)
     except Exception:
@@ -191,12 +201,17 @@ def detect_and_log() -> HardwareProfile:
 
     logger.info(
         "Hardware detected: GPU=%s (%.1fGB VRAM), RAM=%.1fGB, CPU=%d cores",
-        hw.gpu_name, hw.gpu_vram_gb, hw.total_ram_gb, hw.cpu_cores,
+        hw.gpu_name,
+        hw.gpu_vram_gb,
+        hw.total_ram_gb,
+        hw.cpu_cores,
     )
     logger.info(
         "Recommended profile: %s (chat=%s, embed=%s/%dd, vision=%s)",
-        profile.label, profile.chat_model,
-        profile.embedding_model, profile.embedding_dim,
+        profile.label,
+        profile.chat_model,
+        profile.embedding_model,
+        profile.embedding_dim,
         profile.vision_model,
     )
     return hw

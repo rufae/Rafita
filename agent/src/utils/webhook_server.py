@@ -31,9 +31,7 @@ def configure_gateway(secret: str, bot_ref=None) -> None:
 def _verify_signature(body: bytes, signature: str) -> bool:
     if not _webhook_secret or not signature:
         return False
-    expected = hmac.new(
-        _webhook_secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(_webhook_secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -45,6 +43,7 @@ async def health():
 @app.get("/metrics")
 async def get_metrics():
     from src.utils.telemetry import metrics as tm
+
     return {
         "status": "ok",
         **tm.snapshot(),
@@ -54,6 +53,7 @@ async def get_metrics():
 @app.get("/connectors")
 async def list_connectors():
     from src.utils.app_connector import connector
+
     return {"connectors": connector.list_connectors()}
 
 
@@ -85,7 +85,9 @@ async def receive_webhook(source: str, request: Request):
                 chat_id,
                 "🔔 *[Webhook: %s]*\n%s" % (source, text),
             )
-            await db.save_chat_message(chat_id, MessageRole.user.value, "[Webhook:%s] %s" % (source, text))
+            await db.save_chat_message(
+                chat_id, MessageRole.user.value, "[Webhook:%s] %s" % (source, text)
+            )
             return {"status": "delivered", "source": source, "chat_id": chat_id}
         except Exception as e:
             logger.error("Webhook delivery failed: %s", e)
@@ -107,6 +109,7 @@ async def register_connector_endpoint(name: str, request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     from src.utils.app_connector import connector
+
     connector_type = payload.get("type", "custom")
     credentials = payload.get("credentials", {})
     config = payload.get("config", {})
@@ -126,6 +129,7 @@ async def remove_connector_endpoint(name: str, request: Request):
         if not _verify_signature(body, signature):
             raise HTTPException(status_code=401, detail="Invalid signature")
     from src.utils.app_connector import connector
+
     removed = await connector.remove_connector(name)
     if removed:
         return {"status": "removed", "name": name}
@@ -135,6 +139,7 @@ async def remove_connector_endpoint(name: str, request: Request):
 @app.post("/gmail/check")
 async def check_gmail(request: Request):
     from src.utils.app_connector import connector
+
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
     if _webhook_secret:
@@ -147,6 +152,7 @@ async def check_gmail(request: Request):
 @app.post("/homeassistant/{entity_id}")
 async def control_home_assistant(entity_id: str, request: Request):
     from src.utils.app_connector import connector
+
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
     if _webhook_secret:
@@ -164,6 +170,7 @@ async def control_home_assistant(entity_id: str, request: Request):
 @app.get("/homeassistant/state")
 async def get_ha_state(request: Request):
     from src.utils.app_connector import connector
+
     entity_id = request.query_params.get("entity_id", "")
     result = await connector.get_home_assistant_state(entity_id)
     return result
@@ -171,8 +178,12 @@ async def get_ha_state(request: Request):
 
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
-        app, host=host, port=port, log_level="info",
-        access_log=False, lifespan="on",
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=False,
+        lifespan="on",
     )
     server = uvicorn.Server(config_obj)
     logger.info("Starting Rafita Gateway on %s:%d", host, port)

@@ -80,9 +80,7 @@ def classify_entry(entry: dict) -> str:
 
 def summarize_group_for_llm(group_name: str, entries: list, max_items: int = 30) -> str:
     sample = entries[:max_items]
-    items_text = "\n".join(
-        f"- [{e['date']}] {e['text'][:150]}" for e in sample
-    )
+    items_text = "\n".join(f"- [{e['date']}] {e['text'][:150]}" for e in sample)
     head = f"Tema: {group_name} ({len(entries)} mensajes totales, mostrando {len(sample)})\n\n{items_text}"
     return head
 
@@ -105,7 +103,10 @@ async def ai_summarize_group(group_name: str, entries: list, llm_instance) -> st
         response = await asyncio.wait_for(
             llm_instance.chat(
                 messages=[
-                    {"role": "system", "content": "Eres un organizador de informacion. Creas resumenes Markdown para Obsidian. Espanol."},
+                    {
+                        "role": "system",
+                        "content": "Eres un organizador de informacion. Creas resumenes Markdown para Obsidian. Espanol.",
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
@@ -143,7 +144,8 @@ async def main():
     logger.info("Parsed %d entries", len(entries))
 
     filtered = [
-        e for e in entries
+        e
+        for e in entries
         if e.get("text")
         and "<Multimedia omitido>" not in e["text"]
         and "cifrados de extremo" not in e["text"]
@@ -162,6 +164,7 @@ async def main():
 
     logger.info("Initializing Ollama for AI summaries...")
     from src.ollama_client import OllamaClient
+
     local_llm = OllamaClient()
     await local_llm.initialize()
     logger.info("Ollama ready: %s", local_llm.model)
@@ -189,7 +192,10 @@ async def main():
     if result.get("success"):
         logger.info("Main note created: %s", result.get("filepath", ""))
 
-    url_index = ["# Indice de Enlaces\n", f"Enlaces extraidos: {datetime.now().strftime('%Y-%m-%d')}\n\n"]
+    url_index = [
+        "# Indice de Enlaces\n",
+        f"Enlaces extraidos: {datetime.now().strftime('%Y-%m-%d')}\n\n",
+    ]
     all_urls = []
     for e in filtered:
         for u in _extract_urls(e["text"]):

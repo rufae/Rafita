@@ -68,7 +68,7 @@ class GoogleService:
             return {
                 "success": False,
                 "message": "No se encontro credentials.json en /workspace/credentials/. "
-                           "Descarga el archivo JSON desde Google Cloud Console.",
+                "Descarga el archivo JSON desde Google Cloud Console.",
             }
         try:
             loop = asyncio.get_running_loop()
@@ -106,12 +106,14 @@ class GoogleService:
                 }
             try:
                 loop = asyncio.get_running_loop()
+
                 def _recreate_flow():
                     flow = InstalledAppFlow.from_client_secrets_file(
                         str(OAUTH_CREDENTIALS_FILE), SCOPES
                     )
                     flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
                     return flow
+
                 self._flow = await loop.run_in_executor(None, _recreate_flow)
             except Exception as e:
                 return {"success": False, "message": "Error recreando flujo OAuth: %s" % e}
@@ -146,6 +148,7 @@ class GoogleService:
             }
         try:
             from datetime import datetime
+
             now = datetime.utcnow().isoformat() + "Z"
             loop = asyncio.get_running_loop()
 
@@ -168,14 +171,16 @@ class GoogleService:
             for e in events:
                 start = e["start"].get("dateTime", e["start"].get("date"))
                 end = e["end"].get("dateTime", e["end"].get("date"))
-                formatted.append({
-                    "id": e.get("id"),
-                    "title": e.get("summary", "Sin titulo"),
-                    "start": start,
-                    "end": end,
-                    "description": e.get("description", ""),
-                    "html_link": e.get("htmlLink", ""),
-                })
+                formatted.append(
+                    {
+                        "id": e.get("id"),
+                        "title": e.get("summary", "Sin titulo"),
+                        "start": start,
+                        "end": end,
+                        "description": e.get("description", ""),
+                        "html_link": e.get("htmlLink", ""),
+                    }
+                )
             logger.info("Google Service: %d eventos obtenidos", len(formatted))
             return {"success": True, "events": formatted, "count": len(formatted)}
         except HttpError as e:
@@ -201,6 +206,7 @@ class GoogleService:
         if not end_datetime:
             try:
                 from datetime import datetime, timedelta
+
                 dt = datetime.fromisoformat(start_datetime)
                 end_datetime = (dt + timedelta(hours=1)).isoformat()
             except ValueError:
@@ -217,16 +223,15 @@ class GoogleService:
 
             def _do_insert():
                 return (
-                    self._service.events()
-                    .insert(calendarId="primary", body=event_body)
-                    .execute()
+                    self._service.events().insert(calendarId="primary", body=event_body).execute()
                 )
 
             event = await loop.run_in_executor(None, _do_insert)
             logger.info("Google Service: evento creado '%s' (%s)", title, event.get("id"))
             return {
                 "success": True,
-                "message": "Evento creado en Google Calendar: '%s' para %s" % (title, start_datetime),
+                "message": "Evento creado en Google Calendar: '%s' para %s"
+                % (title, start_datetime),
                 "event_id": event.get("id"),
                 "html_link": event.get("htmlLink"),
             }

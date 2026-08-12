@@ -18,6 +18,7 @@ async def ensure_voice_model() -> Path | None:
     if not model_files:
         logger.info("No Piper model found. Downloading Spanish voice...")
         import httpx
+
         model_name = "es_ES-carlfm-x_low"
         model_url = f"{VOICE_URL_PREFIX}/es/es_ES/carlfm/x_low/{model_name}.onnx"
         config_url = f"{VOICE_URL_PREFIX}/es/es_ES/carlfm/x_low/{model_name}.onnx.json"
@@ -111,6 +112,7 @@ def _synthesize_piper(text: str, model_path: str, output_path: str):
             voice.synthesize(text, wav_file)
 
         import soundfile as sf
+
         data, samplerate = sf.read(output_path)
         logger.info("Piper TTS: %d samples at %d Hz", len(data), samplerate)
         return data, samplerate
@@ -118,6 +120,7 @@ def _synthesize_piper(text: str, model_path: str, output_path: str):
     except Exception as e:
         logger.error("Piper synthesis error: %s", e)
         import traceback
+
         traceback.print_exc()
         return None, 22050
 
@@ -130,8 +133,10 @@ async def _fallback_espeak(text: str, output_path: Path) -> Path | None:
         safe_text = text.replace('"', '\\"')
         cmd = [
             "espeak-ng",
-            "-v", FALLBACK_LANG,
-            "-w", str(output_path),
+            "-v",
+            FALLBACK_LANG,
+            "-w",
+            str(output_path),
             f'"{safe_text}"',
         ]
         proc = await asyncio.create_subprocess_exec(

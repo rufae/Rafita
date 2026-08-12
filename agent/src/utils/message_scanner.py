@@ -15,7 +15,8 @@ from src.logger import logger
 
 
 async def _extract_batch_with_llm(
-    chat_id: int, messages: list[str],
+    chat_id: int,
+    messages: list[str],
 ) -> list[dict[str, Any]]:
     """Envía un lote de mensajes al LLM para extraer datos estructurados."""
     from src.ollama_client import llm
@@ -23,9 +24,7 @@ async def _extract_batch_with_llm(
     if not messages:
         return []
 
-    batch_text = "\n".join(
-        "[%d] %s" % (i, msg[:500]) for i, msg in enumerate(messages)
-    )
+    batch_text = "\n".join("[%d] %s" % (i, msg[:500]) for i, msg in enumerate(messages))
 
     prompt = (
         "Eres un extractor de datos para un segundo cerebro personal (PARA + Zettelkasten). "
@@ -51,7 +50,10 @@ async def _extract_batch_with_llm(
     try:
         messages_for_llm = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": "Extrae y guarda la informacion relevante de estos mensajes en el segundo cerebro."},
+            {
+                "role": "user",
+                "content": "Extrae y guarda la informacion relevante de estos mensajes en el segundo cerebro.",
+            },
         ]
         content = await llm.chat(
             messages=messages_for_llm,
@@ -97,14 +99,13 @@ async def scan_messages(
     since_str = since_dt.strftime("%Y-%m-%d %H:%M:%S")
     logger.info(
         "Scanning messages for chat %d since %s (limit %d)",
-        chat_id, since_str, limit,
+        chat_id,
+        since_str,
+        limit,
     )
 
     history = await db.get_chat_history(chat_id, limit=9999)
-    recent = [
-        msg for msg in history
-        if msg["role"] == "user" and msg["created_at"] >= since_str
-    ]
+    recent = [msg for msg in history if msg["role"] == "user" and msg["created_at"] >= since_str]
     recent = recent[-limit:]
 
     if not recent:

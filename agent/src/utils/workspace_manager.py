@@ -11,10 +11,31 @@ MAX_READ_SIZE = 100 * 1024
 MAX_LIST_DEPTH = 3
 IGNORE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".idea", ".vscode"}
 TEXT_EXTENSIONS = {
-    ".py", ".md", ".txt", ".yml", ".yaml", ".json", ".jsonc",
-    ".env", ".cfg", ".ini", ".conf", ".toml", ".xml", ".html",
-    ".css", ".js", ".ts", ".sh", ".bat", ".ps1", ".sql", ".csv",
-    ".log", ".dockerfile", ".gitignore",
+    ".py",
+    ".md",
+    ".txt",
+    ".yml",
+    ".yaml",
+    ".json",
+    ".jsonc",
+    ".env",
+    ".cfg",
+    ".ini",
+    ".conf",
+    ".toml",
+    ".xml",
+    ".html",
+    ".css",
+    ".js",
+    ".ts",
+    ".sh",
+    ".bat",
+    ".ps1",
+    ".sql",
+    ".csv",
+    ".log",
+    ".dockerfile",
+    ".gitignore",
 }
 
 
@@ -62,25 +83,35 @@ async def list_workspace_files(relative_path: str = "") -> dict[str, Any]:
                     continue
                 dir_count += 1
                 try:
-                    sub_count = len([f for f in entry.rglob("*") if f.is_file() and not any(p.startswith(".") for p in f.parts)])
+                    sub_count = len(
+                        [
+                            f
+                            for f in entry.rglob("*")
+                            if f.is_file() and not any(p.startswith(".") for p in f.parts)
+                        ]
+                    )
                 except PermissionError:
                     sub_count = -1
-                items.append({
-                    "name": entry.name,
-                    "type": "dir",
-                    "size": "",
-                    "children": sub_count if sub_count >= 0 else "?",
-                })
+                items.append(
+                    {
+                        "name": entry.name,
+                        "type": "dir",
+                        "size": "",
+                        "children": sub_count if sub_count >= 0 else "?",
+                    }
+                )
             elif entry.is_file():
                 file_count += 1
                 sz = entry.stat().st_size
                 total_size += sz
-                items.append({
-                    "name": entry.name,
-                    "type": "file",
-                    "size": _format_size(sz),
-                    "ext": entry.suffix,
-                })
+                items.append(
+                    {
+                        "name": entry.name,
+                        "type": "file",
+                        "size": _format_size(sz),
+                        "ext": entry.suffix,
+                    }
+                )
     except PermissionError as e:
         return {"success": False, "message": "Permission denied: %s" % e}
     return {
@@ -88,7 +119,8 @@ async def list_workspace_files(relative_path: str = "") -> dict[str, Any]:
         "path": str(target),
         "relative": relative_path or ".",
         "items": items,
-        "summary": "%d directorios, %d archivos (%s)" % (dir_count, file_count, _format_size(total_size)),
+        "summary": "%d directorios, %d archivos (%s)"
+        % (dir_count, file_count, _format_size(total_size)),
     }
 
 
@@ -100,11 +132,18 @@ async def read_workspace_file(file_path: str) -> dict[str, Any]:
     if not target.is_file():
         return {"success": False, "message": "'%s' no es un archivo." % file_path}
     if not _is_text_file(target):
-        return {"success": False, "message": "Solo puedo leer archivos de texto. '%s' tiene extensión binaria." % target.suffix}
+        return {
+            "success": False,
+            "message": "Solo puedo leer archivos de texto. '%s' tiene extensión binaria."
+            % target.suffix,
+        }
     try:
         size = target.stat().st_size
         if size > MAX_READ_SIZE:
-            return {"success": False, "message": "Archivo demasiado grande (%s). Máximo: 100 KB." % _format_size(size)}
+            return {
+                "success": False,
+                "message": "Archivo demasiado grande (%s). Máximo: 100 KB." % _format_size(size),
+            }
         content = target.read_text(encoding="utf-8")
         lines = content.split("\n")
         return {
@@ -161,7 +200,11 @@ async def get_system_health() -> dict[str, Any]:
                     content = lf.read_text(encoding="utf-8")
                     total_logs += len(content.split("\n"))
                     for line in content.split("\n")[-50:]:
-                        if "ERROR" in line or "exception" in line.lower() or "traceback" in line.lower():
+                        if (
+                            "ERROR" in line
+                            or "exception" in line.lower()
+                            or "traceback" in line.lower()
+                        ):
                             recent_errors.append(line.strip())
                 except Exception:
                     pass
@@ -178,14 +221,19 @@ async def get_system_health() -> dict[str, Any]:
 
     try:
         from src.database import db as dbm
+
         chat_count = len(await dbm.get_all_chat_ids())
         report["chats"] = {"active_chats": chat_count}
     except Exception as e:
         report["chats"] = {"error": str(e)}
 
-    report["health"] = "healthy" if (
-        report.get("database", {}).get("status") != "not_found"
-        and report.get("disk", {}).get("free")
-    ) else "degraded"
+    report["health"] = (
+        "healthy"
+        if (
+            report.get("database", {}).get("status") != "not_found"
+            and report.get("disk", {}).get("free")
+        )
+        else "degraded"
+    )
 
     return report

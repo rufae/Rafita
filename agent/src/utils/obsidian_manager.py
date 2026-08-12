@@ -101,13 +101,15 @@ async def search_notes_content(query: str) -> dict[str, Any]:
                 if end < len(content):
                     snippet = snippet + "..."
                 snippets.append(snippet)
-            results.append({
-                "file": str(relative),
-                "title": md_file.stem,
-                "folder": str(relative.parent) if relative.parent != Path(".") else "",
-                "match_count": len(matches),
-                "snippets": snippets,
-            })
+            results.append(
+                {
+                    "file": str(relative),
+                    "title": md_file.stem,
+                    "folder": str(relative.parent) if relative.parent != Path(".") else "",
+                    "match_count": len(matches),
+                    "snippets": snippets,
+                }
+            )
     results.sort(key=lambda r: r["match_count"], reverse=True)
     logger.info("Obsidian search '%s': %d notes found", query, len(results))
     return {
@@ -146,10 +148,19 @@ def save_attachment(src_path: Path, clean_name: str) -> dict[str, Any]:
         dest_path = ATTACHMENTS_DIR / ("%s_%d%s" % (safe_base, counter, ext))
         counter += 1
     import shutil as _shutil
+
     _shutil.copy2(str(src_path), str(dest_path))
     if not dest_path.exists():
-        return {"success": False, "message": "No se pudo escribir en la carpeta Attachments de Obsidian."}
-    logger.info("Attachment saved: %s -> %s (%d bytes)", src_path.name, dest_path.name, dest_path.stat().st_size)
+        return {
+            "success": False,
+            "message": "No se pudo escribir en la carpeta Attachments de Obsidian.",
+        }
+    logger.info(
+        "Attachment saved: %s -> %s (%d bytes)",
+        src_path.name,
+        dest_path.name,
+        dest_path.stat().st_size,
+    )
     return {
         "success": True,
         "filename": dest_path.name,
@@ -171,8 +182,7 @@ def create_note_with_image(
     content = (
         "---\ntitle: %s\ncreated: %s\n---\n\n"
         "## Descripcion de la imagen\n\n%s\n\n"
-        "## Imagen\n\n![[%s]]\n"
-        % (title, now_str, body_text.strip(), image_filename)
+        "## Imagen\n\n![[%s]]\n" % (title, now_str, body_text.strip(), image_filename)
     )
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
@@ -198,7 +208,10 @@ async def move_or_rename_file(source_path: str, dest_folder: str, new_name: str)
     if not src.exists():
         return {"success": False, "message": f"No existe el archivo: {source_path}"}
     if not str(src).startswith(str(OBSIDIAN_VAULT)):
-        return {"success": False, "message": "Solo puedo mover archivos dentro de la boveda Obsidian."}
+        return {
+            "success": False,
+            "message": "Solo puedo mover archivos dentro de la boveda Obsidian.",
+        }
     folder_part = dest_folder.strip().strip("/\\") if dest_folder else ""
     dest_dir = (OBSIDIAN_VAULT / folder_part) if folder_part else src.parent
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -235,7 +248,9 @@ async def delete_note(title: str, folder: str = "") -> dict[str, Any]:
     }
 
 
-async def sync_calendar_to_obsidian(events: list, note_title: str = "Calendario Semanal") -> dict[str, Any]:
+async def sync_calendar_to_obsidian(
+    events: list, note_title: str = "Calendario Semanal"
+) -> dict[str, Any]:
     if not events:
         return {"success": True, "message": "No hay eventos para sincronizar."}
 
@@ -253,6 +268,7 @@ async def sync_calendar_to_obsidian(events: list, note_title: str = "Calendario 
         end_fmt = end_raw
         try:
             from datetime import datetime as _dt
+
             if "T" in start_raw:
                 dt_start = _dt.fromisoformat(start_raw.replace("Z", "+00:00"))
                 start_fmt = dt_start.strftime("%H:%M")
@@ -281,6 +297,7 @@ async def sync_calendar_to_obsidian(events: list, note_title: str = "Calendario 
     logger.info("Obsidian hyper-sync: %d eventos sincronizados en %s", len(events), filepath.name)
     return {
         "success": True,
-        "message": "Calendario sincronizado en Obsidian: %s (%d eventos)" % (filepath.name, len(events)),
+        "message": "Calendario sincronizado en Obsidian: %s (%d eventos)"
+        % (filepath.name, len(events)),
         "filepath": str(filepath),
     }

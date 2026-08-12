@@ -1,4 +1,5 @@
 """Tests for vector_manager.py — embedding function, indexing, querying."""
+
 import asyncio
 import tempfile
 import shutil
@@ -70,8 +71,14 @@ class TestVectorManager:
     @pytest.mark.asyncio
     async def test_index_chunks_no_skipped(self, vector_db):
         chunks = [
-            {"text": "Gasolina: 80 euros al mes", "metadata": {"note_path": "test/finanzas.md", "heading": "Transporte"}},
-            {"text": "Alquiler: 400 euros al mes", "metadata": {"note_path": "test/finanzas.md", "heading": "Vivienda"}},
+            {
+                "text": "Gasolina: 80 euros al mes",
+                "metadata": {"note_path": "test/finanzas.md", "heading": "Transporte"},
+            },
+            {
+                "text": "Alquiler: 400 euros al mes",
+                "metadata": {"note_path": "test/finanzas.md", "heading": "Vivienda"},
+            },
         ]
         result = await vector_db.index_chunks(chunks)
         assert result["success"]
@@ -86,8 +93,22 @@ class TestVectorManager:
     @pytest.mark.asyncio
     async def test_query_returns_results(self, vector_db):
         chunks = [
-            {"text": "Salario mensual: 1313 euros netos", "metadata": {"note_path": "test/finanzas.md", "heading": "Ingresos", "tags_str": "finanzas"}},
-            {"text": "Gasolina: 80 euros al mes", "metadata": {"note_path": "test/finanzas.md", "heading": "Transporte", "tags_str": "finanzas,transporte"}},
+            {
+                "text": "Salario mensual: 1313 euros netos",
+                "metadata": {
+                    "note_path": "test/finanzas.md",
+                    "heading": "Ingresos",
+                    "tags_str": "finanzas",
+                },
+            },
+            {
+                "text": "Gasolina: 80 euros al mes",
+                "metadata": {
+                    "note_path": "test/finanzas.md",
+                    "heading": "Transporte",
+                    "tags_str": "finanzas,transporte",
+                },
+            },
         ]
         await vector_db.index_chunks(chunks)
 
@@ -109,19 +130,45 @@ class TestVectorManager:
         assert stats["total_chunks"] == 0
         assert stats["total_documents"] == 0
 
-        await vector_db.index_chunks([
-            {"text": "Test content", "metadata": {"note_path": "test/a.md", "filename": "a.md", "source": "test/a.md", "heading": "root"}},
-        ])
+        await vector_db.index_chunks(
+            [
+                {
+                    "text": "Test content",
+                    "metadata": {
+                        "note_path": "test/a.md",
+                        "filename": "a.md",
+                        "source": "test/a.md",
+                        "heading": "root",
+                    },
+                },
+            ]
+        )
         stats = await vector_db.get_stats()
         assert stats["total_chunks"] == 1
         assert stats["total_documents"] == 1
 
     @pytest.mark.asyncio
     async def test_delete_by_source(self, vector_db):
-        await vector_db.index_chunks([
-            {"text": "Chunk 1", "metadata": {"note_path": "test/x.md", "source": "test/x.md", "heading": "root"}},
-            {"text": "Chunk 2", "metadata": {"note_path": "test/x.md", "source": "test/x.md", "heading": "root2"}},
-        ])
+        await vector_db.index_chunks(
+            [
+                {
+                    "text": "Chunk 1",
+                    "metadata": {
+                        "note_path": "test/x.md",
+                        "source": "test/x.md",
+                        "heading": "root",
+                    },
+                },
+                {
+                    "text": "Chunk 2",
+                    "metadata": {
+                        "note_path": "test/x.md",
+                        "source": "test/x.md",
+                        "heading": "root2",
+                    },
+                },
+            ]
+        )
         assert vector_db._collection.count() == 2
         deleted = await vector_db.delete_by_source("test/x.md")
         assert deleted == 2
@@ -148,4 +195,4 @@ class TestChunkText:
             words1 = set(chunks[i].split())
             words2 = set(chunks[i + 1].split())
             overlap = words1 & words2
-            assert len(overlap) > 0, f"No overlap between chunk {i} and {i+1}"
+            assert len(overlap) > 0, f"No overlap between chunk {i} and {i + 1}"
