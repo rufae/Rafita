@@ -103,8 +103,7 @@ async def generate_response(text: str, chat_id: int) -> str:
     except TimeoutError:
         logger.error("[ORCHESTRATOR] timeout for chat_id=%d", chat_id)
         return (
-            "Lo siento, el modelo tardo demasiado en responder. "
-            "Intenta con un mensaje mas corto."
+            "Lo siento, el modelo tardo demasiado en responder. Intenta con un mensaje mas corto."
         )
     except OllamaClientError as e:
         logger.error("[ORCHESTRATOR] Ollama error: %s", e)
