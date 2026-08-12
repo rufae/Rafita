@@ -220,7 +220,11 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
         logger.warning("VoiceStream: WebSocket error: %s", e)
     finally:
         if session_id in _active_sessions:
-            _active_sessions[session_id]["state"] = "ended"
+            session = _active_sessions[session_id]
+            session["state"] = "ended"
+            llm_task = session.pop("_llm_task", None)
+            if llm_task and not llm_task.done():
+                llm_task.cancel()
 
 
 def _simple_vad(audio_bytes: bytes, threshold: int = 300) -> bool:
@@ -286,7 +290,9 @@ async def _process_utterance(websocket: WebSocket, session: dict, session_id: st
     fragment_count = 0
 
     try:
-        async for token in _generate_response_stream(transcript, session.get("chat_id", 0)):
+        async for token in _generate_response_stream(
+            transcript, session.get("chat_id", 0), session
+        ):
             full_response += token
             fragment_buffer += token
 
@@ -383,18 +389,41 @@ def _is_sentence_boundary(text: str) -> bool:
     return (len(text) > 60 and text[-1] in _CLAUSE_ENDINGS) or len(text) > 120
 
 
-async def _generate_response_stream(text: str, chat_id: int):
-    """Generate AI response using the shared orchestrator (tools + RAG)."""
+async def _generate_response_stream(text: str, chat_id: int, session: dict):
+    """Generate AI response using the shared orchestrator (tools + RAG).
+
+    Stores the orchestrator task in session['_llm_task'] so it can be cancelled
+    when the user hangs up.
+    """
+    import asyncio as _asyncio
+
+    task = _asyncio.ensure_future(_run_orchestrator_background(text, chat_id))
+    session["_llm_task"] = task
+    try:
+        while not task.done():
+            if session.get("state") == "ended":
+                task.cancel()
+                return
+            await _asyncio.sleep(0.5)
+            yield ""
+        result = task.result()
+        if result:
+            words = result.split()
+            for i, word in enumerate(words):
+                yield word + (" " if i < len(words) - 1 else "")
+    finally:
+        session.pop("_llm_task", None)
+
+
+async def _run_orchestrator_background(text: str, chat_id: int) -> str:
+    """Run the orchestrator, handling exceptions gracefully."""
     try:
         from src.core import generate_response
 
-        response = await generate_response(text, chat_id)
-        words = response.split()
-        for i, word in enumerate(words):
-            yield word + (" " if i < len(words) - 1 else "")
-    except Exception as e:
-        logger.warning("VoiceStream LLM error: %s", e)
-        yield "Lo siento, no pude procesar eso."
+        return await generate_response(text, chat_id) or ""
+    except Exception:
+        logger.warning("VoiceStream LLM error", exc_info=True)
+        return "Lo siento, no pude procesar eso."
 
 
 async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) -> str | None:
