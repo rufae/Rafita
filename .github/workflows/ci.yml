@@ -44,6 +44,8 @@ jobs:
           pip install -r agent/requirements.txt
           pip install -r dev-requirements.txt
       - name: Run tests
+        env:
+          PYTHONPATH: agent/src
         run: pytest agent/tests -v --tb=short
 
   security:
