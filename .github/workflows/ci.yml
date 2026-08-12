@@ -34,6 +34,8 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     needs: [lint]
+    env:
+      PYTHONPATH: ${{ github.workspace }}/agent/src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
