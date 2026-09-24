@@ -307,7 +307,16 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
     service = args[0].lower().strip()
     value = " ".join(args[1:])
-    await db.store_credential(user.id, service, value)
+    try:
+        await db.store_credential(user.id, service, value)
+    except Exception as e:
+        logger.exception("Credential store failed: user=%d service=%s", user.id, service)
+        await message.reply_text(
+            "❌ No se pudo cifrar y guardar la clave; no se almacenó nada. "
+            "Revisa la configuración de `ENCRYPTION_KEY`. Detalle: %s" % str(e)[:200],
+            parse_mode="Markdown",
+        )
+        return
     await message.reply_text(
         "🔐 Clave guardada para `%s` (cifrada AES-256).\nUsa `/claves` para ver tus servicios."
         % service,
