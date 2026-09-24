@@ -1,12 +1,15 @@
+import os
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_FILE_PATH = Path(os.environ.get("ENV_FILE", "/workspace/.env"))
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file="/workspace/.env",
+        env_file=str(ENV_FILE_PATH),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
