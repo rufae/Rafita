@@ -63,9 +63,16 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install pip-audit
         run: pip install pip-audit
+      # Gate bloqueante: cualquier vulnerabilidad nueva rompe el CI.
+      # Los 3 avisos de ChromaDB están aceptados explícitamente (solo afectan
+      # al modo servidor multi-tenant con auth, que Rafita no despliega).
+      # Ver SECURITY.md -> "Dependencias con avisos aceptados (ChromaDB)".
       - name: Dependency vulnerability scan
-        run: pip-audit -r agent/requirements.txt
-        continue-on-error: true
+        run: |
+          pip-audit -r agent/requirements.txt \
+            --ignore-vuln PYSEC-2026-3813 \
+            --ignore-vuln PYSEC-2026-3814 \
+            --ignore-vuln PYSEC-2026-3815
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
 
