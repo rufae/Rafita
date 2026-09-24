@@ -148,6 +148,33 @@ chat por Telegram:
   esos resultados de las respuestas por audio, manteniéndolos accesibles solo
   por texto.
 
+### Dependencias con avisos aceptados (ChromaDB)
+
+**Fecha de revisión: 2026-09-24.** Estado: sin parche disponible upstream.
+
+`chromadb` 0.4.17–1.5.9 (1.5.9 es la última versión publicada) tiene tres
+avisos abiertos:
+
+| Aviso | CVE | Descripción | Superficie afectada |
+|---|---|---|---|
+| PYSEC-2026-3813 | CVE-2026-45830 | Lectura/escritura/borrado en colecciones de otros tenants | Servidor HTTP con autenticación |
+| PYSEC-2026-3814 | CVE-2026-45833 | Inyección de código vía `trust_remote_code=True` al registrar un modelo remoto en `/api/v2/...` | Servidor HTTP con permiso UPDATE_COLLECTION |
+| PYSEC-2026-3815 | CVE-2026-45831 | `SimpleRBACAuthorizationProvider` no valida tenant/database/collection | Servidor HTTP con RBAC |
+
+**Por qué se aceptan:** los tres requieren el **servidor HTTP de Chroma**
+(`chroma run` / client/server), autenticación y multi-tenant; Rafita usa
+`chromadb.PersistentClient` **embebido**, mono-usuario, sin API HTTP, sin
+autenticación, sin tenants y sin modelos remotos (`trust_remote_code` no se
+usa). Los embeddings los genera Ollama y se pasan como vectores.
+
+**Mitigaciones vigentes:**
+- Nunca levantar Chroma en modo servidor ni exponer un puerto de Chroma.
+- No configurar funciones de embedding remotas con `trust_remote_code`.
+- El CI ignora exactamente esos tres IDs (`--ignore-vuln` en el job Security);
+  cualquier aviso nuevo rompe el build.
+- Dependabot sigue los avisos: al publicarse una versión corregida, actualizar
+  `agent/requirements.txt` y quitar los ignores.
+
 ### Verificación de cifrado Fernet
 - Test dedicado: `agent/tests/test_fernet.py` (4 tests: roundtrip, clave inválida,
   multi-valor con UTF-8, token manipulado). Se ejecuta en CI para verificar
