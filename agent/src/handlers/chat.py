@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from src.config import settings
 from src.database import db
 from src.handlers.chat_tools import TOOLS_DEFINITIONS
+from src.i18n import currency_symbol, language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
 from src.ollama_client import OllamaClientError, llm
@@ -29,7 +30,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not user:
         return
     welcome = (
-        f"¡Hola {user.first_name}! Soy Rafita, tu asistente virtual personal.\n\n"
+        f"¡Hola {user.first_name}! Soy {settings.assistant_name}, tu asistente virtual personal.\n\n"
         "Estoy potenciado por Qwen 2.5 7B (Ollama) para respuesta rápida en texto "
         "y Gemma 4 12B para análisis de imágenes, todo de forma local y privada.\n\n"
         "Usa /ayuda para ver todos los comandos disponibles."
@@ -243,8 +244,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    "STRICT_LANGUAGE_RULE: Tu idioma es EXCLUSIVAMENTE el español. "
-                    "Queda prohibido el uso de caracteres chinos, japoneses o inglés.\n"
+                    f"{language_rule()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "
@@ -286,13 +286,14 @@ async def _process_ai_message(
                     f"'{get_taxonomy().path('areas_finanzas')}/Control_Financiero_2026.md'. "
                     "Toda transaccion se registra "
                     "en una tabla Markdown con las columnas: "
-                    "| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |. "
+                    f"| Fecha | Concepto | Categoria | Ingreso/Gasto ({settings.default_currency}) | Saldo |. "
                     "Si el usuario pregunta como llevas el control o como gestionas las finanzas, "
                     "respondele explicando esta estructura exacta y muestrale un ejemplo de la tabla. "
                     "Cada vez que registres un gasto con save_expense, estas obligado a sincronizarlo "
                     "en esa nota de Obsidian.\n\n"
-                    "Eres Rafita, un asistente virtual personal experto en productividad, "
-                    "finanzas y organización. Respondes en español de manera clara y concisa. "
+                    f"Eres {settings.assistant_name}, un asistente virtual personal experto en "
+                    f"productividad, finanzas y organización. Respondes en {language_name()} de "
+                    "manera clara y concisa. "
                     "Tienes acceso a herramientas que debes invocar automáticamente cuando "
                     "el usuario lo necesite.\n\n"
                     "Herramientas disponibles:\n"
@@ -307,7 +308,7 @@ async def _process_ai_message(
                     "- generate_google_auth_link / save_google_verification_code\n"
                     "- get_google_calendar_events / create_google_calendar_event\n\n"
                     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
-                    "Responde siempre en español."
+                    f"{reply_instruction()}"
                 ),
             }
         ]
@@ -316,8 +317,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    "STRICT_LANGUAGE_RULE: Tu idioma es EXCLUSIVAMENTE el español. "
-                    "Queda prohibido el uso de caracteres chinos, japoneses o inglés.\n"
+                    f"{language_rule()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "
@@ -327,10 +327,10 @@ async def _process_ai_message(
                     f"'{get_taxonomy().path('areas_finanzas')}/Control_Financiero_2026.md'. "
                     "Toda transaccion se registra "
                     "en una tabla Markdown con las columnas: "
-                    "| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |. "
+                    f"| Fecha | Concepto | Categoria | Ingreso/Gasto ({settings.default_currency}) | Saldo |. "
                     "Si el usuario pregunta como llevas el control, explicale esta estructura.\n\n"
-                    "Eres Rafita, un asistente virtual personal. "
-                    "Respondes en español de manera clara, concisa y amigable. "
+                    f"Eres {settings.assistant_name}, un asistente virtual personal. "
+                    f"Respondes en {language_name()} de manera clara, concisa y amigable. "
                     "Mantén las respuestas breves a menos que el usuario pida detalle."
                 ),
             }
@@ -513,9 +513,10 @@ async def _save_diary_entry(chat_id: int, user_msg: str, bot_response: str) -> N
         now = datetime.now()
         note_title = now.strftime("%Y-%m-%d")
         user_preview = user_msg[:120].replace("\n", " ").strip()
-        entry = ("\n## %s - Conversacion\n**Usuario:** %s\n**Rafita:** %s\n") % (
+        entry = ("\n## %s - Conversacion\n**Usuario:** %s\n**%s:** %s\n") % (
             now.strftime("%H:%M"),
             user_preview,
+            settings.assistant_name,
             bot_response[:200].replace("\n", " ").strip(),
         )
         await create_or_append_note(
@@ -600,16 +601,21 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 from src.utils.obsidian_manager import create_or_append_note
 
                 date_str = _dt.now().strftime("%Y-%m-%d")
-                table_row = "| %s | %s | %s | %.2f € | - |" % (
+                table_row = "| %s | %s | %s | %.2f %s | - |" % (
                     date_str,
                     (description or category)[:50],
                     category,
                     float(amount),
+                    currency_symbol(),
                 )
                 await create_or_append_note(
                     title="Control_Financiero_2026",
-                    content="## Transacciones\n\n| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |\n|---|---|---|---|---|\n%s"
-                    % table_row,
+                    content=(
+                        "## Transacciones\n\n"
+                        "| Fecha | Concepto | Categoria | Ingreso/Gasto (%s) | Saldo |\n"
+                        "|---|---|---|---|---|\n%s"
+                    )
+                    % (settings.default_currency, table_row),
                     folder=get_taxonomy().path("areas_finanzas"),
                 )
             except Exception as sync_err:

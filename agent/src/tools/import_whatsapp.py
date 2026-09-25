@@ -16,6 +16,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from src.i18n import language_name
 from src.logger import logger
 from src.utils.obsidian_manager import create_or_append_note
 from src.vault_config import get_taxonomy
@@ -97,7 +98,7 @@ async def ai_summarize_group(group_name: str, entries: list, llm_instance) -> st
         "guardados en un chat de WhatsApp. Agrupa por sub-temas. Extrae los enlaces. "
         "Se conciso pero no pierdas informacion valiosa. No inventes nada.\n\n"
         f"{header}\n\n"
-        "Genera SOLO el contenido markdown. Sin introducciones ni despedidas. En espanol."
+        f"Genera SOLO el contenido markdown. Sin introducciones ni despedidas. En {language_name()}."
     )
 
     try:
