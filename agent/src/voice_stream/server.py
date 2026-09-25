@@ -48,14 +48,17 @@ def _get_whisper():
             model_name = getattr(settings, "whisper_model", None) or "base"
             if model_name == "tiny":
                 model_name = "base"  # voice stream needs better accuracy
+            cpu_threads = int(getattr(settings, "whisper_cpu_threads", 4))
             _whisper_model = WhisperModel(
                 model_name,
                 device="cpu",
                 compute_type="int8",
                 num_workers=1,
-                cpu_threads=4,
+                cpu_threads=cpu_threads,
             )
-            logger.info("VoiceStream: Whisper %s loaded (int8, 4 threads)", model_name)
+            logger.info(
+                "VoiceStream: Whisper %s loaded (int8, %d threads)", model_name, cpu_threads
+            )
         except ImportError:
             logger.warning("VoiceStream: faster-whisper not installed")
         except OSError as e:

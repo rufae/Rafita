@@ -40,6 +40,15 @@ def test_admin_ids_missing_value(tmp_path):
     assert _settings_from(tmp_path).admin_ids == []
 
 
+def test_whisper_cpu_threads_default_is_4(tmp_path):
+    assert _settings_from(tmp_path).whisper_cpu_threads == 4
+
+
+def test_whisper_cpu_threads_override_for_hp(tmp_path):
+    settings = _settings_from(tmp_path, "WHISPER_CPU_THREADS=2\n")
+    assert settings.whisper_cpu_threads == 2
+
+
 def test_admin_ids_separators_and_spaces(tmp_path):
     assert _settings_from(tmp_path, "ADMIN_IDS=1; 2,3 4\n").admin_ids == [1, 2, 3, 4]
 
