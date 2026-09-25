@@ -1,4 +1,5 @@
 import base64
+import secrets
 
 from cryptography.fernet import Fernet
 
@@ -8,22 +9,56 @@ from src.logger import logger
 ENV_PATH = ENV_FILE_PATH
 
 
-def _read_key_from_env_file() -> str | None:
-    """Read the persisted key string from the env file, if present and non-empty."""
+def _read_env_var(name: str) -> str | None:
+    """Read a variable from the env file, if present and non-empty."""
     if not ENV_PATH.exists():
         return None
     try:
         content = ENV_PATH.read_text(encoding="utf-8")
     except OSError as e:
-        logger.warning("Could not read encryption env file %s: %s", ENV_PATH, e)
+        logger.warning("Could not read env file %s: %s", ENV_PATH, e)
         return None
+    prefix = name + "="
     for line in content.splitlines():
         stripped = line.strip()
-        if stripped.startswith("ENCRYPTION_KEY="):
+        if stripped.startswith(prefix):
             raw = stripped.split("=", 1)[1].strip().strip("'\"")
             if raw:
                 return raw
     return None
+
+
+def _persist_env_var(name: str, value: str) -> None:
+    """Persist a variable into the env file, failing loudly if impossible."""
+    lines: list[str] = []
+    replaced = False
+    if ENV_PATH.exists():
+        try:
+            original = ENV_PATH.read_text(encoding="utf-8")
+        except OSError as e:
+            raise RuntimeError(
+                "Could not read %s to persist %s. Set %s manually in the environment."
+                % (ENV_PATH, name, name)
+            ) from e
+        for line in original.splitlines(keepends=True):
+            if line.strip().startswith(name + "="):
+                if not replaced:
+                    lines.append("%s=%s\n" % (name, value))
+                    replaced = True
+                continue
+            lines.append(line)
+        if lines and not lines[-1].endswith("\n"):
+            lines.append("\n")
+    if not replaced:
+        lines.append("%s=%s\n" % (name, value))
+    try:
+        ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ENV_PATH.write_text("".join(lines), encoding="utf-8")
+    except OSError as e:
+        raise RuntimeError(
+            "Could not persist %s to %s (%s). Refusing to use an ephemeral key: "
+            "set %s manually in the environment." % (name, ENV_PATH, e, name)
+        ) from e
 
 
 def _normalize_key(raw: str) -> bytes:
@@ -53,40 +88,6 @@ def _normalize_key(raw: str) -> bytes:
         ) from e
 
 
-def _persist_key(key: bytes) -> None:
-    """Persist the generated key into the env file, failing loudly if impossible."""
-    key_b64 = base64.urlsafe_b64encode(key).decode("utf-8")
-    lines: list[str] = []
-    replaced = False
-    if ENV_PATH.exists():
-        try:
-            original = ENV_PATH.read_text(encoding="utf-8")
-        except OSError as e:
-            raise RuntimeError(
-                "Could not read %s to persist ENCRYPTION_KEY. Set ENCRYPTION_KEY "
-                "manually in the environment." % ENV_PATH
-            ) from e
-        for line in original.splitlines(keepends=True):
-            if line.strip().startswith("ENCRYPTION_KEY="):
-                if not replaced:
-                    lines.append("ENCRYPTION_KEY=%s\n" % key_b64)
-                    replaced = True
-                continue
-            lines.append(line)
-        if lines and not lines[-1].endswith("\n"):
-            lines.append("\n")
-    if not replaced:
-        lines.append("ENCRYPTION_KEY=%s\n" % key_b64)
-    try:
-        ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
-        ENV_PATH.write_text("".join(lines), encoding="utf-8")
-    except OSError as e:
-        raise RuntimeError(
-            "Could not persist ENCRYPTION_KEY to %s (%s). Refusing to use an "
-            "ephemeral key: set ENCRYPTION_KEY manually in the environment." % (ENV_PATH, e)
-        ) from e
-
-
 def get_or_create_encryption_key() -> bytes:
     """Return the Fernet key, persisting a generated one so it survives restarts.
 
@@ -102,14 +103,38 @@ def get_or_create_encryption_key() -> bytes:
     if settings.encryption_key:
         return _normalize_key(settings.encryption_key)
 
-    persisted = _read_key_from_env_file()
+    persisted = _read_env_var("ENCRYPTION_KEY")
     if persisted:
         return _normalize_key(persisted)
 
     key = Fernet.generate_key()
-    _persist_key(key)
+    _persist_env_var("ENCRYPTION_KEY", base64.urlsafe_b64encode(key).decode("utf-8"))
     logger.info("Encryption key generated and saved to %s", ENV_PATH)
     return key
+
+
+def get_or_create_webhook_secret() -> str:
+    """Return the per-instance webhook secret, generating and persisting one.
+
+    Unlike the encryption key, an unpersistable webhook secret is not fatal:
+    the gateway treats an empty secret as "not configured" and rejects all
+    webhook requests (fail-closed) instead of falling back to a shared default.
+    """
+    if settings.webhook_secret:
+        return settings.webhook_secret.strip()
+
+    persisted = _read_env_var("WEBHOOK_SECRET")
+    if persisted:
+        return persisted
+
+    secret = secrets.token_urlsafe(32)
+    try:
+        _persist_env_var("WEBHOOK_SECRET", secret)
+    except RuntimeError as e:
+        logger.warning("Could not persist WEBHOOK_SECRET (%s). Webhooks will be rejected.", e)
+        return ""
+    logger.info("Webhook secret generated and saved to %s", ENV_PATH)
+    return secret
 
 
 _cipher: Fernet | None = None

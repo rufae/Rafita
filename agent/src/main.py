@@ -348,14 +348,16 @@ class Application:
 
         logger.info("Step 6/9: Starting FastAPI Gateway (port 8000)...")
         try:
-            import os as _os
-
+            from src.utils.security_manager import get_or_create_webhook_secret
             from src.utils.webhook_server import configure_gateway, start_gateway_server
 
-            webhook_secret = _os.environ.get("WEBHOOK_SECRET", "rafita-secure-2026")
+            webhook_secret = get_or_create_webhook_secret()
             configure_gateway(webhook_secret, bot_ref=bot)
             self._gateway_task = asyncio.create_task(start_gateway_server(port=8000))
-            logger.info("Gateway started on port 8000")
+            logger.info(
+                "Gateway started on port 8000 (webhook auth: %s)",
+                "enabled" if webhook_secret else "DISABLED - webhooks rejected",
+            )
         except Exception as e:
             logger.warning("Gateway start skipped: %s", e)
 
