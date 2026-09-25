@@ -195,7 +195,7 @@ class VaultIndexer:
             logger.debug("No chunkable content in %s", rel_path)
             return {"success": True, "chunks_added": 0, "note_path": rel_path}
 
-        await vector_db.delete_by_source(rel_path)
+        await vector_db.delete_by_note_path(rel_path)
 
         chunks_to_index = []
         for chunk in chunks_data:
@@ -366,7 +366,7 @@ class VaultIndexer:
         from src.utils.vector_manager import vector_db
 
         rel_path = str(note_path.relative_to(VAULT_PATH))
-        deleted = await vector_db.delete_by_source(rel_path)
+        deleted = await vector_db.delete_by_note_path(rel_path)
         if deleted:
             logger.info("VaultIndexer: deleted %d chunks for %s", deleted, rel_path)
         return deleted
