@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,41 @@ def _parse_tags(meta: dict[str, Any]) -> list[str]:
     if isinstance(raw, str) and raw.strip():
         return [t.strip() for t in raw.split(",") if t.strip()]
     return []
+
+
+TAG_FLAG_PREFIX = "tag__"
+MAX_TAG_FLAGS = 20
+
+
+def normalize_tag(tag: str) -> str:
+    """Normalize a tag to a stable metadata-key suffix (ascii, lowercase)."""
+    if not tag:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", str(tag).lower())
+    ascii_tag = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "_", ascii_tag).strip("_")[:40]
+
+
+def build_tag_where(tags: list[str] | None) -> dict[str, Any] | None:
+    """Chroma `where` expression for tag filtering (OR semantics).
+
+    Chroma metadata values must be scalars and there is no `$contains` for
+    metadata, so each tag is stored at index time as a `tag__<normalized>`
+    flag. One tag needs a plain equality; several need `$or` (Chroma requires
+    at least two sub-expressions). Missing keys simply do not match.
+    """
+    normalized: list[str] = []
+    for tag in tags or []:
+        norm = normalize_tag(tag)
+        if norm and norm not in normalized:
+            normalized.append(norm)
+        if len(normalized) >= MAX_TAG_FLAGS:
+            break
+    if not normalized:
+        return None
+    if len(normalized) == 1:
+        return {TAG_FLAG_PREFIX + normalized[0]: 1}
+    return {"$or": [{TAG_FLAG_PREFIX + n: 1} for n in normalized]}
 
 
 class VectorManager:
@@ -262,7 +298,7 @@ class VectorManager:
 
         _t0 = time.perf_counter()
 
-        where_filter = None
+        where_filter = build_tag_where(filter_tags)
 
         try:
             results = await loop.run_in_executor(
@@ -276,6 +312,24 @@ class VectorManager:
         except Exception as e:
             logger.error("Vector query failed: %s", e)
             return {"success": False, "results": [], "message": "Error en busqueda: %s" % e}
+
+        empty = not results or not results.get("documents") or not results["documents"][0]
+        if empty and where_filter is not None:
+            # Legacy collection without tag flags: over-fetch and filter in
+            # Python so un-reindexed installs keep the previous behaviour.
+            wider = min(self._collection.count(), max(top_k * 10, 100))
+            try:
+                results = await loop.run_in_executor(
+                    None,
+                    lambda: self._collection.query(
+                        query_texts=[query_text],
+                        n_results=wider,
+                        where=None,
+                    ),
+                )
+            except Exception as e:
+                logger.error("Vector query (tag fallback) failed: %s", e)
+                return {"success": False, "results": [], "message": "Error en busqueda: %s" % e}
 
         if not results or not results.get("documents") or not results["documents"][0]:
             return {"success": True, "results": [], "message": "Sin resultados relevantes."}
@@ -315,10 +369,11 @@ class VectorManager:
                 }
             seen_notes = {r["note_path"] for r in formatted}
         if filter_tags:
+            wanted = {normalize_tag(t) for t in filter_tags if normalize_tag(t)}
             formatted = [
                 r
                 for r in formatted
-                if any(t in r["tags"] for t in filter_tags)  # type: ignore[operator]
+                if wanted & {normalize_tag(t) for t in r["tags"]}  # type: ignore[union-attr]
             ]
             seen_notes = {r["note_path"] for r in formatted}
         return {
