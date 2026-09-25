@@ -113,13 +113,43 @@ hardware muy limitado (CPU-low profile).
 
 ---
 
-## Validación pendiente
+## Validación medida (2026-09-25, PC con RTX 3060)
 
-**F0.5 — Relevancia RAG >60% en español con bge-m3**: Este criterio NO se ha validado en
-producción porque el hardware actual de desarrollo (portátil CPU-only, 16GB RAM) no puede
-ejecutar bge-m3 + gemma4:12b simultáneamente. La validación queda pendiente de realizar en
-el PC con RTX 3060 (12GB VRAM). La métrica de referencia (67.8% en test controlado con bge-m3)
-es prometedora pero no conclusiva. Ver `cambios.md` y README para seguimiento.
+**F0.5 — Recuperación RAG en español con bge-m3**: medida con un dataset propio
+de 36 casos (28 positivos, 8 negativos) sobre un vault de evaluación:
 
-*ADR aceptada. Los perfiles de hardware documentados en `hardware_detect.py` implementan
-esta decisión automáticamente.*
+| Métrica | Valor |
+|---|---|
+| recall@1 | 0.964 |
+| recall@3 / recall@5 | 1.0 / 1.0 |
+| MRR@5 | 0.982 |
+| relevancia media del chunk correcto | 0.610 |
+| falsos positivos con umbral 0.49 | 0 |
+
+La métrica de distancia se verificó además como equivalente a coseno (vectores
+unitarios) y el umbral se calibró con el trade-off medido (0.49 → 0 falsos
+positivos, 3/28 falsos negativos; el 0.60 anterior habría descartado 9/28
+aciertos). Detalle en `plan.md` (tareas 1.3–1.5).
+
+**Pendiente**: repetir la medición con el vault personal real y más negativos
+(Fase 3). El dataset sintético no sustituye esa validación.
+
+## Revisión de tool-calling (2026-09-25)
+
+La suite de 21 tools con `gemma4:12b` (2 intentos/tool) dio **29/46 con
+equivalencias (63%)**; 7 tools no se invocaron nunca (`create_event`,
+`remember_fact`, `search_knowledge`, `move_or_rename_file`,
+`set_recurring_reminder`, `create_google_calendar_event`, `ingest_file`) y dos
+fueron inestables entre ejecuciones. La afirmación de esta ADR de que gemma4
+tiene "mejor tool use" se sostiene frente a CPU, pero **no alcanza fiabilidad
+de producción todavía**; la mejora (prompt/tool definitions) queda para v0.2.0
+y la validación con harware de destino en Fase 3.
+
+## Nota sobre hardware_detect
+
+`hardware_detect.py` **recomienda y registra** el perfil (gpu-high → gemma4:12b,
+etc.) pero no sobreescribe la configuración: el modelo efectivo sale de
+`OLLAMA_MODEL`/`OPENAI_MODEL` en `.env` (el wizard de la tarea 2.6 ayuda a
+elegirlo). No asumir selección automática.
+
+*ADR aceptada y revisada con evidencia real el 2026-09-25.*
