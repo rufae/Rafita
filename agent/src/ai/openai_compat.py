@@ -22,6 +22,7 @@ class OpenAICompatClient:
         self.base_url = settings.openai_base_url.rstrip("/")
         self.model = settings.openai_model
         self.vision_model = settings.openai_vision_model or settings.openai_model
+        self.reasoning_effort = settings.openai_reasoning_effort
         self.temperature = settings.llm_temperature
         self.max_tokens = settings.llm_max_tokens
         self._client: AsyncOpenAI | None = None
@@ -60,6 +61,16 @@ class OpenAICompatClient:
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}
 
+    def _extra_body(self) -> dict[str, Any] | None:
+        """Optional provider-specific field; omitted unless configured.
+
+        Useful with Ollama's `/v1` layer to disable thinking
+        (`OPENAI_REASONING_EFFORT=none`) when using `AI_PROVIDER=openai`.
+        """
+        if self.reasoning_effort:
+            return {"reasoning_effort": self.reasoning_effort}
+        return None
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
@@ -77,6 +88,7 @@ class OpenAICompatClient:
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature if temperature is not None else self.temperature,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
+            extra_body=self._extra_body(),
         )
         return response.choices[0].message.content or ""
 
@@ -98,6 +110,7 @@ class OpenAICompatClient:
             tools=tools,  # type: ignore[arg-type]
             temperature=temperature if temperature is not None else self.temperature,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
+            extra_body=self._extra_body(),
         )
         message = response.choices[0].message
         tool_calls = None
@@ -130,6 +143,7 @@ class OpenAICompatClient:
             temperature=temperature if temperature is not None else self.temperature,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
             stream=True,
+            extra_body=self._extra_body(),
         )
         async for chunk in stream:  # type: ignore[union-attr]
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
