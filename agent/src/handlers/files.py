@@ -13,6 +13,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.ollama_client import llm
+from src.utils.path_safety import resolve_within
 from src.utils.tts_manager import convert_to_ogg, text_to_speech
 
 INBOX = Path("/data/obsidian_vault/00-Inbox")
@@ -81,9 +82,10 @@ def _safe_vault_subpath(vault_root: Path, subpath: str) -> Path:
     subpath = subpath.replace("\\", "/")
     parts = [p for p in subpath.split("/") if p and p not in (".", "..")]
     result = vault_root.joinpath(*parts)
-    if not str(result.resolve()).startswith(str(vault_root.resolve())):
-        raise ValueError("Path traversal blocked: %s" % subpath)
-    return result
+    try:
+        return resolve_within(vault_root, result)
+    except ValueError:
+        raise ValueError("Path traversal blocked: %s" % subpath) from None
 
 
 def _extract_text_from_file(file_path: Path) -> str:
