@@ -41,6 +41,6 @@ COPY src/ ./src/
 USER rafita
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=300s \
-    CMD python -c "import httpx; r=httpx.get('http://localhost:8000/health', timeout=5); exit(0) if r.status_code==200 else exit(1)" || exit 1
+    CMD python -c "import httpx; r=httpx.get('http://localhost:8000/ready', timeout=5); exit(0) if r.status_code==200 else exit(1)" || exit 1
 
 CMD ["python", "-m", "src.main"]

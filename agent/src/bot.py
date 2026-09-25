@@ -311,6 +311,16 @@ class RafitaBot:
                 pass
             logger.info("RafitaBot destroyed")
 
+    def polling_status(self) -> dict[str, Any]:
+        """Readiness probe for Telegram polling (used by the gateway /ready)."""
+        if self._app is None:
+            return {"status": "error", "detail": "bot not initialized"}
+        if not self._app_started.is_set():
+            return {"status": "error", "detail": "polling not started"}
+        if self._polling_task is None or self._polling_task.done():
+            return {"status": "error", "detail": "polling task not running"}
+        return {"status": "ok"}
+
     async def send_proactive_message(self, chat_id: int, text: str) -> bool:
         if not self._app:
             logger.warning("Bot not initialized, cannot send proactive message")
