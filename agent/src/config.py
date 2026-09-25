@@ -1,8 +1,11 @@
+import json
 import os
+import re
 from pathlib import Path
+from typing import Annotated, Any
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ENV_FILE_PATH = Path(os.environ.get("ENV_FILE", "/workspace/.env"))
 
@@ -16,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     telegram_token: str = Field(..., alias="TELEGRAM_TOKEN")
-    admin_ids: list[int] = Field(default_factory=list, alias="ADMIN_IDS")
+    admin_ids: Annotated[list[int], NoDecode] = Field(default_factory=list, alias="ADMIN_IDS")
     assistant_name: str = Field("Rafita", alias="ASSISTANT_NAME")
 
     ollama_host: str = Field("http://ollama:11434", alias="OLLAMA_HOST")
@@ -54,16 +57,37 @@ class Settings(BaseSettings):
 
     @field_validator("admin_ids", mode="before")
     @classmethod
-    def parse_admin_ids(cls, v: str | None) -> list[int]:
+    def parse_admin_ids(cls, v: Any) -> list[int]:
+        """Accept CSV ("1,2"), JSON ("[1,2]"), single id, or an empty value.
+
+        `NoDecode` stops pydantic-settings from json.loads()-ing the raw value
+        before this validator runs, so the CSV documented in `.env.example`
+        works as-is.
+        """
         if v is None:
             return []
-        if isinstance(v, list):
-            return v
-        parts = [x.strip() for x in v.split(",") if x.strip()]
-        result = []
-        for p in parts:
+        if isinstance(v, int):
+            return [v]
+        if isinstance(v, (list, tuple, set)):
+            return [int(x) for x in v]
+        if not isinstance(v, str):
+            return []
+        raw = v.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
             try:
-                result.append(int(p))
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = []
+            return [int(x) for x in parsed if str(x).strip().lstrip("-").isdigit()]
+        result = []
+        for part in re.split(r"[,;\s]+", raw):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                result.append(int(part))
             except ValueError:
                 continue
         return result
