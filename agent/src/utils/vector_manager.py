@@ -84,6 +84,11 @@ class VectorManager:
                 settings=ChromaSettings(anonymized_telemetry=False),
             ),
         )
+        # Chroma defaults to L2 (collection metadata is empty). Task 1.4
+        # verified that bge-m3 through Ollama returns unit-norm vectors for
+        # both documents and queries (norm ~1.0) and that L2 and cosine rank
+        # identically (Pearson ~1.0), so the default space is equivalent to
+        # cosine here; do not change it without re-measuring and reindexing.
         self._collection = self._client.get_or_create_collection(
             name="rafita_rag",
             embedding_function=self._embed_fn,
