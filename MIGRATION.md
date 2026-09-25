@@ -333,52 +333,29 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
-#### Paso 2: Habilitar GPU en docker-compose.yml
+#### Paso 2: Aplicar el overlay GPU (sin editar el compose base)
 
-**MANUAL**: El bloque de GPU **no se activa solo**. Debes editar `docker-compose.yml`
-en la máquina de destino antes de `docker compose up -d`.
+El `docker-compose.yml` base ya tiene un bloque `deploy` para límites de
+memoria. **No añadas otro `deploy:` a mano** en el mismo servicio: dos claves
+`deploy` producen YAML inválido (ese era el error que documentaba la versión
+anterior de esta guía). El repo incluye un overlay listo:
 
-**Qué tocar** — en el servicio `ollama-service`, líneas 17-23 del archivo:
+```bash
+# Validar la combinación antes de arrancar (no requiere GPU física):
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml config --quiet
 
-```yaml
-  ollama-service:
-    ...
-    volumes:
-      - ./ollama/models:/root/.ollama
-    # Descomentar estas 6 líneas para GPU NVIDIA:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - OLLAMA_KEEP_ALIVE=-1
-      ...
+# Levantar con GPU:
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-Cambia las 6 líneas del bloque `deploy` de comentadas a activas:
+El overlay `docker-compose.gpu.yml`:
+- añade `deploy.resources.reservations.devices` (driver `nvidia`) al bloque
+  `deploy` existente de `ollama-service`, y
+- fija `OLLAMA_VULKAN=0` para que Ollama use CUDA nativo en vez de Vulkan.
 
-```yaml
-  ollama-service:
-    ...
-    volumes:
-      - ./ollama/models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - OLLAMA_KEEP_ALIVE=-1
-      ...
-```
-
-Si además quieres subir el límite de memoria de Ollama para gemma4:12b
-(requiere ~8-9GB RAM del host):
+Si quieres subir el límite de memoria de Ollama para gemma4:12b (~8-9GB del
+host), edita **solo los valores** del `deploy` existente en `docker-compose.yml`
+(`limits.memory` y `reservations.memory`); no añadas una clave `deploy` nueva.
 
 Después de iniciar Rafita, verifica en los logs que se detectó la GPU:
 
