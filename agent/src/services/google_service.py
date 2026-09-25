@@ -62,7 +62,7 @@ class GoogleService:
         token_json = creds.to_json()
         token_enc = encrypt_value(token_json)
         await db.kv_set("google_token", token_enc)
-        logger.info("Google Service: token cifrado y guardado en SQLite (AES-256)")
+        logger.info("Google Service: token cifrado (Fernet) y guardado en SQLite")
 
     async def generate_auth_url(self) -> dict[str, Any]:
         if not OAUTH_CREDENTIALS_FILE.exists():

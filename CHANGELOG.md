@@ -5,6 +5,57 @@ Todos los cambios importantes en Rafita AVP se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
+`5ce1cac`..`83a337b`). Todas las tareas tienen evidencia ejecutada en `plan.md`.
+
+### Corregido
+- Cifrado de credenciales fail-closed y persistente: la clave se guarda en el
+  mismo `.env` que lee `Settings`, sin fallback a texto plano y sin clave
+  efímera (tarea 0.1).
+- Path traversal del vault confinado con resolución real de ancestro
+  (`utils/path_safety.resolve_within`), incluidos symlinks y prefijos hermanos
+  (tarea 0.3).
+- Webhook secret único por instancia; endpoints fail-closed (503 sin secreto,
+  401 con firma inválida) y sin default compartido (tarea 0.4).
+- `ADMIN_IDS` acepta CSV/JSON del `.env.example` sin edición extra (tarea 0.5).
+- Health check real: `/ready` comprueba Ollama+modelo, Chroma y Telegram;
+  `/health` queda como liveness (tarea 0.6).
+- Reindexado RAG: la clave de borrado coincide con la de indexado
+  (`note_path`), con compatibilidad para filas legadas (tarea 1.1).
+- Tests de Fernet reescritos sin auto-captura del `AssertionError` (tarea 1.8).
+- Dependencias: `pypdf 6.19.0`, `fastapi 0.141.1`, `starlette 1.7.0`; el gate de
+  `pip-audit` es bloqueante con 3 excepciones documentadas de ChromaDB (0.2).
+- Documentación alineada: URLs reales, descripción correcta de Fernet,
+  puertos en loopback, vault montado, estado de Calendar (Fase 4).
+
+### Añadido
+- Evaluación RAG reproducible: 36 casos en español, `Recall@3 = 1.0`,
+  `MRR@5 = 0.98` con bge-m3, umbral calibrado 0.49 (0 falsos positivos en el
+  dataset) y respuesta `NO_ENCONTRADO` (tareas 1.2–1.5).
+- Filtrado por tags en la query de Chroma con flags escalares (tarea 1.6).
+- Suite de tool-calling con modelo real: 21 tools, 2 intentos por tool,
+  equivalencias explícitas (tarea 1.7).
+- `BrainMaintainer`: versionado git del vault con snapshots y revert real,
+  carpetas protegidas configurables y desactivado por defecto (tarea 2.4).
+- Taxonomía del vault, idioma, zona horaria, moneda y nombre configurables
+  (tareas 2.1–2.2); `PERSIST_TO_BRAIN` bloquea escrituras en modo depuración
+  (tarea 2.3).
+- Adapters de proveedor de IA: Ollama local y cualquier endpoint
+  OpenAI-compatible, seleccionable por configuración (tarea 2.5).
+- Wizard de instalación multiplataforma (`scripts/setup_wizard.py`, tarea 2.6)
+  y `CONTRIBUTING.md`.
+
+### Limitaciones conocidas (ronda de estabilización)
+- La calidad RAG está medida sobre un vault de evaluación sintético; falta
+  validarla con el vault personal real y más negativos.
+- Tool-calling con `gemma4:12b`: 29/46 con equivalencias; 7 tools no se
+  invocan de forma fiable (ver README y plan.md).
+- La instalación end-to-end termina en un bot funcional solo con un token de
+  Telegram real; las pruebas de servidor continuo son la Fase 3 (pendiente de
+  despliegue).
+
 ## [0.1.0] - 2026-08-12
 
 ### Añadido
@@ -13,7 +64,9 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 - Fix crítico: OllamaEmbeddingFunction ahora lanza excepción en fallos en vez de guardar vectores-cero
 - Procesamiento de chunks uno a uno con 3 reintentos y backoff exponencial
 - Timeout de embeddings aumentado a 600s para hardware modesto
-- Fórmula de relevancia corregida: `max(0, 1.0 - distance/2.0)` para métrica L2
+- Fórmula de relevancia ajustada: `max(0, 1.0 - distance/2.0)` (la ronda de
+  estabilización verificó después que con vectores unitarios equivale a la
+  similitud coseno; ver `[Unreleased]`)
 - Timeout de chat aumentado a 600s para CPU-only
 
 #### Fase 1 — Calidad de código base
@@ -84,8 +137,12 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Limitaciones conocidas
 
-- **F0.5**: Relevancia RAG >60% en español con bge-m3 no validada en producción (requiere GPU)
-- **F9.5/F9.6**: Prueba real de voz con RAG no pasa en CPU (qwen2.5:7b no invoca tools de forma fiable ~50% de las veces)
+- **F0.5**: Relevancia RAG >60% en español con bge-m3 no validada en producción (requiere GPU).
+  → Actualizado en `[Unreleased]`: medida en GPU (Recall@3 1.0, MRR@5 0.98, umbral 0.49);
+  queda validar con el vault personal real.
+- **F9.5/F9.6**: Prueba real de voz con RAG no pasa en CPU (qwen2.5:7b no invoca tools de forma fiable ~50% de las veces).
+  → Actualizado en `[Unreleased]`: suite de tool-calling con gemma4:12b en GPU (29/46 con equivalencias);
+  7 tools no se invocan de forma fiable, mejora planificada para v0.2.0.
 - **Watchdog en Docker Desktop Windows**: inotify no propaga eventos a través de bind mounts
 - **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only
 
@@ -93,7 +150,7 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 - Ver [SECURITY.md](SECURITY.md) para modelo de amenaza completo
 - Cifrado de disco recomendado (BitLocker/LUKS/FileVault)
-- Cifrado de credenciales con AES-256 Fernet
+- Cifrado de credenciales con Fernet (AES-128-CBC + HMAC-SHA256)
 - Privacidad en llamadas de voz: RAG puede recuperar datos sensibles sin vista previa
 
 ## [0.0.0] - 2026-08-10
