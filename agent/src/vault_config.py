@@ -60,6 +60,7 @@ class VaultTaxonomy:
     folders: dict[str, str]
     structure: list[str]
     ignored_dirs: frozenset[str]
+    protected_folders: tuple[str, ...] = ()
 
     def path(self, key: str) -> str:
         """Return the configured folder for a symbolic key (defaults if absent)."""
@@ -89,6 +90,7 @@ def load_vault_taxonomy(path: Path | None = None) -> VaultTaxonomy:
     folders = dict(DEFAULT_FOLDERS)
     structure: list[str] | None = None
     ignored_dirs = set(DEFAULT_IGNORED_DIRS)
+    protected_folders: list[str] | None = None
 
     config_path = path or default_config_path()
     if config_path is not None:
@@ -111,6 +113,11 @@ def load_vault_taxonomy(path: Path | None = None) -> VaultTaxonomy:
                     ignored_dirs = {
                         _as_clean_string(item) for item in raw_ignored if str(item).strip()
                     }
+                raw_protected = vault.get("protected_folders")
+                if isinstance(raw_protected, list):
+                    protected_folders = [
+                        _as_clean_string(item) for item in raw_protected if str(item).strip()
+                    ]
         except Exception:
             # Fail open to the PARA defaults: a broken config must not leave the
             # vault without structure.
@@ -121,6 +128,13 @@ def load_vault_taxonomy(path: Path | None = None) -> VaultTaxonomy:
     if structure is None:
         structure = [folders[key] for key in STRUCTURE_KEYS]
 
+    if protected_folders is None:
+        protected_folders = [
+            folders["areas_finanzas"],
+            folders["areas_salud"],
+            folders["diary"],
+        ]
+
     seen: set[str] = set()
     deduped: list[str] = []
     for folder in structure:
@@ -129,7 +143,12 @@ def load_vault_taxonomy(path: Path | None = None) -> VaultTaxonomy:
             deduped.append(folder)
 
     ignored_dirs.add("Documentos_Indexados")
-    return VaultTaxonomy(folders=folders, structure=deduped, ignored_dirs=frozenset(ignored_dirs))
+    return VaultTaxonomy(
+        folders=folders,
+        structure=deduped,
+        ignored_dirs=frozenset(ignored_dirs),
+        protected_folders=tuple(protected_folders),
+    )
 
 
 taxonomy = load_vault_taxonomy()
