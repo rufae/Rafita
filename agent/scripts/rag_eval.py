@@ -98,6 +98,36 @@ def summarize_positives(rows: list[dict], k: int) -> dict:
     }
 
 
+def evaluate_thresholds(
+    positive_relevances: list[float],
+    negative_relevances: list[float],
+    thresholds: list[float],
+) -> list[dict]:
+    """Trade-off table: a positive below the threshold is a false negative
+    (correct answer discarded) and a negative at/above it is a false positive
+    (irrelevant result offered as an answer)."""
+    rows = []
+    total_positives = len(positive_relevances)
+    total_negatives = len(negative_relevances)
+    for threshold in thresholds:
+        false_negatives = sum(1 for rel in positive_relevances if rel < threshold)
+        false_positives = sum(1 for rel in negative_relevances if rel >= threshold)
+        rows.append(
+            {
+                "threshold": threshold,
+                "false_negatives": false_negatives,
+                "false_negative_rate": false_negatives / total_positives
+                if total_positives
+                else 0.0,
+                "false_positives": false_positives,
+                "false_positive_rate": false_positives / total_negatives
+                if total_negatives
+                else 0.0,
+            }
+        )
+    return rows
+
+
 def summarize_negatives(rows: list[dict]) -> dict:
     """rows: [{'top_relevance': float}] measured on queries with no answer."""
     total = len(rows)
@@ -213,6 +243,37 @@ async def run_metric_check(sample_size: int = 12) -> dict:
     return report
 
 
+async def run_threshold_sweep(thresholds: list[float]) -> dict:
+    """Collect raw relevances once and compute the threshold trade-off (task 1.5)."""
+    from src.config import settings
+
+    manager, indexed = await _build_indexed_manager()
+    print("Indexed %d notes (%d chunks)" % (indexed["notes_indexed"], indexed["total_chunks"]))
+    positives: list[float] = []
+    negatives: list[float] = []
+    for item in load_dataset():
+        queried = await manager.query(item["query"], top_k=5, apply_threshold=False)
+        results = queried.get("results", [])
+        relevances = [float(r["relevance"]) for r in results]
+        if item["relevant"]:
+            expected = max(
+                (float(r["relevance"]) for r in results if r["note_path"] == item["expected_note"]),
+                default=0.0,
+            )
+            positives.append(expected)
+        else:
+            negatives.append(max(relevances) if relevances else 0.0)
+    await manager.close()
+    return {
+        "embedding_model": settings.embedding_model,
+        "positives": len(positives),
+        "negatives": len(negatives),
+        "positive_relevances": sorted(positives),
+        "negative_relevances": sorted(negatives),
+        "sweep": evaluate_thresholds(positives, negatives, thresholds),
+    }
+
+
 async def run_evaluation(top_k: int) -> dict:
     from src.config import settings
 
@@ -231,7 +292,7 @@ async def run_evaluation(top_k: int) -> dict:
     negative_rows: list[dict] = []
 
     for item in dataset:
-        queried = await manager.query(item["query"], top_k=top_k)
+        queried = await manager.query(item["query"], top_k=top_k, apply_threshold=False)
         results = queried.get("results", [])
         notes = [r["note_path"] for r in results]
         relevances = [float(r["relevance"]) for r in results]
@@ -296,7 +357,33 @@ def main() -> int:
         help="check embedding norms and L2-vs-cosine ordering instead of the dataset",
     )
     parser.add_argument("--sample-size", type=int, default=12)
+    parser.add_argument(
+        "--sweep-thresholds",
+        type=str,
+        default=None,
+        help="comma-separated candidate thresholds, e.g. 0.40,0.45,0.49,0.55",
+    )
     args = parser.parse_args()
+
+    if args.sweep_thresholds:
+        thresholds = [float(value) for value in args.sweep_thresholds.split(",")]
+        sweep_report = asyncio.run(run_threshold_sweep(thresholds))
+        print("\n=== THRESHOLD SWEEP ===")
+        print("positives=%d negatives=%d" % (sweep_report["positives"], sweep_report["negatives"]))
+        print("threshold | FN | FN rate | FP | FP rate")
+        for row in sweep_report["sweep"]:
+            print(
+                "  %.2f    | %2d | %6.1f%% | %2d | %6.1f%%"
+                % (
+                    row["threshold"],
+                    row["false_negatives"],
+                    row["false_negative_rate"] * 100,
+                    row["false_positives"],
+                    row["false_positive_rate"] * 100,
+                )
+            )
+        print(json.dumps(sweep_report, indent=2, ensure_ascii=False))
+        return 0
 
     if args.check_metric:
         metric_report = asyncio.run(run_metric_check(args.sample_size))

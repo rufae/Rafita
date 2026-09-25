@@ -883,7 +883,10 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             if not result["results"]:
                 return {
                     "success": True,
-                    "message": "No encontre informacion relevante en tu segundo cerebro. Puedo buscar en internet si lo deseas.",
+                    "message": (
+                        "NO_ENCONTRADO: no hay informacion relevante en tu segundo cerebro. "
+                        "Puedo buscar en internet si lo deseas."
+                    ),
                 }
             lines = ["*Resultados de tu segundo cerebro:*\n"]
             for i, r in enumerate(result["results"], 1):
@@ -920,7 +923,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 return {
                     "success": True,
                     "message": (
-                        "No encontre informacion relevante en tu segundo cerebro "
+                        "NO_ENCONTRADO: no hay informacion relevante en tu segundo cerebro "
                         "sobre '%s'. Puedo buscar en internet si lo deseas." % query[:100]
                     ),
                 }
