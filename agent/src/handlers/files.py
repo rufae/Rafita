@@ -622,7 +622,8 @@ def _extract_semantic_name(caption: str, extracted_text: str = "") -> str:
 async def _process_vision_image(
     update: Update, chat_id: int, image_path: str, caption: str, context=None
 ) -> None:
-    from src.handlers.chat import TOOLS_DEFINITIONS, _execute_tool
+    from src.handlers.chat import _execute_tool
+    from src.handlers.chat_tools import get_tools_for_llm
     from src.models.schemas import MessageRole
     from src.utils.obsidian_manager import create_note_with_image, save_attachment
 
@@ -791,7 +792,7 @@ async def _process_vision_image(
         content, tool_calls = await asyncio.wait_for(
             llm.chat_with_tools(
                 messages=messages_for_llm,
-                tools=TOOLS_DEFINITIONS,
+                tools=get_tools_for_llm(),
                 max_tokens=512,
             ),
             timeout=120.0,
