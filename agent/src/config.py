@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     brain_maintenance: bool = Field(False, alias="BRAIN_MAINTENANCE")
     brain_maintenance_interval: int = Field(1800, alias="BRAIN_MAINTENANCE_INTERVAL", ge=60)
 
+    ai_provider: str = Field("ollama", alias="AI_PROVIDER")
+    openai_api_key: str = Field("", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field("https://api.openai.com/v1", alias="OPENAI_BASE_URL")
+    openai_model: str = Field("gpt-4o-mini", alias="OPENAI_MODEL")
+    openai_vision_model: str = Field("", alias="OPENAI_VISION_MODEL")
+    openai_embedding_model: str = Field("", alias="OPENAI_EMBEDDING_MODEL")
+
     @field_validator("admin_ids", mode="before")
     @classmethod
     def parse_admin_ids(cls, v: Any) -> list[int]:
