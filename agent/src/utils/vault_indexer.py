@@ -175,7 +175,12 @@ class VaultIndexer:
         self._pending_paths: dict[str, float] = {}
 
     async def index_note(self, note_path: Path) -> dict[str, Any]:
-        from src.utils.vector_manager import vector_db
+        from src.utils.vector_manager import (
+            MAX_TAG_FLAGS,
+            TAG_FLAG_PREFIX,
+            normalize_tag,
+            vector_db,
+        )
 
         rel_path = (
             str(note_path.relative_to(VAULT_PATH))
@@ -197,21 +202,31 @@ class VaultIndexer:
 
         await vector_db.delete_by_note_path(rel_path)
 
+        # Scalar flags per tag: Chroma metadata does not accept lists and has no
+        # metadata $contains, so tag filtering in the query needs one flag per
+        # tag (task 1.6).
+        tag_flags: dict[str, Any] = {}
+        raw_tags = metadata.get("tags", [])
+        if isinstance(raw_tags, list):
+            for tag in raw_tags[:MAX_TAG_FLAGS]:
+                norm = normalize_tag(str(tag))
+                if norm:
+                    tag_flags[TAG_FLAG_PREFIX + norm] = 1
+
         chunks_to_index = []
         for chunk in chunks_data:
             chunk_meta = {
                 "note_path": rel_path,
                 "filename": note_path.name,
                 "heading": chunk["heading_path"] or chunk["heading"],
-                "tags_str": ",".join(metadata.get("tags", []))
-                if isinstance(metadata.get("tags"), list)
-                else "",
+                "tags_str": ",".join(raw_tags) if isinstance(raw_tags, list) else "",
                 "note_type": str(metadata.get("type", "")),
                 "status": str(metadata.get("status", "")),
                 "updated_at": str(metadata.get("updated", "")),
                 "obsidian_uri": build_obsidian_uri(note_path),
                 "indexed_at": datetime.now().isoformat(),
             }
+            chunk_meta.update(tag_flags)
             chunks_to_index.append({"text": chunk["text"], "metadata": chunk_meta})
 
         result = await vector_db.index_chunks(chunks_to_index)
