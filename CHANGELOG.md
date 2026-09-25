@@ -29,6 +29,13 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   `pip-audit` es bloqueante con 3 excepciones documentadas de ChromaDB (0.2).
 - Documentación alineada: URLs reales, descripción correcta de Fernet,
   puertos en loopback, vault montado, estado de Calendar (Fase 4).
+- Modelos que razonan por defecto (gemma4): las llamadas de chat Ollama envían
+  `reasoning_effort` (`OLLAMA_REASONING_EFFORT`, por defecto `none`) y el
+  prewarm nativo desactiva `think`; antes el razonamiento consumía
+  `LLM_MAX_TOKENS` y el contenido visible llegaba vacío. `OLLAMA_NUM_THREAD`
+  hace configurable el número de hilos (antes `num_thread=8` fijo en visión) y
+  `OPENAI_REASONING_EFFORT` permite lo mismo con `AI_PROVIDER=openai` sobre
+  Ollama `/v1` (tarea 3.1).
 
 ### Añadido
 - Evaluación RAG reproducible: 36 casos en español, `Recall@3 = 1.0`,

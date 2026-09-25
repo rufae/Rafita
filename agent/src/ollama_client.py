@@ -116,6 +116,8 @@ class OllamaClient:
         self.base_url: str = f"{settings.ollama_host.rstrip('/')}/v1"
         self.model: str = settings.ollama_model
         self.vision_model: str = settings.ollama_vision_model
+        self.reasoning_effort: str = settings.ollama_reasoning_effort
+        self.num_thread: int = settings.ollama_num_thread
         self.temperature: float = settings.llm_temperature
         self.max_tokens: int = settings.llm_max_tokens
         self._ready: bool = False
@@ -177,6 +179,7 @@ class OllamaClient:
                         "model": model_name,
                         "prompt": "hello",
                         "stream": False,
+                        "think": False,
                         "keep_alive": -1,
                         "options": {"num_predict": 1, "temperature": 0.1},
                     },
@@ -308,10 +311,7 @@ class OllamaClient:
         try:
             stream = await self._client.chat.completions.create(
                 **params,
-                extra_body={
-                    "keep_alive": -1,
-                    "options": {"num_ctx": 2048},
-                },
+                extra_body=self._ollama_extra_body(2048),
             )
             async for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
@@ -339,13 +339,25 @@ class OllamaClient:
             )
         return result
 
+    def _ollama_extra_body(self, num_ctx: int, keep_alive: Any = -1) -> dict[str, Any]:
+        """Native Ollama fields forwarded through the OpenAI-compatible layer.
+
+        `reasoning_effort=none` disables "thinking" on models that reason by
+        default (e.g. gemma4): otherwise the reasoning consumes `max_tokens` and
+        the visible `content` arrives empty. Empty setting omits the field.
+        """
+        options: dict[str, Any] = {"num_ctx": num_ctx}
+        if self.num_thread > 0:
+            options["num_thread"] = self.num_thread
+        extra: dict[str, Any] = {"keep_alive": keep_alive, "options": options}
+        if self.reasoning_effort:
+            extra["reasoning_effort"] = self.reasoning_effort
+        return extra
+
     async def _chat_sync(self, params: dict[str, Any]) -> str:
         response: ChatCompletion = await self._client.chat.completions.create(
             **params,
-            extra_body={
-                "keep_alive": -1,
-                "options": {"num_ctx": 2048},
-            },
+            extra_body=self._ollama_extra_body(2048),
         )
         content = response.choices[0].message.content or ""
         usage = getattr(response, "usage", None)
@@ -362,10 +374,7 @@ class OllamaClient:
         full_content: list[str] = []
         stream_response = await self._client.chat.completions.create(
             **params,
-            extra_body={
-                "keep_alive": -1,
-                "options": {"num_ctx": 2048},
-            },
+            extra_body=self._ollama_extra_body(2048),
         )
         async for chunk in stream_response:
             if chunk.choices and len(chunk.choices) > 0:
@@ -442,10 +451,7 @@ class OllamaClient:
         async def _do_tool_chat():
             response = await self._client.chat.completions.create(
                 **params,
-                extra_body={
-                    "keep_alive": -1,
-                    "options": {"num_ctx": 4096},
-                },
+                extra_body=self._ollama_extra_body(4096),
             )
             _elapsed_api = _time.time() - _t_api_start
             _ts_d = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
@@ -505,10 +511,7 @@ class OllamaClient:
         try:
             response = await self._client.chat.completions.create(
                 **params,
-                extra_body={
-                    "keep_alive": 0,
-                    "options": {"num_ctx": 2048, "num_thread": 8},
-                },
+                extra_body=self._ollama_extra_body(2048, keep_alive=0),
             )
             content = response.choices[0].message.content or ""
             return content

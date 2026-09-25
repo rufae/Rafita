@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     ollama_host: str = Field("http://ollama:11434", alias="OLLAMA_HOST")
     ollama_model: str = Field("qwen2.5:7b", alias="OLLAMA_MODEL")
     ollama_vision_model: str = Field("gemma4:12b", alias="OLLAMA_VISION_MODEL")
+    ollama_reasoning_effort: str = Field("none", alias="OLLAMA_REASONING_EFFORT")
+    ollama_num_thread: int = Field(0, alias="OLLAMA_NUM_THREAD", ge=0)
     llm_temperature: float = Field(0.7, alias="LLM_TEMPERATURE", ge=0.0, le=2.0)
     llm_max_tokens: int = Field(4096, alias="LLM_MAX_TOKENS", ge=128, le=16384)
 
@@ -68,6 +70,13 @@ class Settings(BaseSettings):
     openai_model: str = Field("gpt-4o-mini", alias="OPENAI_MODEL")
     openai_vision_model: str = Field("", alias="OPENAI_VISION_MODEL")
     openai_embedding_model: str = Field("", alias="OPENAI_EMBEDDING_MODEL")
+    openai_reasoning_effort: str = Field("", alias="OPENAI_REASONING_EFFORT")
+
+    @field_validator("ollama_reasoning_effort", "openai_reasoning_effort", mode="before")
+    @classmethod
+    def normalize_reasoning_effort(cls, v: Any) -> str:
+        """Empty means "do not send the parameter at all"."""
+        return "" if v is None else str(v).strip().lower()
 
     @field_validator("admin_ids", mode="before")
     @classmethod
