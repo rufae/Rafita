@@ -35,6 +35,14 @@ def _verify_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def _check_webhook_auth(body: bytes, signature: str) -> None:
+    """Fail-closed webhook auth: reject when unconfigured or signature invalid."""
+    if not _webhook_secret:
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+    if not _verify_signature(body, signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "rafita-gateway", "timestamp": time.time()}
@@ -61,10 +69,7 @@ async def list_connectors():
 async def receive_webhook(source: str, request: Request):
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
-
-    if _webhook_secret:
-        if not _verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    _check_webhook_auth(body, signature)
 
     try:
         payload = json.loads(body) if body else {}
@@ -100,9 +105,7 @@ async def receive_webhook(source: str, request: Request):
 async def register_connector_endpoint(name: str, request: Request):
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
-    if _webhook_secret:
-        if not _verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    _check_webhook_auth(body, signature)
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
@@ -125,9 +128,7 @@ async def register_connector_endpoint(name: str, request: Request):
 async def remove_connector_endpoint(name: str, request: Request):
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
-    if _webhook_secret:
-        if not _verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    _check_webhook_auth(body, signature)
     from src.utils.app_connector import connector
 
     removed = await connector.remove_connector(name)
@@ -142,9 +143,7 @@ async def check_gmail(request: Request):
 
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
-    if _webhook_secret:
-        if not _verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    _check_webhook_auth(body, signature)
     emails = await connector.fetch_urgent_emails()
     return {"urgent_emails": emails, "count": len(emails)}
 
@@ -155,9 +154,7 @@ async def control_home_assistant(entity_id: str, request: Request):
 
     body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
-    if _webhook_secret:
-        if not _verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    _check_webhook_auth(body, signature)
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:

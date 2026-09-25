@@ -106,3 +106,28 @@ def test_unpersistable_key_raises_runtime_error(tmp_path, monkeypatch):
 def test_empty_plaintext_passthrough():
     assert security_manager.encrypt_value("") == ""
     assert security_manager.decrypt_value("") == ""
+
+
+def test_webhook_secret_generated_and_persisted(isolated_env_file, monkeypatch):
+    monkeypatch.setattr(settings, "webhook_secret", "")
+    first = security_manager.get_or_create_webhook_secret()
+    assert len(first) >= 32
+    assert ("WEBHOOK_SECRET=%s" % first) in isolated_env_file.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(settings, "webhook_secret", "")
+    assert security_manager.get_or_create_webhook_secret() == first
+
+
+def test_configured_webhook_secret_takes_precedence(isolated_env_file, monkeypatch):
+    monkeypatch.setattr(settings, "webhook_secret", "my-secret")
+    assert security_manager.get_or_create_webhook_secret() == "my-secret"
+    assert "WEBHOOK_SECRET=" not in isolated_env_file.read_text(encoding="utf-8")
+
+
+def test_unpersistable_webhook_secret_returns_empty(tmp_path, monkeypatch):
+    """Fail-closed: no persistence -> empty secret -> gateway rejects webhooks."""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(security_manager, "ENV_PATH", blocker / "sub" / ".env")
+    monkeypatch.setattr(settings, "webhook_secret", "")
+    assert security_manager.get_or_create_webhook_secret() == ""
