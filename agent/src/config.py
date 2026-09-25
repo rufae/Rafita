@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = Field(64, alias="CHUNK_OVERLAP")
     indexer_interval: int = Field(3600, alias="INDEXER_INTERVAL")
     encryption_key: str = Field("", alias="ENCRYPTION_KEY")
+    webhook_secret: str = Field("", alias="WEBHOOK_SECRET")
 
     @field_validator("admin_ids", mode="before")
     @classmethod
