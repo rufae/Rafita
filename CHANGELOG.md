@@ -53,6 +53,10 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   OpenAI-compatible, seleccionable por configuración (tarea 2.5).
 - Wizard de instalación multiplataforma (`scripts/setup_wizard.py`, tarea 2.6)
   y `CONTRIBUTING.md`.
+- Test-guardia de ChromaDB embebido (`test_chromadb_embedded_only.py`): falla
+  si se introduce modo servidor o `trust_remote_code`, convirtiendo en
+  invariante verificable la mitigación de los avisos PYSEC-2026-3813/3814/3815
+  (revisión Dependabot 2026-09-26; no existe versión corregida).
 
 ### Limitaciones conocidas (ronda de estabilización)
 - La calidad RAG está medida sobre un vault de evaluación sintético; falta
