@@ -1,8 +1,7 @@
 """Tests for vector_manager.py — embedding function, indexing, querying."""
 
-import asyncio
-import tempfile
 import shutil
+import tempfile
 
 import pytest
 
@@ -148,30 +147,36 @@ class TestVectorManager:
         assert stats["total_documents"] == 1
 
     @pytest.mark.asyncio
-    async def test_delete_by_source(self, vector_db):
+    async def test_delete_by_note_path(self, vector_db):
+        """Metadata mirrors what the real indexer writes (note_path only)."""
         await vector_db.index_chunks(
             [
                 {
                     "text": "Chunk 1",
-                    "metadata": {
-                        "note_path": "test/x.md",
-                        "source": "test/x.md",
-                        "heading": "root",
-                    },
+                    "metadata": {"note_path": "test/x.md", "heading": "root"},
                 },
                 {
                     "text": "Chunk 2",
-                    "metadata": {
-                        "note_path": "test/x.md",
-                        "source": "test/x.md",
-                        "heading": "root2",
-                    },
+                    "metadata": {"note_path": "test/x.md", "heading": "root2"},
                 },
             ]
         )
         assert vector_db._collection.count() == 2
-        deleted = await vector_db.delete_by_source("test/x.md")
+        deleted = await vector_db.delete_by_note_path("test/x.md")
         assert deleted == 2
+        assert vector_db._collection.count() == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_matches_legacy_source_key(self, vector_db):
+        """Rows written by older versions used `source`; delete must find them too."""
+        vector_db._collection.add(
+            ids=["legacy::chunk_0"],
+            documents=["Legacy chunk"],
+            metadatas=[{"source": "test/legacy.md", "heading": "root"}],
+        )
+        assert vector_db._collection.count() == 1
+        deleted = await vector_db.delete_by_note_path("test/legacy.md")
+        assert deleted == 1
         assert vector_db._collection.count() == 0
 
 
