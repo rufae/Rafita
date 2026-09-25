@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     encryption_key: str = Field("", alias="ENCRYPTION_KEY")
     webhook_secret: str = Field("", alias="WEBHOOK_SECRET")
     relevance_threshold: float = Field(0.49, alias="RELEVANCE_THRESHOLD", ge=0.0, le=1.0)
+    persist_to_brain: bool = Field(True, alias="PERSIST_TO_BRAIN")
 
     @field_validator("admin_ids", mode="before")
     @classmethod

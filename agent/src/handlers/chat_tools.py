@@ -7,9 +7,15 @@ Google Calendar, and more.
 Separated from chat.py for maintainability.
 """
 
+from typing import Any
+
 from src.vault_config import get_taxonomy
 
-TOOLS_DEFINITIONS = [
+# Tools that write to the second brain. With PERSIST_TO_BRAIN=false they are
+# rejected at the executor level (task 2.3), not only hidden from the prompt.
+WRITE_TOOLS = {"manage_obsidian_note", "move_or_rename_file", "ingest_file"}
+
+TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -596,3 +602,17 @@ TOOLS_DEFINITIONS = [
         },
     },
 ]
+
+
+def get_tools_for_llm() -> list[dict[str, Any]]:
+    """Tool definitions offered to the LLM.
+
+    In debug mode (PERSIST_TO_BRAIN=false) write tools are not even offered.
+    The executor still rejects them, so a model that calls them anyway cannot
+    modify the vault.
+    """
+    from src.config import settings
+
+    if settings.persist_to_brain:
+        return TOOLS_DEFINITIONS
+    return [tool for tool in TOOLS_DEFINITIONS if tool["function"]["name"] not in WRITE_TOOLS]
