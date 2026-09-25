@@ -241,7 +241,8 @@ class VaultIndexer:
         from src.utils.vector_manager import vector_db
 
         try:
-            results = await vector_db.query(sample_text, top_k=6)
+            # Linking wants any semantic neighbour, not only high-relevance hits.
+            results = await vector_db.query(sample_text, top_k=6, apply_threshold=False)
         except Exception:
             return 0
 
