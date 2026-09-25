@@ -10,6 +10,7 @@ This avoids duplicating the prompt/rules/tools logic across interfaces.
 import asyncio
 import json
 import time as _time
+from typing import Any
 
 from src.config import settings
 from src.database import db
@@ -79,7 +80,7 @@ async def generate_response(text: str, chat_id: int) -> str:
             }
         )
 
-    messages_for_llm = [{"role": "system", "content": SYSTEM_PROMPT_VOICE}]
+    messages_for_llm: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT_VOICE}]
     for msg in trimmed_history:
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
 

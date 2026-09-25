@@ -374,6 +374,19 @@ class OllamaClient:
                     full_content.append(delta.content)
         return "".join(full_content)
 
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """Batch embeddings via Ollama's native /api/embed (sync, for Chroma)."""
+        import httpx
+
+        payload = {"model": settings.embedding_model, "input": texts}
+        response = httpx.post(
+            "%s/api/embed" % settings.ollama_host.rstrip("/"),
+            json=payload,
+            timeout=600.0,
+        )
+        response.raise_for_status()
+        return response.json().get("embeddings", [])
+
     async def generate_embedding(self, text: str) -> list[float]:
         if not self._client:
             raise OllamaClientError("Client not initialized.")
@@ -547,4 +560,6 @@ class OllamaClient:
             logger.info("Ollama client closed")
 
 
-llm = OllamaClient()
+from src.ai.factory import create_ai_client  # noqa: E402
+
+llm = create_ai_client()
