@@ -10,20 +10,13 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ./ollama/models:/root/.ollama
-    # GPU support for NVIDIA GPUs (RTX 3060, etc.)
-    # Descomentar las siguientes líneas si tienes GPU NVIDIA y Docker >= 19.03
-    # Requiere: NVIDIA Container Toolkit instalado en el host
-    # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    # Para AMD GPUs en Linux, descomentar:
-    # devices:
-    #   - /dev/dri:/dev/dri
+    # GPU NVIDIA (RTX 3060, etc.): usa el overlay incluido; NO añadas otro
+    # bloque `deploy:` aquí (este servicio ya tiene uno para memoria y dos
+    # claves `deploy` en el mismo servicio producen YAML inválido):
+    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    # Requiere NVIDIA Container Toolkit en el host (ver MIGRATION.md).
+    # Para AMD en Linux, crea un overlay equivalente con
+    # `devices: ["/dev/dri:/dev/dri"]` en lugar de la reserva NVIDIA.
     environment:
       - OLLAMA_KEEP_ALIVE=-1
       - OLLAMA_NUM_PARALLEL=1
