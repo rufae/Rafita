@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     webhook_secret: str = Field("", alias="WEBHOOK_SECRET")
     relevance_threshold: float = Field(0.49, alias="RELEVANCE_THRESHOLD", ge=0.0, le=1.0)
     persist_to_brain: bool = Field(True, alias="PERSIST_TO_BRAIN")
+    brain_maintenance: bool = Field(False, alias="BRAIN_MAINTENANCE")
+    brain_maintenance_interval: int = Field(1800, alias="BRAIN_MAINTENANCE_INTERVAL", ge=60)
 
     @field_validator("admin_ids", mode="before")
     @classmethod
