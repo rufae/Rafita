@@ -12,7 +12,7 @@ el nodo Dell.
 Hasta la Fase 2 el despliegue se asumió mono-máquina (`localhost`). La
 topología real pasa a ser:
 
-- **Dell OptiPlex 7060 Micro** (`192.168.1.121`): i7-8700 (6c/12t), 32 GB RAM,
+- **Dell OptiPlex 7060 Micro** (`192.168.1.201`; originalmente `.121`, cambió tras un reinicio — IP no estática): i7-8700 (6c/12t), 32 GB RAM,
   1 TB NVMe, **sin GPU discreta** (iGPU Intel UHD 630). Solo tiene el SO
   (Ubuntu Server 24.04.5). Rol: inferencia (chat, visión, embeddings).
 - **HP "rafa"** (`192.168.1.129`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
