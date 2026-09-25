@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
 
 import chromadb
@@ -20,13 +18,19 @@ from src.utils.telemetry import metrics
 
 
 class OllamaEmbeddingFunction:
+    """Chroma embedding function delegating to the configured AI provider.
+
+    Named for backwards compatibility; with AI_PROVIDER=openai the batch
+    embeddings go through the OpenAI-compatible adapter instead.
+    """
+
     def __init__(self):
-        self._cache = {}
+        self._cache: dict[str, list[float]] = {}
 
     def __call__(self, input: list[str]) -> list[list[float]]:
-        results = []
-        uncached_texts = []
-        uncached_indices = []
+        results: list[list[float] | None] = []
+        uncached_texts: list[str] = []
+        uncached_indices: list[int] = []
         for i, text in enumerate(input):
             cached = self._cache.get(text)
             if cached is not None:
@@ -36,27 +40,18 @@ class OllamaEmbeddingFunction:
                 uncached_texts.append(text)
                 uncached_indices.append(i)
         if uncached_texts:
-            payload = {
-                "model": settings.embedding_model,
-                "input": uncached_texts,
-            }
-            resp = httpx.post(
-                "%s/api/embed" % settings.ollama_host.rstrip("/"),
-                json=payload,
-                timeout=600.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            embeddings = data.get("embeddings", [])
+            from src.ollama_client import llm
+
+            embeddings = llm.embed_texts(uncached_texts)
             if len(embeddings) != len(uncached_texts):
                 raise RuntimeError(
-                    "Ollama returned %d embeddings for %d input texts"
+                    "AI provider returned %d embeddings for %d input texts"
                     % (len(embeddings), len(uncached_texts))
                 )
-            for idx, emb in zip(uncached_indices, embeddings):
+            for idx, emb, text in zip(uncached_indices, embeddings, uncached_texts):
                 results[idx] = emb
-                self._cache[uncached_texts[uncached_indices.index(idx)]] = emb
-        return [r for r in results if r is not None]
+                self._cache[text] = emb
+        return [result for result in results if result is not None]
 
 
 def _parse_tags(meta: dict[str, Any]) -> list[str]:
