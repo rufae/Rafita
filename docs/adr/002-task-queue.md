@@ -106,5 +106,25 @@ Razones:
 
 ---
 
+## Revisión 2026-09-25 (ronda de estabilización)
+
+**Sigue vigente.** Evidencia nueva:
+
+- El backfill sigue siendo batch de primer arranque; en las pruebas de
+  evaluación con bge-m3 (26 chunks del vault de prueba) el backfill tarda
+  segundos y la suite completa con Ollama real no bloqueó de forma anómala.
+- La voz dejó de llamar al LLM en primer plano sin control: usa el orquestador
+  compartido en background con cancelación al colgar (`voice_stream/server.py`),
+  sin necesidad de cola externa.
+- `BrainMaintainer` (tarea 2.4) es una tarea periódica ligera en asyncio; no
+  requiere cola ni persistencia de trabajos.
+- No hay evidencia nueva de procesamiento masivo de archivos en background.
+
+La cola externa (huey+SQLite como primera opción) se reconsideraría si el
+usuario pide procesar múltiples archivos en background o si las pruebas de
+servidor de la Fase 3 muestran tareas que deban sobrevivir a reinicios.
+
+---
+
 *ADR revisable si el usuario pide explícitamente procesamiento asíncrono de archivos o si surgen
 tareas recurrentes programadas que necesiten persistencia.*

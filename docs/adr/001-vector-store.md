@@ -99,4 +99,28 @@ Añadir un servicio nuevo añade complejidad operativa que cada instalador debe 
 
 ---
 
+## Revisión 2026-09-25 (ronda de estabilización)
+
+**Sigue vigente.** Evidencia nueva que la respalda o matiza:
+
+- **Bug de integridad corregido (tarea 1.1):** el borrado de chunks no coincidía
+  con la clave de indexado (`source` vs `note_path`), dejando contenido
+  obsoleto. Corregido y verificado con test de integración (indexar → editar →
+  reindexar → recuperar). No cambia la elección del almacén.
+- **Métrica L2 vs coseno (tarea 1.4):** la colección usa L2 por defecto y se
+  midió con bge-m3 que documento y consulta son vectores unitarios
+  (norma ≈ 1.0), por lo que L2 y coseno ordenan idéntico (Pearson ≈ 1.0,
+  top-5 idéntico en 12/12). No se cambia `hnsw:space`; se documenta en el
+  código para no "arreglarlo" sin re-medir.
+- **CVEs de ChromaDB (tarea 0.2):** tres avisos sin fix upstream (rango hasta
+  1.5.9) que solo afectan al modo servidor multi-tenant con auth; aceptados con
+  mitigación y excepciones explícitas en el gate de CI (ver SECURITY.md).
+- **Tags (tarea 1.6):** Chroma no admite listas ni `$contains` en metadata; se
+  resolvió con flags escalares `tag__<normalizado>` y `$or` en la query.
+
+Nada de esto justifica Qdrant/pgvector: el volumen sigue siendo monousuario
+(cientos de chunks) y la simplicidad operativa se mantiene.
+
+---
+
 *ADR revisable si los requisitos cambian (multi-usuario, >100K chunks, necesidad de replicación).*
