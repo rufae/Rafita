@@ -10,26 +10,31 @@
 #   HOST     endpoint (default http://127.0.0.1:11434)
 #   MODEL    modelo (default gemma4:12b)
 #   PROMPT   prompt de prueba
-#   PREDICT  tokens maximos a generar (default 128)
+#   PREDICT  tokens maximos a generar (default 256)
 #   RUNS     repeticiones (default 2; la primera suele incluir carga)
+#   THINK    0 desactiva el "thinking" de modelos que lo traen por defecto
 set -euo pipefail
 
 HOST="${HOST:-http://127.0.0.1:11434}"
 MODEL="${MODEL:-gemma4:12b}"
 PROMPT="${PROMPT:-Explica en dos frases que es un segundo cerebro digital.}"
-PREDICT="${PREDICT:-128}"
+PREDICT="${PREDICT:-256}"
 RUNS="${RUNS:-2}"
+THINK="${THINK:-0}"
 
-payload="$(python3 - "$MODEL" "$PROMPT" "$PREDICT" <<'PY'
+payload="$(python3 - "$MODEL" "$PROMPT" "$PREDICT" "$THINK" <<'PY'
 import json
 import sys
 
-print(json.dumps({
+body = {
     "model": sys.argv[1],
     "prompt": sys.argv[2],
     "stream": False,
     "options": {"num_predict": int(sys.argv[3])},
-}))
+}
+if sys.argv[4] in ("0", "false", "False"):
+    body["think"] = False
+print(json.dumps(body))
 PY
 )"
 
@@ -56,5 +61,6 @@ print(
         len(data.get("response", "")),
     )
 )
+print("  response: %r" % data.get("response", "")[:120])
 PY
 done

@@ -1878,20 +1878,61 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       gateway (Portainer ocupa 8000, usar p. ej. 8010); Whisper a 2 hilos;
       vigilar swap/OOM la primera semana.
 
-- [ ] **3.1 Desplegar el runtime de IA elegido en el nodo Dell**
-  **Estado 2026-09-25: decisión de 3.0 confirmada por el usuario; 3.1 EN CURSO,
-  BLOQUEADA por acceso.** El Dell responde en `192.168.1.201` (IP cambiada
-  desde `.121`, ya documentado) y el puerto 22 está abierto, pero rechaza
-  nuestra clave (`Permission denied (publickey,password)`); no hay entrada del
-  Dell en `~/.ssh/config`. Acciones pedidas al usuario:
-  1. Desde este PC (rafael-server): `ssh-copy-id rafael@192.168.1.201`
-     (usuario correcto a confirmar; introduce la contraseña una vez).
-  2. Confirmar si `sudo` en el Dell pide contraseña. Si la pide, opciones:
-     autorizar temporalmente NOPASSWD para el usuario de despliegue
-     (`sudo visudo`) y revertirlo al terminar, o ejecutar el usuario los dos
-     comandos de instalación (Ollama y Tailscale) cuando se los indique; yo
-     haría el resto y toda la verificación con evidencia.
-  No se ha tocado nada en el Dell.
+- [x] **3.1 Desplegar el runtime de IA elegido en el nodo Dell**
+  **Completada 2026-09-26.** Evidencia:
+
+  1. **Runtime y modelos** (`deploy/dell/01-install-runtime.sh`, commit
+     `1d1b583`): Ollama **0.34.4** instalado y `active` (systemd, bind
+     127.0.0.1, `OLLAMA_KEEP_ALIVE=-1`, `OLLAMA_MAX_LOADED_MODELS=3`) con
+     `gemma4:12b` (7,6 GB), `bge-m3` (1,2 GB), `llava:7b` (4,7 GB) y
+     `qwen2.5:7b` (4,7 GB, fallback).
+  2. **Benchmark local** (`03-benchmark.sh`, i7-8700 sin GPU, sin red):
+     ```
+     gemma4:12b  gen 3,87 tok/s | prompt 43,8 tok/s | ~16 s por ~350 chars
+     qwen2.5:7b  gen 6,54 tok/s | prompt 285,5 tok/s| ~13,5 s por ~400 chars
+     bge-m3      0,062 s/embedding (caliente; 1,87 s el 1º con carga)
+     ```
+     Decisión del usuario (2026-09-26): **`gemma4:12b` definitivo** (mejor
+     razonamiento y fiabilidad de herramientas; acepta la latencia; a futuro
+     puede usar la GPU de la torre por túnel). Documentado en ADR-004.
+  3. **Hallazgo crítico resuelto** (commit `5698227`): `gemma4:12b` trae
+     `thinking=true` y por `/v1` el razonamiento se emite en
+     `reasoning_content` dejando `content` vacío; `think:false` no lo evita,
+     `reasoning_effort:"none"` sí (conservando `tool_calls`). El cliente envía
+     ahora `OLLAMA_REASONING_EFFORT` (default `none`), prewarm con
+     `think:false`, `OLLAMA_NUM_THREAD` configurable y
+     `OPENAI_REASONING_EFFORT` opcional; 5 tests nuevos. Gate: ruff/formato/mypy
+     limpios, **156 passed, 20 skipped** (evidencia en el commit).
+  4. **Red segura** (`02-network.sh`): Tailscale 1.102.4 en el Dell, enrolado
+     como `nodo-dell-1` = **100.83.40.103**; ufw activo:
+     `22/tcp ALLOW 192.168.1.0/24`, `22/tcp on tailscale0 ALLOW`,
+     `11434/tcp on tailscale0 ALLOW 100.121.77.29`; Ollama rebind a
+     `0.0.0.0:11434` (el filtro real es ufw; documentado en ADR-004(c)).
+     Verificado desde el PC de desarrollo: `curl` a `192.168.1.201:11434`
+     **bloqueado** por ufw.
+  5. **Conectividad verificada desde el HP por tailnet**:
+     ```
+     $ curl http://100.83.40.103:11434/api/version   -> {"version":"0.34.4"}
+     $ curl .../api/tags -> bge-m3, gemma4:12b, llava:7b, qwen2.5:7b
+     $ tailscale ping -c 3 100.83.40.103 -> directo via 192.168.1.201:41641 en 7 ms
+     ```
+  6. **Benchmark por red desde el HP** (`03-benchmark.sh`,
+     `HOST=http://100.83.40.103:11434 THINK=0`):
+     ```
+     run=1 (con carga) total 32,71 s | load_s=15,91
+     run=2 (caliente)  total 17,21 s | gen 3,85 tok/s | prompt 44,4 tok/s
+     ```
+     Sobrecarga de red ≈ 0,85 s sobre el benchmark local caliente (~5%).
+  7. **Camino real de la app probado desde el HP**: `POST /v1/chat/completions`
+     con tools + `reasoning_effort:"none"` → `tool_calls` correctos
+     (`get_time {"city":"Madrid"}`, usage 73 prompt / 15 completion).
+  8. `sudo` temporal del Dell **revertido** al cerrar (`NOPASSWD` eliminado;
+     confirmado que vuelve a pedir contraseña).
+
+  Pendiente para 3.2 (heredado de 3.0(d)): overlay del HP sin `ollama-service`,
+  gateway en 8010, `OLLAMA_HOST=http://100.83.40.103:11434`, decidir modelo de
+  visión (`llava:7b` vs `gemma4:12b`, que también tiene visión) y repetir las
+  métricas 1.3/1.7 contra el LLM remoto.
 
   Depende de 3.0. Tareas: instalar el runtime decidido, descargar/cuantizar
   los modelos, exponer el API solo por la interfaz/red decidida en 3.0(c), y

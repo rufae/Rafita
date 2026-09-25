@@ -4,10 +4,16 @@ Topología real (ver `docs/adr/004-two-node-deployment.md`):
 
 ```
 [ HP "rafa" 192.168.1.129 ]                    [ Dell "nodo-dell-1" 192.168.1.201 ]
-  agente Rafita + ChromaDB                       Ollama (chat, embeddings, visión)
-  vault + BrainMaintainer                        sin GPU discreta (i7-8700, 32GB)
-  Tailscale 100.121.77.29  ────── WireGuard ────  Tailscale (a enrolar)
+  agente Rafita + ChromaDB                       Ollama 0.34.4 (chat, embeddings,
+  vault + BrainMaintainer                        visión; i7-8700, 32GB, sin GPU)
+  Tailscale 100.121.77.29  ────── WireGuard ────  Tailscale 100.83.40.103
+                                                 (directo, ~7 ms; ufw filtra
+                                                  11434 solo desde el HP)
 ```
+
+Modelos desplegados en el Dell (decisión 3.1, 2026-09-26): `gemma4:12b` (chat,
+con `reasoning_effort=none` para desactivar su thinking por defecto),
+`bge-m3` (embeddings) y `llava:7b` (visión). `qwen2.5:7b` queda como fallback.
 
 El LLM vive **solo** en el Dell. La app vive **solo** en el HP y llama al LLM
 por la tailnet. El nodo HP no arranca `ollama-service` (ver tarea 3.2).
@@ -22,8 +28,8 @@ deploy/
 │   ├── 02-network.sh         # Tailscale + ufw + bind final
 │   └── 03-benchmark.sh       # tokens/s y latencia contra la API real
 └── hp/                       # nodo de aplicación (rafa)
-    ├── docker-compose.hp.yml # tarea 3.2 (sin ollama-service, puerto remapeado)
-    └── README.md             # notas de despliegue del HP
+    ├── README.md             # notas de despliegue del HP
+    └── docker-compose.hp.yml # tarea 3.2 (sin ollama-service, puerto remapeado)
 ```
 
 ## Orden de despliegue

@@ -1,7 +1,7 @@
 # ADR-004: Despliegue en dos nodos (LLM en Dell, app Rafita en HP)
 
-**Estado**: Propuesta — **pendiente de confirmación del usuario** antes de tocar
-el nodo Dell.
+**Estado**: **Aceptada y ejecutada** — confirmada por el usuario el 2026-09-25
+y desplegada en 3.1 el 2026-09-26 (evidencia en `plan.md`).
 **Fecha**: 2026-09-25
 **Contexto de plan**: tarea 3.0 de `plan.md` (Fase 3).
 
@@ -112,6 +112,27 @@ asumido** (1.7 se midió con RTX 3060 y no es extrapolable a CPU).
 respuestas cortas de Telegram podrían tardar 20–40 s. Si el usuario acepta esa
 latencia como “no tiempo real”, se documenta; si no, se degrada de modelo.
 
+**Resultado medido (2026-09-26, Ollama 0.34.4, sin red):**
+
+| Modelo | gen tok/s | prompt tok/s | ~350–400 chars |
+|---|---|---|---|
+| `gemma4:12b` | 3,87 | 43,8 | ~16 s |
+| `qwen2.5:7b` | 6,54 | 285,5 | ~13,5 s |
+| `bge-m3` | — | 0,062 s/embedding (caliente) | — |
+
+**Decisión del usuario (2026-09-26):** `gemma4:12b` definitivo pese a no llegar
+al umbral de 4 tok/s: prioriza calidad de razonamiento/herramientas y acepta la
+latencia; en el futuro podrá usar la GPU de la torre por túnel sin reconfigurar.
+`qwen2.5:7b` y `llava:7b` quedan instalados (fallback y visión).
+
+**Hallazgo no previsto:** `gemma4:12b` activa `thinking` por defecto y por `/v1`
+(el endpoint que usa la app) `think:false` no lo desactiva: el `content` llegaba
+vacío porque el razonamiento consumía `LLM_MAX_TOKENS`. Se verificó que
+`reasoning_effort:"none"` sí lo desactiva conservando los `tool_calls`. Fix
+aplicado en el cliente (commit `5698227`): `OLLAMA_REASONING_EFFORT` (default
+`none`), prewarm con `think:false`, `OLLAMA_NUM_THREAD` configurable y
+`OPENAI_REASONING_EFFORT` opcional.
+
 ## (c) Seguridad de red — **Tailscale (WireGuard) + firewall de respaldo**
 
 **Decisión propuesta:** enrolar el Dell en la misma tailnet que el HP
@@ -132,6 +153,14 @@ Tailscale (100.121.77.29) y es subnet router; el Dell aún **no está enrolado**
 **Alternativa rechazada por ahora:** firewall LAN-only con HTTP en claro;
 suficiente contra exposición accidental, insuficiente para datos personales en
 tránsito.
+
+**Implementación real (2026-09-26) — desviación documentada:** Ollama quedó en
+`OLLAMA_HOST=0.0.0.0:11434` (no solo en la IP Tailscale) porque necesita seguir
+atendiendo `127.0.0.1` para benchmarks locales y Ollama admite un único bind.
+La restricción efectiva es **ufw**: `11434/tcp` solo desde `100.121.77.29` por
+`tailscale0`; verificado que desde la LAN (PC de desarrollo, `192.168.1.206`)
+el puerto queda bloqueado. Enrolamiento: Dell = `100.83.40.103`, conexión
+**directa** HP↔Dell (7 ms, sin relay DERP).
 
 ## (d) Presupuesto de recursos en el HP — **cabe con margen, con ajustes**
 
@@ -174,12 +203,16 @@ Collabora/Nextcloud.
 
 ## Elementos abiertos / riesgos
 
-- El Dell **no respondía a ping** en el análisis (¿apagado? ¿sin red?), y no
-  está en Tailscale: 3.1 empieza por confirmar encendido/red y enrolarlo.
-- `ufw` no pudo consultarse por SSH sin sudo; confirmar estado real en 3.1.
-- La latencia CPU del modelo grande es el riesgo principal; mitigación medida
-  en (b), no asumida.
-- Portainer en 8000 obliga a remapear el gateway en HP.
+- ~~El Dell no respondía a ping y no estaba en Tailscale~~ → resuelto: responde,
+  enrolado como `nodo-dell-1` / `100.83.40.103`.
+- ~~`ufw` sin confirmar~~ → activo y verificado (LAN bloqueada, tailnet HP
+  permitida).
+- La latencia CPU del modelo grande sigue siendo el riesgo principal; está
+  medida y aceptada por el usuario (ver (b)).
+- Portainer en 8000 obliga a remapear el gateway en HP (tarea 3.2).
+- La IP LAN del Dell **no es estática** (cambió de `.121` a `.201`): el agente
+  debe usar el nombre/IP de Tailscale (`100.83.40.103`), no la IP LAN.
 
-**Estado:** propuesta presentada. No se instala ni configura nada en el Dell
-hasta confirmación explícita del usuario.
+**Estado:** aceptada y ejecutada en 3.1 (2026-09-26). Scripts en `deploy/dell/`
+idempotentes; pendiente 3.2 (agente del HP apuntando a
+`http://100.83.40.103:11434`).
