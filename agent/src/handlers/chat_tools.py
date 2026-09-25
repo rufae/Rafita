@@ -7,6 +7,8 @@ Google Calendar, and more.
 Separated from chat.py for maintainability.
 """
 
+from src.vault_config import get_taxonomy
+
 TOOLS_DEFINITIONS = [
     {
         "type": "function",
@@ -293,14 +295,17 @@ TOOLS_DEFINITIONS = [
                     "source_path": {
                         "type": "string",
                         "description": "Ruta actual dentro de la boveda "
-                        "(ej: 00-Inbox/nota_vieja.md o "
-                        "Attachments/foto.jpg)",
+                        f"(ej: {get_taxonomy().path('inbox')}/nota_vieja.md o "
+                        f"{get_taxonomy().path('attachments')}/foto.jpg)",
                     },
                     "dest_folder": {
                         "type": "string",
-                        "description": "Carpeta destino (ej: 01-Proyectos, "
-                        "02-Areas/Finanzas, 03-Recursos, "
-                        "04-Archivo, Attachments)",
+                        "description": "Carpeta destino (ej: "
+                        f"{get_taxonomy().path('projects')}, "
+                        f"{get_taxonomy().path('areas_finanzas')}, "
+                        f"{get_taxonomy().path('resources')}, "
+                        f"{get_taxonomy().path('archive')}, "
+                        f"{get_taxonomy().path('attachments')})",
                     },
                     "new_name": {
                         "type": "string",
@@ -563,8 +568,10 @@ TOOLS_DEFINITIONS = [
                     },
                     "folder": {
                         "type": "string",
-                        "description": "Carpeta destino en el vault (ej: 03-Recursos, "
-                        "02-Areas/Finanzas, 01-Proyectos)",
+                        "description": "Carpeta destino en el vault (ej: "
+                        f"{get_taxonomy().path('resources')}, "
+                        f"{get_taxonomy().path('areas_finanzas')}, "
+                        f"{get_taxonomy().path('projects')})",
                     },
                     "note_type": {
                         "type": "string",

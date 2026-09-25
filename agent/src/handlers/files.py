@@ -15,53 +15,59 @@ from src.logger import logger
 from src.ollama_client import llm
 from src.utils.path_safety import resolve_within
 from src.utils.tts_manager import convert_to_ogg, text_to_speech
+from src.vault_config import get_taxonomy
 
-INBOX = Path("/data/obsidian_vault/00-Inbox")
-ATTACHMENTS = Path("/data/obsidian_vault/Attachments")
+VAULT_ROOT = Path("/data/obsidian_vault")
 MAX_FILE_SIZE = 50 * 1024 * 1024
 TEMP_DIR = Path("/tmp/rafita_uploads")
 
+
+def _folder(key: str) -> Path:
+    return VAULT_ROOT / get_taxonomy().path(key)
+
+
+folder_keys = get_taxonomy()
 CATEGORY_KEYWORDS = {
-    "proyecto": "01-Proyectos",
-    "proyectos": "01-Proyectos",
-    "trabajo": "02-Areas/Trabajo",
-    "laboral": "02-Areas/Trabajo",
-    "finanza": "02-Areas/Finanzas",
-    "financiero": "02-Areas/Finanzas",
-    "factura": "02-Areas/Finanzas",
-    "recibo": "02-Areas/Finanzas",
-    "salud": "02-Areas/Salud",
-    "medico": "02-Areas/Salud",
-    "casa": "02-Areas/Casa",
-    "hogar": "02-Areas/Casa",
-    "recurso": "03-Recursos",
-    "guia": "03-Recursos",
-    "manual": "03-Recursos",
-    "tutorial": "03-Recursos",
-    "archivo": "04-Archivo",
-    "historia": "04-Archivo",
-    "inbox": "00-Inbox",
-    "zettle": "05-Zettelkasten",
-    "diario": "06-Diario",
-    "nota atomica": "05-Zettelkasten",
+    "proyecto": folder_keys.path("projects"),
+    "proyectos": folder_keys.path("projects"),
+    "trabajo": folder_keys.path("areas_trabajo"),
+    "laboral": folder_keys.path("areas_trabajo"),
+    "finanza": folder_keys.path("areas_finanzas"),
+    "financiero": folder_keys.path("areas_finanzas"),
+    "factura": folder_keys.path("areas_finanzas"),
+    "recibo": folder_keys.path("areas_finanzas"),
+    "salud": folder_keys.path("areas_salud"),
+    "medico": folder_keys.path("areas_salud"),
+    "casa": folder_keys.path("areas_casa"),
+    "hogar": folder_keys.path("areas_casa"),
+    "recurso": folder_keys.path("resources"),
+    "guia": folder_keys.path("resources"),
+    "manual": folder_keys.path("resources"),
+    "tutorial": folder_keys.path("resources"),
+    "archivo": folder_keys.path("archive"),
+    "historia": folder_keys.path("archive"),
+    "inbox": folder_keys.path("inbox"),
+    "zettle": folder_keys.path("zettelkasten"),
+    "diario": folder_keys.path("diary"),
+    "nota atomica": folder_keys.path("zettelkasten"),
 }
 
 EXTENSION_FOLDERS = {
-    ".pdf": "03-Recursos",
-    ".doc": "03-Recursos",
-    ".docx": "03-Recursos",
-    ".xls": "02-Areas/Finanzas",
-    ".xlsx": "02-Areas/Finanzas",
-    ".csv": "02-Areas/Finanzas",
-    ".jpg": "Attachments",
-    ".jpeg": "Attachments",
-    ".png": "Attachments",
-    ".gif": "Attachments",
-    ".mp4": "Attachments",
-    ".mov": "Attachments",
-    ".mp3": "Attachments",
-    ".ogg": "Attachments",
-    ".wav": "Attachments",
+    ".pdf": folder_keys.path("resources"),
+    ".doc": folder_keys.path("resources"),
+    ".docx": folder_keys.path("resources"),
+    ".xls": folder_keys.path("areas_finanzas"),
+    ".xlsx": folder_keys.path("areas_finanzas"),
+    ".csv": folder_keys.path("areas_finanzas"),
+    ".jpg": folder_keys.path("attachments"),
+    ".jpeg": folder_keys.path("attachments"),
+    ".png": folder_keys.path("attachments"),
+    ".gif": folder_keys.path("attachments"),
+    ".mp4": folder_keys.path("attachments"),
+    ".mov": folder_keys.path("attachments"),
+    ".mp3": folder_keys.path("attachments"),
+    ".ogg": folder_keys.path("attachments"),
+    ".wav": folder_keys.path("attachments"),
 }
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -211,7 +217,7 @@ def _create_companion_note(
 
 
 def _guess_folder_from_extension(ext: str) -> str:
-    return EXTENSION_FOLDERS.get(ext.lower(), "00-Inbox")
+    return EXTENSION_FOLDERS.get(ext.lower(), get_taxonomy().path("inbox"))
 
 
 async def _classify_file_with_ai(
@@ -230,12 +236,15 @@ async def _classify_file_with_ai(
         prompt_text += "Muestra del contenido: %s\n" % text_sample
     prompt_text += (
         "\nTipos validos: proyecto, area, recurso, nota-atomica, diario\n"
-        "Carpetas: 00-Inbox, 01-Proyectos, 02-Areas/Finanzas, 02-Areas/Salud, "
-        "02-Areas/Trabajo, 02-Areas/Casa, 03-Recursos, 04-Archivo\n"
+        "Carpetas: %s\n"
         "\nResponde SOLO con JSON:\n"
-        '{"name": "YYYY-MM-DD_nombre_optimizado", "folder": "03-Recursos", '
+        '{"name": "YYYY-MM-DD_nombre_optimizado", "folder": "%s", '
         '"type": "recurso", "tags": ["etiqueta1", "etiqueta2"], '
         '"summary": "resumen de 1 linea en espanol", "reason": "explicacion breve"}'
+        % (
+            ", ".join(get_taxonomy().structure),
+            get_taxonomy().path("resources"),
+        )
     )
     try:
         content = await llm.chat(
@@ -268,9 +277,9 @@ async def _process_uploaded_file(
 ) -> None:
     is_image = ext.lower() in IMAGE_EXTENSIONS
     if is_image:
-        dest_base = ATTACHMENTS
+        dest_base = _folder("attachments")
     else:
-        dest_base = INBOX
+        dest_base = _folder("inbox")
 
     extracted_text = ""
     if ext.lower() in EXTRACTABLE_EXTENSIONS:
@@ -834,7 +843,7 @@ async def _process_vision_image(
             title=note_title,
             body_text=text_to_save,
             image_filename=attach_result["filename"],
-            folder="00-Inbox",
+            folder=get_taxonomy().path("inbox"),
         )
         if note_result.get("success"):
             text_to_save += "\n\n📎 Guardado en Obsidian: %s" % note_result.get("filepath", "")

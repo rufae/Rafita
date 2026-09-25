@@ -18,6 +18,7 @@ from pathlib import Path
 
 from src.logger import logger
 from src.utils.obsidian_manager import create_or_append_note
+from src.vault_config import get_taxonomy
 
 CHAT_FILE = Path("/workspace/whatsapp_chat.txt")
 
@@ -187,7 +188,7 @@ async def main():
     result = await create_or_append_note(
         title="WhatsApp_Chat_Importado",
         content=final_text[:20000],
-        folder="04-Archivo",
+        folder=get_taxonomy().path("archive"),
     )
     if result.get("success"):
         logger.info("Main note created: %s", result.get("filepath", ""))
@@ -213,7 +214,7 @@ async def main():
     url_result = await create_or_append_note(
         title="WhatsApp_Enlaces_Index",
         content="\n".join(url_index)[:15000],
-        folder="03-Recursos",
+        folder=get_taxonomy().path("resources"),
     )
     if url_result.get("success"):
         logger.info("URL index: %s", url_result.get("filepath", ""))
