@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     indexer_interval: int = Field(3600, alias="INDEXER_INTERVAL")
     encryption_key: str = Field("", alias="ENCRYPTION_KEY")
     webhook_secret: str = Field("", alias="WEBHOOK_SECRET")
+    relevance_threshold: float = Field(0.49, alias="RELEVANCE_THRESHOLD", ge=0.0, le=1.0)
 
     @field_validator("admin_ids", mode="before")
     @classmethod

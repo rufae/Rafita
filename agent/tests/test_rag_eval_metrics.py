@@ -57,6 +57,20 @@ def test_normalize_strips_accents_and_case():
     assert rag_eval.normalize("BGE-M3") == "bge-m3"
 
 
+def test_evaluate_thresholds():
+    rows = rag_eval.evaluate_thresholds(
+        positive_relevances=[0.4, 0.6],
+        negative_relevances=[0.5, 0.7],
+        thresholds=[0.45, 0.65],
+    )
+    assert rows[0]["threshold"] == 0.45
+    assert rows[0]["false_negatives"] == 1
+    assert rows[0]["false_positives"] == 2
+    assert rows[1]["false_negatives"] == 2
+    assert rows[1]["false_positives"] == 1
+    assert abs(rows[1]["false_negative_rate"] - 1.0) < 1e-9
+
+
 def test_distance_helpers():
     assert rag_eval.l2_sq([1.0, 0.0], [0.0, 2.0]) == 5.0
     assert rag_eval.cosine([1.0, 0.0], [0.0, 2.0]) == 0.0

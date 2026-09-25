@@ -248,7 +248,11 @@ class VectorManager:
         }
 
     async def query(
-        self, query_text: str, top_k: int = 5, filter_tags: list[str] | None = None
+        self,
+        query_text: str,
+        top_k: int = 5,
+        filter_tags: list[str] | None = None,
+        apply_threshold: bool = True,
     ) -> dict[str, Any]:
         if not self._initialized:
             return {"success": False, "results": [], "message": "Vector DB no inicializada."}
@@ -296,6 +300,20 @@ class VectorManager:
                 }
             )
         metrics.observe("embedding_query_latency", time.perf_counter() - _t0)
+        if apply_threshold:
+            threshold = settings.relevance_threshold
+            formatted = [r for r in formatted if float(r["relevance"]) >= threshold]
+            if not formatted:
+                return {
+                    "success": True,
+                    "results": [],
+                    "notes_found": [],
+                    "message": (
+                        "NO_ENCONTRADO: ningun fragmento supera el umbral de relevancia "
+                        "(%.2f)." % threshold
+                    ),
+                }
+            seen_notes = {r["note_path"] for r in formatted}
         if filter_tags:
             formatted = [
                 r
