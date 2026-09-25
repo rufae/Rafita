@@ -101,7 +101,7 @@ class VectorManager:
         if not chunks:
             return {"success": False, "message": "No se pudo dividir el contenido en fragmentos."}
         base_meta = {
-            "source": file_path,
+            "note_path": file_path,
             "filename": Path(file_path).name,
             "indexed_at": datetime.now().isoformat(),
         }
@@ -151,25 +151,31 @@ class VectorManager:
             "message": "Indexados %d fragmentos de %s." % (len(new_ids), Path(file_path).name),
         }
 
-    async def delete_by_source(self, note_path: str) -> int:
+    async def delete_by_note_path(self, note_path: str) -> int:
+        """Delete every chunk of a note using the `note_path` metadata key
+        written by `index_chunks`/`add_document`.
+
+        Legacy rows may carry the old `source` key instead. Chroma 0.5 raises
+        KeyError when filtering by a key that is absent in some rows, so each
+        filter is queried independently and the results are unioned.
+        """
         if not self._collection:
             return 0
-        try:
-            loop = asyncio.get_running_loop()
-            results = self._collection.get(
-                where={"source": note_path},
-                include=[],
-            )
-            ids_to_delete = results["ids"] if results else []
-            if ids_to_delete:
-                await loop.run_in_executor(
-                    None,
-                    lambda: self._collection.delete(ids=ids_to_delete),
-                )
-            return len(ids_to_delete)
-        except Exception as e:
-            logger.debug("delete_by_source error for %s: %s", note_path, e)
+        loop = asyncio.get_running_loop()
+        ids_to_delete: set[str] = set()
+        for key in ("note_path", "source"):
+            try:
+                results = self._collection.get(where={key: note_path}, include=[])
+                ids_to_delete.update(results["ids"] if results and results.get("ids") else [])
+            except Exception as e:
+                logger.debug("delete_by_note_path filter %s error: %s", key, e)
+        if not ids_to_delete:
             return 0
+        await loop.run_in_executor(
+            None,
+            lambda: self._collection.delete(ids=sorted(ids_to_delete)),
+        )
+        return len(ids_to_delete)
 
     async def index_chunks(self, chunks: list[dict[str, Any]]) -> dict[str, Any]:
         if not self._initialized:
@@ -303,15 +309,18 @@ class VectorManager:
     async def document_exists(self, file_path: str) -> bool:
         if not self._collection:
             return False
-        try:
-            results = self._collection.get(
-                where={"source": file_path},
-                limit=1,
-                include=[],
-            )
-            return len(results["ids"]) > 0 if results else False
-        except Exception:
-            return False
+        for key in ("note_path", "source"):
+            try:
+                results = self._collection.get(
+                    where={key: file_path},
+                    limit=1,
+                    include=[],
+                )
+                if results and results.get("ids"):
+                    return True
+            except Exception:
+                continue
+        return False
 
     async def get_stats(self) -> dict[str, Any]:
         if not self._collection:
