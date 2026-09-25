@@ -11,8 +11,10 @@ import asyncio
 import json
 import time as _time
 
+from src.config import settings
 from src.database import db
 from src.handlers.chat_tools import TOOLS_DEFINITIONS
+from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
 from src.ollama_client import OllamaClientError, llm
@@ -20,8 +22,7 @@ from src.utils.telemetry import get_correlation_id, metrics
 from src.vault_config import get_taxonomy
 
 SYSTEM_PROMPT_VOICE = (
-    "STRICT_LANGUAGE_RULE: Tu idioma es EXCLUSIVAMENTE el espanol. "
-    "Queda prohibido el uso de caracteres chinos, japoneses o ingles.\n"
+    f"{language_rule()}"
     "SECOND_BRAIN_RULE: Tienes acceso al segundo cerebro del usuario a traves de "
     "search_second_brain. DEBES usarlo antes de responder cualquier pregunta que "
     "pueda estar relacionada con informacion personal del usuario: proyectos, "
@@ -39,8 +40,8 @@ SYSTEM_PROMPT_VOICE = (
     f"- Datos personales (salud, preferencias) -> {get_taxonomy().path('areas')}/ (tipo: area)\n"
     f"- Aprendizajes tecnicos -> {get_taxonomy().path('resources')}/ (tipo: recurso)\n"
     "Confirma brevemente: 'He guardado esto en tu segundo cerebro'.\n"
-    "Eres Rafita, un asistente virtual personal. "
-    "Responde en espanol de forma conversacional, clara y concisa. "
+    f"Eres {settings.assistant_name}, un asistente virtual personal. "
+    f"Responde en {language_name()} de forma conversacional, clara y concisa. "
     "Tienes acceso a herramientas que debes invocar automaticamente cuando "
     "el usuario lo necesite.\n\n"
     "Herramientas disponibles:\n"
@@ -53,7 +54,7 @@ SYSTEM_PROMPT_VOICE = (
     "- manage_google_calendar / create_google_calendar_event\n"
     "- generate_google_auth_link / save_google_verification_code\n\n"
     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
-    "Responde siempre en espanol."
+    f"{reply_instruction()}"
 )
 
 
