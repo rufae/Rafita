@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from src.config import settings
 from src.database import db
+from src.i18n import language_name
 from src.logger import logger
 from src.ollama_client import llm
 from src.utils import workspace_manager as wm
@@ -144,7 +145,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
     lines.append("")
 
-    lines.append("─── *Rafita Agent v4.0-RAG* ───")
+    lines.append("─── *%s Agent v4.0-RAG* ───" % settings.assistant_name)
 
     text = "\n".join(lines)
     max_len = 4096
@@ -467,7 +468,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "role": "system",
                     "content": (
                         "Eres un analista de segundo cerebro. Genera un resumen claro y util "
-                        "en español a partir de estos datos. Estructura tu respuesta asi:\n"
+                        f"en {language_name()} a partir de estos datos. Estructura tu respuesta asi:\n"
                         "1. *Tamaño del cerebro*: cuantas notas y chunks\n"
                         "2. *Temas principales*: que topics dominan (por tipo y tags)\n"
                         "3. *Actividad reciente*: consultas y notas nuevas\n"

@@ -152,7 +152,7 @@ async def _transcribe_file(audio_path: Path) -> str | None:
             segments, info = model.transcribe(
                 str(audio_path),
                 beam_size=1,
-                language="es",
+                language=settings.language,
                 vad_filter=True,
                 vad_parameters={
                     "min_silence_duration_ms": 300,

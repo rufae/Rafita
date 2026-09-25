@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from src.config import settings
 from src.database import db
+from src.i18n import reply_instruction
 from src.logger import logger
 from src.ollama_client import llm
 from src.utils.path_safety import resolve_within
@@ -644,7 +645,7 @@ async def _process_vision_image(
         "Si es una captura de pantalla, describe lo importante. "
         "Si es un escudo, logo o imagen simbólica, describe qué representa con precisión: "
         "identifica colores, texto visible, animales u objetos heráldicos, y la entidad a la que pertenece. "
-        "Responde en español de forma estructurada y concisa."
+        f"{reply_instruction()} De forma estructurada y concisa."
     )
 
     try:
@@ -758,7 +759,7 @@ async def _process_vision_image(
 
     MAX_CONTENT_LEN = 500
     system_prompt = (
-        "Eres Rafita, un asistente virtual personal. El usuario te ha enviado una imagen "
+        f"Eres {settings.assistant_name}, un asistente virtual personal. El usuario te ha enviado una imagen "
         "y un modelo de visión ya ha extraído el contenido en texto. "
         "Tu tarea es procesar ese texto extraído junto con el mensaje del usuario, "
         "y ejecutar las herramientas necesarias de forma automática.\n\n"
@@ -767,7 +768,7 @@ async def _process_vision_image(
         "- Si contiene un evento o fecha, usa create_event.\n"
         "- Si el usuario pide guardar el contenido, usa manage_obsidian_note.\n"
         "- Si pide recordar algo, usa remember_fact o create_alert.\n\n"
-        "Responde en español confirmando brevemente lo que detectaste y la acción realizada."
+        f"{reply_instruction()} Confirma brevemente lo que detectaste y la acción realizada."
     )
 
     augmented_user_msg = "Contenido extraído de la imagen:\n%s\n\nInstrucción del usuario: %s" % (

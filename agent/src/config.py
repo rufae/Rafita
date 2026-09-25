@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     log_dir: str = Field("/data/logs", alias="LOG_DIR")
     obsidian_vault_dir: str = Field("/data/obsidian_vault", alias="OBSIDIAN_VAULT_DIR")
 
+    language: str = Field("es", alias="LANGUAGE")
     timezone: str = Field("America/Mexico_City", alias="TIMEZONE")
     max_history_per_chat: int = Field(50, alias="MAX_HISTORY_PER_CHAT", ge=1, le=500)
     cleanup_interval: int = Field(3600, alias="CLEANUP_INTERVAL", ge=60)

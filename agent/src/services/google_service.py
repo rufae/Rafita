@@ -9,6 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.utils.security_manager import decrypt_value, encrypt_value
@@ -215,8 +216,8 @@ class GoogleService:
         event_body = {
             "summary": title,
             "description": description or "",
-            "start": {"dateTime": start_datetime, "timeZone": "America/Mexico_City"},
-            "end": {"dateTime": end_datetime, "timeZone": "America/Mexico_City"},
+            "start": {"dateTime": start_datetime, "timeZone": settings.timezone},
+            "end": {"dateTime": end_datetime, "timeZone": settings.timezone},
         }
         try:
             loop = asyncio.get_running_loop()

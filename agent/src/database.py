@@ -360,9 +360,10 @@ class DatabaseManager:
         category: str,
         subcategory: str | None = None,
         description: str | None = None,
-        currency: str = "MXN",
+        currency: str | None = None,
         recorded_at: str | None = None,
     ) -> int:
+        currency = currency or settings.default_currency
         if recorded_at is None:
             recorded_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         sql = """

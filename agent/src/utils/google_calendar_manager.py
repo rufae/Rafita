@@ -10,6 +10,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from src.config import settings
 from src.logger import logger
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
@@ -104,11 +105,11 @@ class GoogleCalendarManager:
             "description": description or "",
             "start": {
                 "dateTime": start_datetime,
-                "timeZone": "America/Mexico_City",
+                "timeZone": settings.timezone,
             },
             "end": {
                 "dateTime": end_datetime,
-                "timeZone": "America/Mexico_City",
+                "timeZone": settings.timezone,
             },
         }
         loop = asyncio.get_running_loop()
