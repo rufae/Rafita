@@ -1099,13 +1099,8 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             content = args.get("content", "").strip()
             if not filename:
                 return {"success": False, "message": "Se requiere el nombre del archivo."}
-            from pathlib import Path as _Path
-
             from src.utils.obsidian_manager import create_or_append_note
 
-            vault_path = _Path("/data/obsidian_vault")
-            dest_dir = vault_path / folder
-            dest_dir.mkdir(parents=True, exist_ok=True)
             file_link = "![[%s]]" % filename
             now = datetime.now()
             frontmatter = (

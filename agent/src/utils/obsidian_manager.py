@@ -4,18 +4,34 @@ from pathlib import Path
 from typing import Any
 
 from src.logger import logger
+from src.utils.path_safety import resolve_within
 
 OBSIDIAN_VAULT = Path("/data/obsidian_vault")
 
 
+def _normalize_folder(folder: str) -> str:
+    """Normalize a folder argument: forward slashes, no surrounding blanks."""
+    return (folder or "").replace("\\", "/").strip().strip("/")
+
+
+def _resolve_folder(folder: str) -> Path:
+    """Resolve a folder argument inside the vault; reject escapes/absolute paths."""
+    normalized = (folder or "").replace("\\", "/").strip()
+    if normalized.startswith("/") or Path(normalized).is_absolute():
+        raise ValueError("Absolute folder paths are not allowed: %s" % folder)
+    folder_part = normalized.strip("/")
+    if not folder_part:
+        return resolve_within(OBSIDIAN_VAULT, OBSIDIAN_VAULT)
+    return resolve_within(OBSIDIAN_VAULT, OBSIDIAN_VAULT / folder_part)
+
+
 def _resolve_path(title: str, folder: str = "") -> Path:
-    folder_part = folder.strip().strip("/\\") if folder else ""
+    base = _resolve_folder(folder)
     safe_title = _safe_filename(title)
-    if folder_part:
-        base = OBSIDIAN_VAULT / folder_part
-    else:
-        base = OBSIDIAN_VAULT
-    return (base / safe_title).with_suffix(".md")
+    if not safe_title or set(safe_title) <= {"."}:
+        raise ValueError("Invalid note title: %r" % title)
+    target = (base / safe_title).with_suffix(".md")
+    return resolve_within(OBSIDIAN_VAULT, target)
 
 
 def _safe_filename(name: str) -> str:
@@ -26,11 +42,7 @@ def _safe_filename(name: str) -> str:
 
 
 def _ensure_folder(folder: str) -> Path:
-    folder_part = folder.strip().strip("/\\") if folder else ""
-    if folder_part:
-        target = OBSIDIAN_VAULT / folder_part
-    else:
-        target = OBSIDIAN_VAULT
+    target = _resolve_folder(folder)
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -207,21 +219,38 @@ async def move_or_rename_file(source_path: str, dest_folder: str, new_name: str)
     src = Path(source_path)
     if not src.exists():
         return {"success": False, "message": f"No existe el archivo: {source_path}"}
-    if not str(src).startswith(str(OBSIDIAN_VAULT)):
+    try:
+        src = resolve_within(OBSIDIAN_VAULT, src)
+    except ValueError:
         return {
             "success": False,
             "message": "Solo puedo mover archivos dentro de la boveda Obsidian.",
         }
-    folder_part = dest_folder.strip().strip("/\\") if dest_folder else ""
-    dest_dir = (OBSIDIAN_VAULT / folder_part) if folder_part else src.parent
+    try:
+        dest_dir = _resolve_folder(dest_folder) if _normalize_folder(dest_folder) else src.parent
+    except ValueError:
+        return {
+            "success": False,
+            "message": "Solo puedo mover archivos dentro de la boveda Obsidian.",
+        }
     dest_dir.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(new_name)
-    dest_path = dest_dir / (safe_name + src.suffix)
+    if not safe_name or set(safe_name) <= {"."}:
+        return {"success": False, "message": "Nombre de archivo invalido."}
+    try:
+        dest_path = resolve_within(OBSIDIAN_VAULT, dest_dir / (safe_name + src.suffix))
+    except ValueError:
+        return {
+            "success": False,
+            "message": "Solo puedo mover archivos dentro de la boveda Obsidian.",
+        }
     if dest_path.exists():
         base = dest_path.stem
         counter = 1
         while dest_path.exists():
-            dest_path = dest_dir / ("%s_%d%s" % (base, counter, src.suffix))
+            dest_path = resolve_within(
+                OBSIDIAN_VAULT, dest_dir / ("%s_%d%s" % (base, counter, src.suffix))
+            )
             counter += 1
     src.rename(dest_path)
     logger.info("File moved: %s -> %s", source_path, dest_path)
