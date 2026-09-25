@@ -1,0 +1,36 @@
+{"id": "q001", "query": "¿Cuánto cuesta el proyecto del huerto urbano?", "category": "proyecto", "relevant": true, "expected_note": "01-Proyectos/Proyecto Huerto Urbano.md", "expected_keywords": ["185"]}
+{"id": "q002", "query": "¿Cuándo hay que sembrar los tomates?", "category": "proyecto", "relevant": true, "expected_note": "01-Proyectos/Proyecto Huerto Urbano.md", "expected_keywords": ["marzo"]}
+{"id": "q003", "query": "¿Quién colabora conmigo en el huerto?", "category": "proyecto", "relevant": true, "expected_note": "01-Proyectos/Proyecto Huerto Urbano.md", "expected_keywords": ["Marta"]}
+{"id": "q004", "query": "¿Cuánto gasto en gasolina al mes?", "category": "finanzas", "relevant": true, "expected_note": "02-Areas/Finanzas/Control Mensual 2026.md", "expected_keywords": ["110"]}
+{"id": "q005", "query": "¿Cuál es mi salario?", "category": "finanzas", "relevant": true, "expected_note": "02-Areas/Finanzas/Control Mensual 2026.md", "expected_keywords": ["2,100"]}
+{"id": "q006", "query": "¿Cuánto quiero ahorrar cada mes?", "category": "finanzas", "relevant": true, "expected_note": "02-Areas/Finanzas/Control Mensual 2026.md", "expected_keywords": ["400"]}
+{"id": "q007", "query": "¿Cuánto pago de alquiler?", "category": "finanzas", "relevant": true, "expected_note": "02-Areas/Finanzas/Control Mensual 2026.md", "expected_keywords": ["750"]}
+{"id": "q008", "query": "¿A qué soy alérgico?", "category": "salud", "relevant": true, "expected_note": "02-Areas/Salud/Historial Medico.md", "expected_keywords": ["penicilina", "nueces"]}
+{"id": "q009", "query": "¿Qué medicación tomo habitualmente?", "category": "salud", "relevant": true, "expected_note": "02-Areas/Salud/Historial Medico.md", "expected_keywords": ["Loratadina"]}
+{"id": "q010", "query": "¿Cuándo es mi analítica anual?", "category": "salud", "relevant": true, "expected_note": "02-Areas/Salud/Historial Medico.md", "expected_keywords": ["junio"]}
+{"id": "q011", "query": "¿A qué base de datos vamos a migrar?", "category": "trabajo", "relevant": true, "expected_note": "02-Areas/Trabajo/Reunion Equipo Producto.md", "expected_keywords": ["PostgreSQL"]}
+{"id": "q012", "query": "¿Quién lleva el plan de migración de la base de datos?", "category": "trabajo", "relevant": true, "expected_note": "02-Areas/Trabajo/Reunion Equipo Producto.md", "expected_keywords": ["Laura"]}
+{"id": "q013", "query": "¿Cuándo es la próxima reunión del equipo de producto?", "category": "trabajo", "relevant": true, "expected_note": "02-Areas/Trabajo/Reunion Equipo Producto.md", "expected_keywords": ["15 de septiembre"]}
+{"id": "q014", "query": "¿Se van a adoptar microservicios?", "category": "trabajo", "relevant": true, "expected_note": "02-Areas/Trabajo/Reunion Equipo Producto.md", "expected_keywords": ["microservicios"]}
+{"id": "q015", "query": "¿Qué modelo de Ollama recomiendas para un equipo sin GPU?", "category": "recursos", "relevant": true, "expected_note": "03-Recursos/Guia Docker y Ollama.md", "expected_keywords": ["qwen2.5:7b"]}
+{"id": "q016", "query": "¿Cuál es el puerto por defecto de Ollama?", "category": "recursos", "relevant": true, "expected_note": "03-Recursos/Guia Docker y Ollama.md", "expected_keywords": ["11434"]}
+{"id": "q017", "query": "¿Cómo veo los logs del contenedor cuando no arranca?", "category": "recursos", "relevant": true, "expected_note": "03-Recursos/Guia Docker y Ollama.md", "expected_keywords": ["docker compose logs"]}
+{"id": "q018", "query": "¿Qué modelo uso si tengo una GPU de 12 GB?", "category": "recursos", "relevant": true, "expected_note": "03-Recursos/Guia Docker y Ollama.md", "expected_keywords": ["gemma4:12b"]}
+{"id": "q019", "query": "¿Cómo divido las notas para el RAG?", "category": "zettelkasten", "relevant": true, "expected_note": "05-Zettelkasten/Chunking semantico para RAG.md", "expected_keywords": ["encabezados"]}
+{"id": "q020", "query": "¿Qué modelo de embeddings funciona bien en español?", "category": "zettelkasten", "relevant": true, "expected_note": "05-Zettelkasten/Chunking semantico para RAG.md", "expected_keywords": ["bge-m3"]}
+{"id": "q021", "query": "¿Cuánto solape recomiendas entre fragmentos?", "category": "zettelkasten", "relevant": true, "expected_note": "05-Zettelkasten/Chunking semantico para RAG.md", "expected_keywords": ["50"]}
+{"id": "q022", "query": "¿Qué libro estaba leyendo el 10 de agosto?", "category": "diario", "relevant": true, "expected_note": "06-Diario/2026-08-10.md", "expected_keywords": ["nombre del viento"]}
+{"id": "q023", "query": "¿Cuándo tengo que pagar la luz?", "category": "diario", "relevant": true, "expected_note": "06-Diario/2026-08-10.md", "expected_keywords": ["día 20"]}
+{"id": "q024", "query": "¿Cuántos kilómetros caminé ese día?", "category": "diario", "relevant": true, "expected_note": "06-Diario/2026-08-10.md", "expected_keywords": ["5 kilómetros"]}
+{"id": "q025", "query": "¿Qué averías tengo pendientes en casa?", "category": "casa", "relevant": true, "expected_note": "02-Areas/Casa/Mantenimiento del Piso.md", "expected_keywords": ["grifo", "persiana"]}
+{"id": "q026", "query": "¿A qué taller llamo para arreglar la persiana?", "category": "casa", "relevant": true, "expected_note": "02-Areas/Casa/Mantenimiento del Piso.md", "expected_keywords": ["Rotulos SL"]}
+{"id": "q027", "query": "¿Cuándo pinté el salón?", "category": "casa", "relevant": true, "expected_note": "02-Areas/Casa/Mantenimiento del Piso.md", "expected_keywords": ["mayo"]}
+{"id": "q028", "query": "¿Cuál es el teléfono del fontanero?", "category": "casa", "relevant": true, "expected_note": "02-Areas/Casa/Mantenimiento del Piso.md", "expected_keywords": ["600 123 456"]}
+{"id": "n001", "query": "¿Cuál es la matrícula de mi coche?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n002", "query": "¿Cuánto pagué por el vuelo a Lisboa?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n003", "query": "¿Cuál es la contraseña de mi WiFi?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n004", "query": "¿Cuándo cumple años mi hermano?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n005", "query": "¿Qué talla de zapatos uso?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n006", "query": "¿Cómo se llama mi perro?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n007", "query": "¿Qué pizza pedí el viernes pasado?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
+{"id": "n008", "query": "¿Cuántos primos tengo?", "category": "negativo", "relevant": false, "expected_note": null, "expected_keywords": []}
