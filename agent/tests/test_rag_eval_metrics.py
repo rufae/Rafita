@@ -55,3 +55,12 @@ def test_summarize_negatives():
 def test_normalize_strips_accents_and_case():
     assert rag_eval.normalize("Día 20") == "dia 20"
     assert rag_eval.normalize("BGE-M3") == "bge-m3"
+
+
+def test_distance_helpers():
+    assert rag_eval.l2_sq([1.0, 0.0], [0.0, 2.0]) == 5.0
+    assert rag_eval.cosine([1.0, 0.0], [0.0, 2.0]) == 0.0
+    assert rag_eval.cosine([1.0, 0.0], [2.0, 0.0]) == 1.0
+    assert rag_eval.cosine([0.0, 0.0], [1.0, 0.0]) == 0.0
+    assert rag_eval.pearson([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]) == 1.0
+    assert rag_eval.pearson([1.0], [2.0]) == 0.0
