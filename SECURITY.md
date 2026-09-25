@@ -14,7 +14,7 @@ el modelo de amenaza, las protecciones implementadas y las configuraciones recom
 |---|---|---|
 | Vault de Obsidian (`mi_boveda_obsidian/`) | Markdown plano en disco | Acceso no autorizado al contenido del segundo cerebro (DNI, historial médico, finanzas, notas personales) |
 | Base de datos SQLite (`data/db/rafita.db`) | SQLite con historial de chat + credenciales | Exposición de conversaciones y claves cifradas |
-| Credenciales (API keys, contraseñas) | AES-256 Fernet dentro de SQLite | Robo de claves si se rompe el cifrado |
+| Credenciales (API keys, contraseñas) | Fernet (AES-128-CBC + HMAC-SHA256) en SQLite | Robo de claves si se rompe el cifrado |
 | Vector DB (`data/vector_db/`) | ChromaDB con embeddings | Reconstrucción parcial del contenido del vault vía embeddings |
 | `.env` | Texto plano con tokens y configuración | Exposición del token de Telegram y claves de API |
 
@@ -53,7 +53,7 @@ de sistema operativo:
 ### Capa 2: Cifrado de credenciales (implementado en Rafita)
 
 Las API keys, contraseñas y tokens guardados con `/guardar_clave` se cifran con
-**AES-256 (Fernet)** antes de almacenarse en SQLite.
+**Fernet (AES-128-CBC + HMAC-SHA256)** antes de almacenarse en SQLite.
 
 - Clave maestra: generada automáticamente en el primer arranque, almacenada en `ENCRYPTION_KEY` dentro de `.env`.
 - Cada credencial se cifra individualmente con la misma clave maestra.
@@ -94,16 +94,10 @@ Si necesitas rotar la clave de cifrado (por compromiso sospechado o mantenimient
 | 8000 | FastAPI Gateway | `localhost` | API interna del asistente |
 | 8001 | Voice Stream WS | `localhost` | Streaming de voz por WebSocket |
 
-**Verificación**: en `docker-compose.yml`, los puertos 8000 y 8001 se mapean como
-`0.0.0.0:8000-8001->8000-8001/tcp`. Esto significa que son accesibles desde
-**cualquier interfaz de red** del host, no solo localhost.
-
-**RECOMENDACIÓN**: para entornos de producción o servidores, restringir a localhost:
-```yaml
-ports:
-  - "127.0.0.1:8000:8000"
-  - "127.0.0.1:8001:8001"
-```
+**Verificación**: en `docker-compose.yml` los tres puertos se publican enlazados a
+loopback (`127.0.0.1:11434`, `127.0.0.1:8000` y `127.0.0.1:8001`), por lo que
+**no son accesibles desde otras interfaces de red** del host. Si editas el
+compose, mantén el prefijo `127.0.0.1:` para no exponerlos.
 
 Si necesitas acceso remoto (homelab), usa **Tailscale** o un túnel SSH en lugar de
 exponer los puertos directamente a internet.

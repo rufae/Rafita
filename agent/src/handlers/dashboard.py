@@ -303,7 +303,7 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
             "Uso: `/guardar_clave <servicio> <valor>`\n"
             "Ejemplo: `/guardar_clave gemini AIza...`\n"
             "Ejemplo: `/guardar_clave wifi_casa MiPassword123`\n\n"
-            "⚠️ El valor se cifra con AES-256. Solo tu puedes verlo.",
+            "⚠️ El valor se cifra con Fernet (AES-128-CBC + HMAC). Solo tu puedes verlo.",
             parse_mode="Markdown",
         )
         return
@@ -320,7 +320,7 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
     await message.reply_text(
-        "🔐 Clave guardada para `%s` (cifrada AES-256).\nUsa `/claves` para ver tus servicios."
+        "🔐 Clave guardada para `%s` (cifrada con Fernet).\nUsa `/claves` para ver tus servicios."
         % service,
         parse_mode="Markdown",
     )
@@ -359,7 +359,7 @@ async def claves_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "No tienes claves guardadas.\nUsa `/guardar_clave <servicio> <valor>`."
         )
         return
-    lines = ["🔐 *Tus claves guardadas (AES-256)*\n"]
+    lines = ["🔐 *Tus claves guardadas (Fernet)*\n"]
     for c in creds:
         lines.append("  • `%s` — guardada %s" % (c["service"], c["updated_at"][:10]))
     lines.append("\nUsa `/clave <servicio>` para ver valor parcial.")

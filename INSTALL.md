@@ -60,7 +60,7 @@ Si no tienes git, descarga el ZIP del repositorio.
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/user/rafai.git
+git clone https://github.com/rufae/Rafita.git
 cd rafai
 
 # Crear archivo de configuración
@@ -126,7 +126,7 @@ El primer arranque tarda más porque:
 
 1. **Descarga modelos de Ollama** (se hace automáticamente): gemma4/qwen + bge-m3 + llava
 2. **Pre-carga los modelos en RAM**: 1-3 minutos en GPU, 3-5 minutos en CPU
-3. **Indexa el vault de ejemplo** (backfill): ~30 segundos
+3. **Indexa el vault montado** (backfill): la primera vez puede estar vacío
 4. **Arranca el bot de Telegram**: conecta y empieza a recibir mensajes
 
 Cuando veas `Startup complete. All services running.` en los logs, tu Rafita está vivo.
@@ -146,7 +146,13 @@ docker compose ps
 
 ## 4. Configurar tu vault de Obsidian
 
-Por defecto Rafita usa `vault_ejemplo/` con notas de demostración.
+Compose monta la carpeta `mi_boveda_obsidian/` del proyecto como `/data/obsidian_vault`
+en el contenedor. Para probar con las notas de demostración:
+
+```bash
+cp -r vault_ejemplo/* mi_boveda_obsidian/
+```
+
 Para usar tu propio vault:
 
 1. Copia tu vault de Obsidian a la carpeta `mi_boveda_obsidian/` del proyecto
