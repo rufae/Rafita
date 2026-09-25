@@ -17,6 +17,12 @@ vault:
     diary: 06-Diario
     attachments: Attachments
     indexed_docs: 03-Recursos/Documentos_Indexados
+  # Carpetas que BrainMaintainer nunca modifica/revierte automaticamente
+  # (tarea 2.4). Si se omite, se usan finanzas, salud y diario.
+  protected_folders:
+    - 02-Areas/Finanzas
+    - 02-Areas/Salud
+    - 06-Diario
 
 telegram:
   allowed_users: []

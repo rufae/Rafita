@@ -9,6 +9,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.ollama_client import llm
+from src.utils.brain_maintainer import BrainMaintainer
 from src.utils.google_calendar_manager import gcal
 from src.utils.obsidian_manager import initialize_vault_structure as init_obsidian_vault
 from src.utils.telemetry import metrics
@@ -218,6 +219,7 @@ class Application:
         self._indexer = BackgroundIndexer()
         self._gateway_task: asyncio.Task | None = None
         self._voice_stream_task: asyncio.Task | None = None
+        self._brain_maintainer = BrainMaintainer()
 
     async def _ensure_embedding_model(self) -> None:
         try:
@@ -376,6 +378,7 @@ class Application:
         logger.info("Step 9/9: Starting background workers...")
         await self._proactive_worker.start(self._shutdown_event)
         await self._indexer.start(self._shutdown_event)
+        await self._brain_maintainer.start(self._shutdown_event)
 
         asyncio.create_task(_catch_up_scan())
         asyncio.create_task(_health_monitor())
@@ -407,6 +410,10 @@ class Application:
             await self._proactive_worker.stop()
         except Exception as e:
             logger.error("Error stopping proactive worker: %s", e)
+        try:
+            await self._brain_maintainer.stop()
+        except Exception as e:
+            logger.error("Error stopping BrainMaintainer: %s", e)
         try:
             from src.utils.app_connector import connector
 

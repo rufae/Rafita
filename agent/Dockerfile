@@ -27,7 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/home/rafita/.local/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg libsndfile1 espeak-ng sqlite3 \
+    ffmpeg libsndfile1 espeak-ng sqlite3 git \
     && rm -rf /var/lib/apt/lists/* \
     && adduser --disabled-password --gecos "" rafita \
     && mkdir -p /app/src /data/db /data/excels /data/logs /data/exports \
