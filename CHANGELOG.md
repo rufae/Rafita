@@ -61,11 +61,13 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
 ### Limitaciones conocidas (ronda de estabilización)
 - La calidad RAG está medida sobre un vault de evaluación sintético; falta
   validarla con el vault personal real y más negativos.
-- Tool-calling con `gemma4:12b`: 29/46 con equivalencias; 7 tools no se
-  invocan de forma fiable (ver README y plan.md).
-- La instalación end-to-end termina en un bot funcional solo con un token de
-  Telegram real; las pruebas de servidor continuo son la Fase 3 (pendiente de
-  despliegue).
+- Tool-calling con `gemma4:12b`: la medición de 29/46 era efecto del
+  `thinking` del modelo, activo por defecto. Con `reasoning_effort=none`
+  (tareas 3.1/3.2) la suite completa da **46/46 (100%)** en el despliegue real
+  (agente en HP → LLM en Dell). Ver README y `plan.md`.
+- El despliegue continuo ya está desplegado (LLM en Dell, agente en HP por
+  Tailscale; tareas 3.1/3.2); las pruebas de caos, logs y upgrade/rollback
+  siguen pendientes (3.4–3.7).
 
 ## [0.1.0] - 2026-08-12
 

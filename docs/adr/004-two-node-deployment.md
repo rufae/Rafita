@@ -125,6 +125,13 @@ al umbral de 4 tok/s: prioriza calidad de razonamiento/herramientas y acepta la
 latencia; en el futuro podrá usar la GPU de la torre por túnel sin reconfigurar.
 `qwen2.5:7b` y `llava:7b` quedan instalados (fallback y visión).
 
+**Validación remota (3.2, 2026-09-26):** desde el agente desplegado en el HP
+contra el LLM del Dell por Tailscale: RAG idéntico al local (recall@3 = 1.0,
+MRR@5 = 0.982, 0 falsos positivos) y tool-calling **46/46 (100%)** con el
+thinking desactivado (baseline local de 1.7 sin ese ajuste: 29/46). Latencias
+por llamada de tool: 8–27 s. El umbral de "sin caída grave frente a 29/46" se
+cumple con margen.
+
 **Hallazgo no previsto:** `gemma4:12b` activa `thinking` por defecto y por `/v1`
 (el endpoint que usa la app) `think:false` no lo desactiva: el `content` llegaba
 vacío porque el razonamiento consumía `LLM_MAX_TOKENS`. Se verificó que

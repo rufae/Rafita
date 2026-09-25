@@ -1346,6 +1346,14 @@ posterior queda contaminada).
   lista concreta de 7 tools que el modelo no invoca — base para priorizar
   fiabilidad de tools en Fase 2.
 
+  **Actualización 2026-09-26 (tareas 3.1/3.2):** los 17 `no_tool` de esta
+  medición eran efecto del **thinking** de `gemma4:12b` (activo por defecto):
+  el razonamiento consumía el presupuesto de tokens antes de emitir la tool.
+  Con `reasoning_effort=none` (fix `5698227`), la suite completa repetida
+  desde el HP contra el LLM del Dell da **46/46 (100%)** — ver 3.2. Este
+  baseline de 29/46 queda como histórico (medido sin el ajuste) y no debe
+  usarse como referencia de fiabilidad del modelo.
+
 - [x] **1.8 Tests de Fernet no vacuos**
   Hallazgo: en `test_fernet.py`, los casos de clave inválida/token manipulado
   envuelven un `assert False` dentro del mismo `try/except Exception`, así que
@@ -1962,15 +1970,65 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   fuera del propio Dell (`curl` desde el nodo HP), y benchmark de
   tokens/segundo con el modelo real en producción.
 
-- [ ] **3.2 Apuntar el agente del nodo HP al LLM remoto**
-  Depende de 3.1. Tareas: configurar `AI_PROVIDER`/`OLLAMA_HOST` u
-  `OPENAI_BASE_URL` en el `.env` del agente (desplegado en HP) para que
-  apunte a la IP/host del Dell decidido en 3.0(c), no a `localhost`. Repetir
-  el dataset de 1.2/1.3 (Recall@k, MRR) y una pasada reducida de 1.7
-  (tool-calling) contra el LLM remoto real, para confirmar que la latencia de
-  red no rompe nada que funcionaba en local.
-  Evidencia requerida: métricas de 1.3 y 1.7 repetidas contra el LLM remoto,
-  comparadas con los números ya registrados en Fase 1.
+- [x] **3.2 Apuntar el agente del nodo HP al LLM remoto**
+  **Completada 2026-09-26.** Agente desplegado en el HP contra el LLM del
+  Dell; RAG y tool-calling repetidos con resultados iguales o mejores que el
+  baseline local.
+
+  - **Overlay** `deploy/hp/docker-compose.hp.yml` (commit `d588760`): sin
+    `ollama-service` (perfil inactivo), sin `depends_on`, gateway en 8010,
+    `OLLAMA_HOST=http://100.83.40.103:11434`, `WHISPER_CPU_THREADS=2`.
+    Validado con `docker compose config` (puertos 8010/8001, sin dependencia
+    del Ollama local). `WHISPER_CPU_THREADS` es nuevo y configurable (antes
+    `cpu_threads=4` fijo; 2 tests).
+  - **Despliegue real en el HP** (`~/proyectos/rafita`, rsync del repo sin
+    `.env`/datos; `.env` copiado aparte con `OLLAMA_MODEL=gemma4:12b` y
+    `OLLAMA_HOST` al Dell): imagen construida en el propio HP y
+    `docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml
+    up -d` → contenedor `rafita-agent-core` **healthy**; `/ready` desde el HP:
+    ```
+    {"status":"ready","ready":true,
+     "checks":{"ollama":{"status":"ok","latency_ms":21,
+                         "chat_model":"gemma4:12b","chat_model_available":true},
+               "vector_db":{"status":"ok","chunks":0},"telegram":{"status":"ok"}}}
+    ```
+    RAM del agente: **159,7 MiB / 2 GiB (7,8%)** — muy por debajo del
+    presupuesto de 3.0(d).
+  - **RAG (1.2/1.3) contra el LLM remoto**, ejecutado dentro del contenedor
+    desplegado en el HP (`docker exec ... rag_eval.py --top-k 5`):
+    ```
+    chunks_indexed=26 (8 notas, 0 fallos)
+    positives: total=28 recall@1=0.9643 recall@3=1.0 recall@5=1.0
+               mrr@5=0.9821 keyword_any@5=1.0 keyword_all@5=1.0
+               mean_expected_relevance=0.61025 min=0.426
+    negatives: total=8 mean_top=0.445875 max_top=0.482
+               false_found@>=0.5=0.0 @>=0.6=0.0 @>=0.7=0.0
+    ```
+    **Idéntico al baseline local de 1.3** (mismo recall/MRR/relevancias): la
+    red no altera la recuperación. bge-m3 desde el Dell a 0,062 s/embedding.
+  - **Tool-calling (1.7) contra el LLM remoto**, ejecutado dentro del
+    contenedor del HP (`tool_calling_eval.py`, `model=gemma4:12b tools=21
+    tools_json_chars=14161`, idéntico al baseline):
+    - Pasada reducida (`--attempts 1`): **23/23 (100%)**,
+      `failure_modes={}`.
+    - Suite completa (`--attempts 2`): **46/46 (100%)**, `failure_modes={}`,
+      las 23 tools al 100% (incluidas las 7 que nunca se invocaban en el
+      baseline GPU). Duración total ~11 min; latencias por llamada 8–27 s.
+    - **Comparación honesta con 1.7 (29/46, 63%)**: el baseline se midió con
+      el `thinking` de gemma4 activo (consumía tokens antes de emitir la
+      tool). Este resultado no mide "mejor red/hardware" sino el efecto del
+      fix `reasoning_effort=none` de 3.1; aun así confirma que la latencia de
+      red no rompe nada y que los `no_tool` eran el thinking.
+    - Nota metodológica: la suite usa el prompt compartido del orquestador,
+      no el inline de Telegram; los controles negativos siguen sin
+      sobre-disparar.
+  - **Cambio de código necesario para el despliegue**: `WHISPER_CPU_THREADS`
+    configurable (commit `d588760`), con 2 tests; `.env` del HP ajustado a
+    `OLLAMA_MODEL=gemma4:12b` y `OLLAMA_HOST` al Dell (copiado desde el PC de
+    desarrollo; `ADMIN_IDS` siguen siendo placeholders → el usuario los
+    actualizará con su ID real de @userinfobot).
+  - Pendiente de decidir (heredado 3.0(d)): modelo de visión
+    (`llava:7b` en uso; `gemma4:12b` también soporta visión).
 
 - [ ] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   Depende de 0.6 y 3.2. Tareas: separar "el proceso vive" de "el servicio
