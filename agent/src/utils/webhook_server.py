@@ -3,9 +3,11 @@ import hashlib
 import hmac
 import json
 import time
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from src.database import db
 from src.logger import logger
@@ -45,7 +47,67 @@ def _check_webhook_auth(body: bytes, signature: str) -> None:
 
 @app.get("/health")
 async def health():
+    """Liveness: the process is up. Does not check dependencies (see /ready)."""
     return {"status": "ok", "service": "rafita-gateway", "timestamp": time.time()}
+
+
+async def _check_ollama() -> dict[str, Any]:
+    import httpx
+
+    from src.config import settings
+
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
+            resp.raise_for_status()
+            models = [m.get("name", "") for m in resp.json().get("models", [])]
+    except Exception as e:
+        return {"status": "error", "detail": "Ollama unreachable: %s" % str(e)[:150]}
+    chat_model = settings.ollama_model
+    available = any(m == chat_model or m.startswith(chat_model + ":") for m in models)
+    result: dict[str, Any] = {
+        "status": "ok" if available else "degraded",
+        "latency_ms": round((time.time() - t0) * 1000),
+        "chat_model": chat_model,
+        "chat_model_available": available,
+    }
+    if not available:
+        result["detail"] = "chat model '%s' not pulled yet" % chat_model
+    return result
+
+
+async def _check_vector_db() -> dict[str, Any]:
+    from src.utils.vector_manager import vector_db
+
+    return await vector_db.health()
+
+
+def _check_telegram() -> dict[str, Any]:
+    if _bot_ref is None:
+        return {"status": "error", "detail": "bot not configured"}
+    status_fn = getattr(_bot_ref, "polling_status", None)
+    if status_fn is None:
+        return {"status": "unknown", "detail": "polling state not available"}
+    return status_fn()
+
+
+@app.get("/ready")
+async def readiness():
+    """Readiness: verifies the critical dependencies before serving traffic."""
+    checks = {
+        "ollama": await _check_ollama(),
+        "vector_db": await _check_vector_db(),
+        "telegram": _check_telegram(),
+    }
+    ready = all(check.get("status") == "ok" for check in checks.values())
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "ready": ready,
+        "checks": checks,
+        "timestamp": time.time(),
+    }
+    return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 
 @app.get("/metrics")
