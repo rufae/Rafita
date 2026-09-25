@@ -67,6 +67,25 @@ cd rafai
 cp .env.example .env
 ```
 
+### Instalación asistida (recomendada)
+
+El wizard crea/valida `.env`, te deja elegir proveedor (Ollama local o
+cualquier endpoint compatible OpenAI), prueba la conexión y valida la carpeta
+del vault, sin tocar código:
+
+```bash
+python3 scripts/setup_wizard.py
+```
+
+Modo no interactivo para automatizar:
+
+```bash
+python3 scripts/setup_wizard.py --non-interactive \
+  --token 123456:ABC... --provider ollama --model gemma4:12b \
+  --embedding-model bge-m3 --base-url http://localhost:11434 \
+  --vault ./mi_boveda_obsidian
+```
+
 ### Configurar `.env`
 
 Edita `.env` con tu editor de texto. **Mínimo imprescindible**:
