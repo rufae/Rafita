@@ -134,6 +134,11 @@ aciertos). Detalle en `plan.md` (tareas 1.3–1.5).
 **Pendiente**: repetir la medición con el vault personal real y más negativos
 (Fase 3). El dataset sintético no sustituye esa validación.
 
+**Actualización 2026-09-26 (Fase 3, tareas 3.1/3.2)**: la recuperación se
+repitió desde el HP contra el LLM/embeddings del Dell por Tailscale, con
+resultados idénticos al baseline local (recall@3 = 1.0, MRR@5 = 0.982, 0
+falsos positivos): la red no altera el RAG.
+
 ## Revisión de tool-calling (2026-09-25)
 
 La suite de 21 tools con `gemma4:12b` (2 intentos/tool) dio **29/46 con
@@ -144,6 +149,15 @@ fueron inestables entre ejecuciones. La afirmación de esta ADR de que gemma4
 tiene "mejor tool use" se sostiene frente a CPU, pero **no alcanza fiabilidad
 de producción todavía**; la mejora (prompt/tool definitions) queda para v0.2.0
 y la validación con harware de destino en Fase 3.
+
+**Actualización 2026-09-26 (Fase 3, tareas 3.1/3.2)**: los `no_tool` eran
+efecto del `thinking` de gemma4 (activo por defecto), que consumía el
+presupuesto de tokens antes de emitir la tool. Desactivándolo
+(`reasoning_effort=none`, commit `5698227`) la suite completa, ejecutada en el
+despliegue real (agente en HP contra el LLM del Dell por Tailscale), da
+**46/46 (100%)** y los controles negativos siguen sin sobre-disparar. La
+fiabilidad de tool-calling de gemma4 queda confirmada; la elección de esta ADR
+se refuerza.
 
 ## Nota sobre hardware_detect
 
