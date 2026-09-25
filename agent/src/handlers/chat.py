@@ -21,6 +21,7 @@ from src.utils.obsidian_manager import move_or_rename_file as obsidian_move_rena
 from src.utils.telemetry import metrics, new_correlation_id
 from src.utils.vector_manager import vector_db
 from src.utils.web_search import format_search_results, search_duckduckgo
+from src.vault_config import get_taxonomy
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -268,10 +269,10 @@ async def _process_ai_message(
                     "un DATO PERSONAL RELEVANTE, o un APRENDIZAJE TECNICO, debes guardarlo "
                     "PROACTIVAMENTE en Obsidian usando manage_obsidian_note (create) o "
                     "ingest_file SIN que el usuario te lo pida. Usa estas carpetas:\n"
-                    "- Ideas y conceptos nuevos -> 05-Zettelkasten/ (tipo: nota-atomica)\n"
-                    "- Decisiones de proyecto -> 01-Proyectos/ (tipo: proyecto)\n"
-                    "- Datos personales (salud, preferencias) -> 02-Areas/ (tipo: area)\n"
-                    "- Aprendizajes tecnicos -> 03-Recursos/ (tipo: recurso)\n"
+                    f"- Ideas y conceptos nuevos -> {get_taxonomy().path('zettelkasten')}/ (tipo: nota-atomica)\n"
+                    f"- Decisiones de proyecto -> {get_taxonomy().path('projects')}/ (tipo: proyecto)\n"
+                    f"- Datos personales (salud, preferencias) -> {get_taxonomy().path('areas')}/ (tipo: area)\n"
+                    f"- Aprendizajes tecnicos -> {get_taxonomy().path('resources')}/ (tipo: recurso)\n"
                     "Confirma brevemente: 'He guardado esto en tu segundo cerebro'.\n"
                     "CREDENTIAL_RULE: El usuario puede guardar claves, API keys y contraseñas "
                     "de forma segura con /guardar_clave (cifrado AES-256). Si el usuario "
@@ -282,7 +283,8 @@ async def _process_ai_message(
                     "usa /clave <servicio> para obtenerla.\n"
                     "FINANCE_STORAGE_RULE: No usas Excel para el control financiero. Gestionas el "
                     "historico financiero estrictamente en la nota de Obsidian "
-                    "'02-Areas/Finanzas/Control_Financiero_2026.md'. Toda transaccion se registra "
+                    f"'{get_taxonomy().path('areas_finanzas')}/Control_Financiero_2026.md'. "
+                    "Toda transaccion se registra "
                     "en una tabla Markdown con las columnas: "
                     "| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |. "
                     "Si el usuario pregunta como llevas el control o como gestionas las finanzas, "
@@ -322,7 +324,8 @@ async def _process_ai_message(
                     "el sintetizador local.\n"
                     "FINANCE_STORAGE_RULE: No usas Excel para el control financiero. Gestionas el "
                     "historico financiero estrictamente en la nota de Obsidian "
-                    "'02-Areas/Finanzas/Control_Financiero_2026.md'. Toda transaccion se registra "
+                    f"'{get_taxonomy().path('areas_finanzas')}/Control_Financiero_2026.md'. "
+                    "Toda transaccion se registra "
                     "en una tabla Markdown con las columnas: "
                     "| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |. "
                     "Si el usuario pregunta como llevas el control, explicale esta estructura.\n\n"
@@ -518,7 +521,7 @@ async def _save_diary_entry(chat_id: int, user_msg: str, bot_response: str) -> N
         await create_or_append_note(
             title=note_title,
             content=entry,
-            folder="06-Diario",
+            folder=get_taxonomy().path("diary"),
         )
     except Exception:
         pass
@@ -607,7 +610,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     title="Control_Financiero_2026",
                     content="## Transacciones\n\n| Fecha | Concepto | Categoria | Ingreso/Gasto (EUR) | Saldo |\n|---|---|---|---|---|\n%s"
                     % table_row,
-                    folder="02-Areas/Finanzas",
+                    folder=get_taxonomy().path("areas_finanzas"),
                 )
             except Exception as sync_err:
                 logger.warning("Obsidian finance sync failed: %s", sync_err)
@@ -1095,7 +1098,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "ingest_file":
             filename = args.get("filename", "").strip()
-            folder = args.get("folder", "03-Recursos").strip()
+            folder = args.get("folder", get_taxonomy().path("resources")).strip()
             note_type = args.get("note_type", "recurso").strip()
             tags = args.get("tags", [])
             summary = args.get("summary", "").strip()
