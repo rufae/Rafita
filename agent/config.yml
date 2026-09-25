@@ -1,3 +1,23 @@
+vault:
+  # Nombres de carpeta del vault por clave simbolica (tarea 2.1). Cambia solo
+  # los valores para adaptar la instancia a tu propia estructura; los defaults
+  # son PARA+Zettelkasten. `structure` e `ignored_dirs` son opcionales.
+  folders:
+    inbox: 00-Inbox
+    projects: 01-Proyectos
+    areas: 02-Areas
+    areas_salud: 02-Areas/Salud
+    areas_finanzas: 02-Areas/Finanzas
+    areas_trabajo: 02-Areas/Trabajo
+    areas_casa: 02-Areas/Casa
+    agenda: 02-Areas/Agenda
+    resources: 03-Recursos
+    archive: 04-Archivo
+    zettelkasten: 05-Zettelkasten
+    diary: 06-Diario
+    attachments: Attachments
+    indexed_docs: 03-Recursos/Documentos_Indexados
+
 telegram:
   allowed_users: []
   admin_ids: []

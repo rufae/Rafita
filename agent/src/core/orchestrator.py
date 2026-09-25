@@ -17,6 +17,7 @@ from src.logger import logger
 from src.models.schemas import MessageRole
 from src.ollama_client import OllamaClientError, llm
 from src.utils.telemetry import get_correlation_id, metrics
+from src.vault_config import get_taxonomy
 
 SYSTEM_PROMPT_VOICE = (
     "STRICT_LANGUAGE_RULE: Tu idioma es EXCLUSIVAMENTE el espanol. "
@@ -33,10 +34,10 @@ SYSTEM_PROMPT_VOICE = (
     "un DATO PERSONAL RELEVANTE, o un APRENDIZAJE TECNICO, debes guardarlo "
     "PROACTIVAMENTE en Obsidian usando manage_obsidian_note (create) o "
     "ingest_file SIN que el usuario te lo pida. Usa estas carpetas:\n"
-    "- Ideas y conceptos nuevos -> 05-Zettelkasten/ (tipo: nota-atomica)\n"
-    "- Decisiones de proyecto -> 01-Proyectos/ (tipo: proyecto)\n"
-    "- Datos personales (salud, preferencias) -> 02-Areas/ (tipo: area)\n"
-    "- Aprendizajes tecnicos -> 03-Recursos/ (tipo: recurso)\n"
+    f"- Ideas y conceptos nuevos -> {get_taxonomy().path('zettelkasten')}/ (tipo: nota-atomica)\n"
+    f"- Decisiones de proyecto -> {get_taxonomy().path('projects')}/ (tipo: proyecto)\n"
+    f"- Datos personales (salud, preferencias) -> {get_taxonomy().path('areas')}/ (tipo: area)\n"
+    f"- Aprendizajes tecnicos -> {get_taxonomy().path('resources')}/ (tipo: recurso)\n"
     "Confirma brevemente: 'He guardado esto en tu segundo cerebro'.\n"
     "Eres Rafita, un asistente virtual personal. "
     "Responde en espanol de forma conversacional, clara y concisa. "

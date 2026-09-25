@@ -1,10 +1,11 @@
 """Escaneo batch de mensajes para extraer datos estructurados al segundo cerebro.
 
 Permite procesar mensajes acumulados (offline) y extraer:
-- Enlaces → 03-Recursos
-- Fechas/eventos → 02-Areas/Agenda
-- Datos financieros → 02-Areas/Finanzas
-- Ideas → 05-Zettelkasten
+- Enlaces → carpeta de recursos
+- Fechas/eventos → carpeta de agenda
+- Datos financieros → carpeta de finanzas
+- Ideas → carpeta zettelkasten
+(Las carpetas concretas vienen de la taxonomía configurable, tarea 2.1.)
 """
 
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ from typing import Any
 
 from src.database import db
 from src.logger import logger
+from src.vault_config import get_taxonomy
 
 
 async def _extract_batch_with_llm(
@@ -33,10 +35,10 @@ async def _extract_batch_with_llm(
         "y mensajes sin valor informativo.\n\n"
         "MENSAJES A ANALIZAR:\n%s\n\n"
         "EXTRAE y clasifica en estas categorias:\n"
-        "1. ENLACES: URLs utiles, articulos, herramientas → guardar en 03-Recursos\n"
-        "2. IDEAS: conceptos, aprendizajes, insights → guardar en 05-Zettelkasten\n"
-        "3. EVENTOS: fechas, recordatorios, citas → guardar en 02-Areas/Agenda\n"
-        "4. GASTOS: menciones de dinero, compras, pagos → guardar en 02-Areas/Finanzas\n"
+        f"1. ENLACES: URLs utiles, articulos, herramientas → guardar en {get_taxonomy().path('resources')}\n"
+        f"2. IDEAS: conceptos, aprendizajes, insights → guardar en {get_taxonomy().path('zettelkasten')}\n"
+        f"3. EVENTOS: fechas, recordatorios, citas → guardar en {get_taxonomy().path('agenda')}\n"
+        f"4. GASTOS: menciones de dinero, compras, pagos → guardar en {get_taxonomy().path('areas_finanzas')}\n"
         "5. DATOS: informacion personal nueva (preferencias, datos de salud, contactos)\n\n"
         "Para cada item extraido, usa las herramientas disponibles para guardarlo "
         "en la nota y carpeta correspondiente de Obsidian. "

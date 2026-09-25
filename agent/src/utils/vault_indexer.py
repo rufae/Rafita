@@ -10,11 +10,16 @@ from watchdog.observers import Observer
 
 from src.config import settings
 from src.logger import logger
+from src.vault_config import get_taxonomy
 
 VAULT_PATH = Path(settings.obsidian_vault_dir)
 VAULT_NAME = settings.obsidian_vault_name
-IGNORED_DIRS = {".obsidian", ".git", ".trash", "Documentos_Indexados", "templates"}
 DEBOUNCE_SECONDS = 2.0
+
+
+def _ignored_dirs() -> set[str]:
+    return set(get_taxonomy().ignored_dirs)
+
 
 TOKENS_PER_WORD_ES = 1.4
 
@@ -337,9 +342,10 @@ class VaultIndexer:
     async def index_all(self) -> dict[str, Any]:
 
         md_files = []
+        ignored = _ignored_dirs()
         for md_file in VAULT_PATH.rglob("*.md"):
             parts = md_file.relative_to(VAULT_PATH).parts
-            if any(d in IGNORED_DIRS or d.startswith(".") for d in parts):
+            if any(d in ignored or d.startswith(".") for d in parts):
                 continue
             md_files.append(md_file)
 
@@ -398,7 +404,7 @@ class VaultIndexer:
         except ValueError:
             return
         parts = rel.parts
-        if any(d in IGNORED_DIRS or d.startswith(".") for d in parts):
+        if any(d in _ignored_dirs() or d.startswith(".") for d in parts):
             return
 
         rel_str = str(rel)

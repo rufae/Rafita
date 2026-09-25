@@ -7,6 +7,8 @@ from typing import Annotated, Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from src.vault_config import get_taxonomy
+
 ENV_FILE_PATH = Path(os.environ.get("ENV_FILE", "/workspace/.env"))
 
 
@@ -126,7 +128,7 @@ class Settings(BaseSettings):
 
     @property
     def obsidian_finanzas_path(self) -> Path:
-        return self.obsidian_vault_path / "02-Areas" / "Finanzas"
+        return self.obsidian_vault_path / get_taxonomy().path("areas_finanzas")
 
     @property
     def vector_db_path(self) -> Path:
@@ -134,7 +136,7 @@ class Settings(BaseSettings):
 
     @property
     def indexed_docs_path(self) -> Path:
-        return self.obsidian_vault_path / "03-Recursos" / "Documentos_Indexados"
+        return self.obsidian_vault_path / get_taxonomy().path("indexed_docs")
 
     @property
     def encryption_key_bytes(self) -> bytes:
