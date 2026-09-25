@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 
 from src.config import settings
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS
+from src.handlers.chat_tools import TOOLS_DEFINITIONS, WRITE_TOOLS, get_tools_for_llm
 from src.i18n import currency_symbol, language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
@@ -366,7 +366,7 @@ async def _process_ai_message(
             content, tool_calls = await asyncio.wait_for(
                 llm.chat_with_tools(
                     messages=messages_for_llm,
-                    tools=TOOLS_DEFINITIONS,
+                    tools=get_tools_for_llm(),
                     max_tokens=512,
                 ),
                 timeout=600.0,
@@ -507,6 +507,9 @@ async def _process_ai_message(
 
 
 async def _save_diary_entry(chat_id: int, user_msg: str, bot_response: str) -> None:
+    if not settings.persist_to_brain:
+        logger.debug("Diary entry skipped (PERSIST_TO_BRAIN=false)")
+        return
     try:
         from src.utils.obsidian_manager import create_or_append_note
 
@@ -582,6 +585,21 @@ async def _send_response_with_audio_interceptor(update, context, text: str) -> N
 async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> dict[str, Any]:
     metrics.inc("tool_calls_total")
     metrics.inc("tool_calls_%s" % func_name)
+    if not settings.persist_to_brain:
+        action = str(args.get("action", "")).lower()
+        if func_name == "manage_obsidian_note":
+            is_write = action in {"create", "append", "delete"}
+        else:
+            is_write = func_name in WRITE_TOOLS
+        if is_write:
+            logger.info("Write tool blocked (PERSIST_TO_BRAIN=false): %s", func_name)
+            return {
+                "success": False,
+                "message": (
+                    "Escritura deshabilitada: PERSIST_TO_BRAIN=false (modo depuracion). "
+                    "No se modifico el segundo cerebro."
+                ),
+            }
     try:
         if func_name == "save_expense":
             amount = args.get("amount", 0)
