@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from src.config import settings
+from src.i18n import stt_prompt
 from src.logger import logger
 
 app = FastAPI(
@@ -479,7 +480,7 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
             segments, info = model.transcribe(
                 tmp_path,
                 beam_size=1,
-                language="es",
+                language=settings.language,
                 temperature=0.0,
                 vad_filter=True,
                 vad_parameters={
@@ -490,7 +491,7 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
                 no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4,
                 log_prob_threshold=-1.0,
-                initial_prompt="A continuacion, una conversacion en espanol.",
+                initial_prompt=stt_prompt(),
             )
             parts = [seg.text for seg in segments]
             return " ".join(parts).strip() if parts else None

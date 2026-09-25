@@ -3,6 +3,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from src.config import settings
+from src.i18n import language_name
+
 
 class MessageRole(str, Enum):
     user = "user"
@@ -24,8 +27,9 @@ class ConversationContext(BaseModel):
     chat_id: int
     messages: list[ChatMessage] = Field(default_factory=list)
     system_prompt: str = (
-        "Eres Rafita, un asistente virtual personal experto en productividad, "
-        "finanzas y organización. Respondes en español de manera clara y concisa. "
+        f"Eres {settings.assistant_name}, un asistente virtual personal experto en "
+        f"productividad, finanzas y organización. Respondes en {language_name()} de "
+        "manera clara y concisa. "
         "Puedes ayudar con gestión de eventos, alertas, análisis financiero, "
         "y responder preguntas generales usando tu conocimiento."
     )
@@ -88,7 +92,7 @@ class FinanceRecord(BaseModel):
     category: FinanceCategory
     subcategory: str | None = None
     description: str | None = None
-    currency: str = "MXN"
+    currency: str = Field(default_factory=lambda: settings.default_currency)
     recorded_at: datetime | None = None
     created_at: datetime | None = None
 
