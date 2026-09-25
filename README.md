@@ -97,11 +97,11 @@ También puedes configurar los modelos manualmente en `.env`.
   propio (36 casos) en el PC con RTX 3060: recall@3 = 1.0, MRR@5 = 0.98, umbral
   calibrado 0.49 con 0 falsos positivos (ver [ADR-003](docs/adr/003-model-selection.md)).
   Pendiente validar con el vault personal real y más negativos (Fase 3).
-- **Fiabilidad de tools con gemma4:12b**: medida con la suite de 21 tools
-  (2 intentos): 29/46 con equivalencias (63%); 7 tools no se invocan nunca
-  (`create_event`, `remember_fact`, `search_knowledge`, `move_or_rename_file`,
-  `set_recurring_reminder`, `create_google_calendar_event`, `ingest_file`).
-  Mejora planificada para v0.2.0 (prompt/tool definitions).
+- **Fiabilidad de tools con gemma4:12b**: suite de 21 tools (2 intentos) →
+  **46/46 (100%)** en el despliegue real (agente en HP contra el LLM del Dell,
+  2026-09-26) con el thinking del modelo desactivado
+  (`reasoning_effort=none`). La medición anterior de 29/46 (63%) se hizo sin
+  ese ajuste y era efecto del razonamiento consumiendo los tokens.
 - **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a través de bind mounts. El watcher no funciona en este entorno. En Linux nativo funciona correctamente.
 - **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only. El sistema degrada automáticamente a qwen2.5:7b si no detecta GPU.
 
