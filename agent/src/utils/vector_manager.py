@@ -328,6 +328,17 @@ class VectorManager:
         except Exception:
             return {"total_chunks": count, "total_documents": 0}
 
+    async def health(self) -> dict[str, Any]:
+        """Readiness probe for the vector store (used by the gateway /ready)."""
+        if not self._initialized or self._collection is None:
+            return {"status": "error", "detail": "not initialized"}
+        try:
+            loop = asyncio.get_running_loop()
+            count = await loop.run_in_executor(None, self._collection.count)
+        except Exception as e:
+            return {"status": "error", "detail": "query failed: %s" % str(e)[:150]}
+        return {"status": "ok", "chunks": count}
+
     async def close(self) -> None:
         self._initialized = False
         logger.info("Vector DB closed")
