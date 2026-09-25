@@ -119,9 +119,17 @@ exponer los puertos directamente a internet.
 - Verificación en caliente: `/clave <servicio>` devuelve valor enmascarado
 
 ### Webhook server
-- `webhook_server.py` implementa verificación HMAC de firma para webhooks entrantes.
-- Sin `WEBHOOK_SECRET` configurado, los webhooks se rechazan.
-- (Ver F2.5 para auditoría completa de path traversal en este módulo.)
+- `webhook_server.py` implementa verificación HMAC (SHA-256) de firma para webhooks entrantes.
+- El secreto es **único por instancia**: si `WEBHOOK_SECRET` está vacío, se genera
+  uno aleatorio en el primer arranque y se persiste en `.env` (nunca un valor
+  por defecto compartido en el repositorio).
+- **Fail-closed**: si no hay secreto configurado, los endpoints de webhook
+  responden `503` ("Webhook secret not configured") en vez de aceptar la
+  petición; una firma ausente o inválida responde `401`.
+- Los endpoints protegidos son `POST /webhook/{source}`, `POST|DELETE /connector/{name}`,
+  `POST /gmail/check` y `POST /homeassistant/{entity_id}`.
+- Las operaciones del vault pasan por confinamiento de rutas
+  (`utils/path_safety.resolve_within`, tarea 0.3).
 
 ### Pipeline de ingesta de archivos
 - (Ver F2.5 para auditoría de path traversal / injection.)
