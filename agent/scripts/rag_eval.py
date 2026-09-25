@@ -53,6 +53,33 @@ def first_rank(returned_notes: list[str], expected_note: str) -> int | None:
     return None
 
 
+def l2_sq(a: list[float], b: list[float]) -> float:
+    return sum((x - y) ** 2 for x, y in zip(a, b))
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def pearson(xs: list[float], ys: list[float]) -> float:
+    n = len(xs)
+    if n == 0:
+        return 0.0
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    var_x = sum((x - mean_x) ** 2 for x in xs)
+    var_y = sum((y - mean_y) ** 2 for y in ys)
+    if var_x == 0.0 or var_y == 0.0:
+        return 0.0
+    return cov / math.sqrt(var_x * var_y)
+
+
 def summarize_positives(rows: list[dict], k: int) -> dict:
     """rows: [{'rank', 'keyword_any', 'keyword_all', 'expected_relevance'}]."""
     total = len(rows)
@@ -88,7 +115,26 @@ def summarize_negatives(rows: list[dict]) -> dict:
     return summary
 
 
-async def run_evaluation(top_k: int) -> dict:
+def _norm(vector: list[float]) -> float:
+    return math.sqrt(sum(x * x for x in vector))
+
+
+async def _embed_texts(texts: list[str]) -> list[list[float]]:
+    import httpx
+
+    from src.config import settings
+
+    async with httpx.AsyncClient(timeout=600.0) as client:
+        response = await client.post(
+            "%s/api/embed" % settings.ollama_host.rstrip("/"),
+            json={"model": settings.embedding_model, "input": texts},
+        )
+        response.raise_for_status()
+        return [list(map(float, emb)) for emb in response.json().get("embeddings", [])]
+
+
+async def _build_indexed_manager():
+    """Create a VectorManager over a temp copy of the eval vault and index it."""
     from src.config import settings
     from src.utils import vault_indexer as vi
     from src.utils import vector_manager as vml
@@ -106,8 +152,71 @@ async def run_evaluation(top_k: int) -> dict:
     vi.VAULT_PATH = vault_copy
     vi.VAULT_NAME = "eval_vault"
     indexer = vi.VaultIndexer()
-
     indexed = await indexer.index_all()
+    return manager, indexed
+
+
+async def run_metric_check(sample_size: int = 12) -> dict:
+    """Verify query/document vector norms and L2-vs-cosine ordering (task 1.4)."""
+    from src.config import settings
+
+    manager, indexed = await _build_indexed_manager()
+    print("Indexed %d notes (%d chunks)" % (indexed["notes_indexed"], indexed["total_chunks"]))
+    collection = manager._collection
+    stored = collection.get(include=["embeddings"])
+    doc_ids = list(stored["ids"])
+    doc_embeddings = [list(map(float, emb)) for emb in stored["embeddings"]]
+    id_to_emb = dict(zip(doc_ids, doc_embeddings))
+
+    queries = [item["query"] for item in load_dataset() if item["relevant"]][:sample_size]
+    query_vectors = await _embed_texts(queries)
+
+    query_norms = [_norm(vector) for vector in query_vectors]
+    doc_norms = [_norm(vector) for vector in doc_embeddings]
+
+    order_matches = 0
+    max_l2_delta = 0.0
+    correlations: list[float] = []
+    for query, query_vector in zip(queries, query_vectors):
+        result = collection.query(query_texts=[query], n_results=len(doc_ids))
+        chroma_ids = result["ids"][0]
+        chroma_distances = result["distances"][0]
+        manual_l2 = {cid: l2_sq(query_vector, id_to_emb[cid]) for cid in doc_ids}
+        for cid, distance in zip(chroma_ids, chroma_distances):
+            max_l2_delta = max(max_l2_delta, abs(float(distance) - manual_l2[cid]))
+        order_l2 = sorted(doc_ids, key=lambda cid: manual_l2[cid])
+        order_cos = sorted(doc_ids, key=lambda cid: 1.0 - cosine(query_vector, id_to_emb[cid]))
+        if order_l2[:5] == order_cos[:5]:
+            order_matches += 1
+        xs = [manual_l2[cid] for cid in doc_ids]
+        ys = [1.0 - cosine(query_vector, id_to_emb[cid]) for cid in doc_ids]
+        correlations.append(pearson(xs, ys))
+
+    report = {
+        "embedding_model": settings.embedding_model,
+        "chunks_indexed": len(doc_ids),
+        "collection_metadata": collection.metadata,
+        "queries_checked": len(queries),
+        "query_norm_min": min(query_norms),
+        "query_norm_mean": sum(query_norms) / len(query_norms),
+        "query_norm_max": max(query_norms),
+        "zero_query_vectors": sum(1 for n in query_norms if n == 0.0),
+        "doc_norm_min": min(doc_norms),
+        "doc_norm_mean": sum(doc_norms) / len(doc_norms),
+        "doc_norm_max": max(doc_norms),
+        "top5_order_matches_l2_vs_cosine": order_matches,
+        "max_chroma_vs_manual_l2_delta": max_l2_delta,
+        "pearson_l2_vs_cosine_min": min(correlations),
+        "pearson_l2_vs_cosine_mean": sum(correlations) / len(correlations),
+    }
+    await manager.close()
+    return report
+
+
+async def run_evaluation(top_k: int) -> dict:
+    from src.config import settings
+
+    manager, indexed = await _build_indexed_manager()
     print(
         "Indexed %d notes (%d chunks, %d failures)"
         % (
@@ -181,7 +290,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="RAG evaluation over the eval vault")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument(
+        "--check-metric",
+        action="store_true",
+        help="check embedding norms and L2-vs-cosine ordering instead of the dataset",
+    )
+    parser.add_argument("--sample-size", type=int, default=12)
     args = parser.parse_args()
+
+    if args.check_metric:
+        metric_report = asyncio.run(run_metric_check(args.sample_size))
+        print("\n=== METRIC CHECK ===")
+        print(json.dumps(metric_report, indent=2, ensure_ascii=False))
+        return 0
 
     report = asyncio.run(run_evaluation(args.top_k))
     print("\n=== SUMMARY ===")
