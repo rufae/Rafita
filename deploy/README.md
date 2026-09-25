@@ -37,8 +37,15 @@ deploy/
 1. **Dell** — `01-install-runtime.sh` (con sudo), benchmark local (`03`).
 2. **Dell** — `02-network.sh` con `HP_TS_IP=100.121.77.29`: enrola Tailscale,
    activa `ufw` y deja Ollama accesible solo por la tailnet desde el HP.
-3. **HP** — desplegar la app con `docker-compose.hp.yml` y `OLLAMA_HOST` al
-   Dell (tarea 3.2), repetir métricas de 1.3/1.7 contra el LLM remoto.
+3. **HP** — desplegar la app con el overlay (sin Ollama local, puerto 8010) y
+   `OLLAMA_HOST` al Dell (tarea 3.2); repetir métricas de 1.3/1.7 contra el
+   LLM remoto:
+
+   ```bash
+   # en el HP, desde la raíz del repo
+   docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml up -d --build
+   curl -s http://127.0.0.1:8010/ready   # readiness con el LLM remoto
+   ```
 
 ## Uso remoto de los scripts (sin copiar ficheros)
 

@@ -1,0 +1,28 @@
+# Overlay del nodo HP (tarea 3.2): agente Rafita SIN Ollama local, apuntando
+# al LLM del nodo Dell por Tailscale (100.83.40.103). Ver ADR-004.
+#
+# Uso, desde la raiz del repo en el HP:
+#   docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml up -d
+#
+# Decisiones que aplica (3.0(d) y 3.2):
+#   - `ollama-service` queda con un perfil que no se activa: nunca arranca en
+#     el HP (32 GB del Dell hacen innecesario el swap de modelos local).
+#   - Se elimina el `depends_on` del agente (apuntaria a un servicio no
+#     arrancado) y se sustituyen los puertos: el gateway pasa de 8000 (ocupado
+#     por Portainer en el HP) a 8010; 8001 (voz) se mantiene.
+#   - `OLLAMA_HOST` apunta al Dell por su IP Tailscale (la IP LAN .201 no es
+#     estatica y ademas ufw solo permite 11434 desde este nodo).
+#   - Whisper a 2 hilos: el i3-1005G1 tiene 2c/4t y comparte CPU con los 11
+#     contenedores de produccion.
+services:
+  ollama-service:
+    profiles: ["no-local"]
+
+  rafita-agent-core:
+    depends_on: !reset []
+    ports: !override
+      - "127.0.0.1:8010:8000"
+      - "127.0.0.1:8001:8001"
+    environment:
+      OLLAMA_HOST: "http://100.83.40.103:11434"
+      WHISPER_CPU_THREADS: "2"

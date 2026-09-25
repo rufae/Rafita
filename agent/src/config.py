@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     default_currency: str = Field("MXN", alias="DEFAULT_CURRENCY")
 
     whisper_model: str = Field("tiny", alias="WHISPER_MODEL")
+    whisper_cpu_threads: int = Field(4, alias="WHISPER_CPU_THREADS", ge=1, le=32)
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
     backup_retention_days: int = Field(30, alias="BACKUP_RETENTION_DAYS")
     embedding_model: str = Field("nomic-embed-text", alias="EMBEDDING_MODEL")
