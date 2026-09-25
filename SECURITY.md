@@ -152,7 +152,9 @@ chat por Telegram:
 
 ### Dependencias con avisos aceptados (ChromaDB)
 
-**Fecha de revisión: 2026-09-24.** Estado: sin parche disponible upstream.
+**Fecha de revisión: 2026-09-26** (re-verificado tras el aviso de Dependabot:
+1 crítica + 2 altas). Estado: sin parche disponible upstream; `1.5.9` (última
+versión publicada) sigue dentro del rango afectado (`last_affected: 1.5.9`).
 
 `chromadb` 0.4.17–1.5.9 (1.5.9 es la última versión publicada) tiene tres
 avisos abiertos:
@@ -174,7 +176,13 @@ usa). Los embeddings los genera Ollama y se pasan como vectores.
 - No configurar funciones de embedding remotas con `trust_remote_code`.
 - El CI ignora exactamente esos tres IDs (`--ignore-vuln` en el job Security);
   cualquier aviso nuevo rompe el build.
-- Dependabot sigue los avisos: al publicarse una versión corregida, actualizar
+- **Invariante verificada por test**: `agent/tests/test_chromadb_embedded_only.py`
+  falla si el código introduce `HttpClient`/`AsyncHttpClient`/`chromadb.Client(`
+  o `trust_remote_code`. Así la mitigación no depende solo de esta prosa.
+- Dependabot seguirá mostrando las 3 alertas mientras la dependencia fijada
+  esté en rango afectado; el tratamiento correcto es marcarlas en GitHub como
+  "not affected" (el código vulnerable no se usa), no subir de versión: no hay
+  versión sin los avisos. Al publicarse una versión corregida, actualizar
   `agent/requirements.txt` y quitar los ignores.
 
 ### Verificación de cifrado Fernet
