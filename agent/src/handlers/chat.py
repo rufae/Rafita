@@ -275,7 +275,7 @@ async def _process_ai_message(
                     f"- Aprendizajes tecnicos -> {get_taxonomy().path('resources')}/ (tipo: recurso)\n"
                     "Confirma brevemente: 'He guardado esto en tu segundo cerebro'.\n"
                     "CREDENTIAL_RULE: El usuario puede guardar claves, API keys y contraseñas "
-                    "de forma segura con /guardar_clave (cifrado AES-256). Si el usuario "
+                    "de forma segura con /guardar_clave (cifrado Fernet). Si el usuario "
                     "menciona una API key (Gemini, OpenAI, etc.), una contraseña de WiFi, "
                     "o credenciales de cualquier servicio, sugierele guardarlas con "
                     "/guardar_clave <servicio> <valor>. NUNCA muestres el valor completo "
