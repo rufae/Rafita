@@ -11,6 +11,7 @@ from src.logger import logger
 from src.ollama_client import llm
 from src.utils import workspace_manager as wm
 from src.utils.vector_manager import vector_db
+from src.vault_config import get_taxonomy
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -409,7 +410,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     topics = {}
     if vault.exists():
         for md_file in vault.rglob("*.md"):
-            if any(d in str(md_file) for d in [".obsidian", "templates", "Documentos_Indexados"]):
+            if any(d in str(md_file) for d in get_taxonomy().ignored_dirs):
                 continue
             try:
                 content = md_file.read_text(encoding="utf-8", errors="replace")
@@ -562,7 +563,7 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     result = await create_or_append_note(
         title=title.replace(" ", "_").replace("/", "-")[:60],
         content=content,
-        folder="05-Zettelkasten",
+        folder=get_taxonomy().path("zettelkasten"),
     )
     if result.get("success"):
         await message.reply_text(

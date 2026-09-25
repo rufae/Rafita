@@ -5,6 +5,7 @@ from typing import Any
 
 from src.logger import logger
 from src.utils.path_safety import resolve_within
+from src.vault_config import get_taxonomy
 
 OBSIDIAN_VAULT = Path("/data/obsidian_vault")
 
@@ -131,33 +132,21 @@ async def search_notes_content(query: str) -> dict[str, Any]:
     }
 
 
-VAULT_STRUCTURE = [
-    "00-Inbox",
-    "01-Proyectos",
-    "02-Areas/Finanzas",
-    "02-Areas/Salud",
-    "02-Areas/Casa",
-    "02-Areas/Trabajo",
-    "03-Recursos",
-    "04-Archivo",
-    "05-Zettelkasten",
-    "06-Diario",
-    "Attachments",
-]
-
-ATTACHMENTS_DIR = OBSIDIAN_VAULT / "Attachments"
+def _attachments_dir() -> Path:
+    return OBSIDIAN_VAULT / get_taxonomy().path("attachments")
 
 
 def save_attachment(src_path: Path, clean_name: str) -> dict[str, Any]:
     if not src_path.exists():
         return {"success": False, "message": "Archivo origen no existe: %s" % src_path}
-    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    attachments_dir = _attachments_dir()
+    attachments_dir.mkdir(parents=True, exist_ok=True)
     ext = src_path.suffix.lower()
     safe_base = _safe_filename(clean_name)
-    dest_path = ATTACHMENTS_DIR / ("%s%s" % (safe_base, ext))
+    dest_path = attachments_dir / ("%s%s" % (safe_base, ext))
     counter = 1
     while dest_path.exists():
-        dest_path = ATTACHMENTS_DIR / ("%s_%d%s" % (safe_base, counter, ext))
+        dest_path = attachments_dir / ("%s_%d%s" % (safe_base, counter, ext))
         counter += 1
     import shutil as _shutil
 
@@ -186,8 +175,9 @@ def create_note_with_image(
     title: str,
     body_text: str,
     image_filename: str,
-    folder: str = "00-Inbox",
+    folder: str = "",
 ) -> dict[str, Any]:
+    folder = folder or get_taxonomy().path("inbox")
     _ensure_folder(folder)
     filepath = _resolve_path(title, folder)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -209,10 +199,11 @@ def create_note_with_image(
 
 
 async def initialize_vault_structure() -> None:
-    for folder_path in VAULT_STRUCTURE:
+    structure = get_taxonomy().structure
+    for folder_path in structure:
         target = OBSIDIAN_VAULT / folder_path
         target.mkdir(parents=True, exist_ok=True)
-    logger.info("Obsidian vault structure initialized (%d folders)", len(VAULT_STRUCTURE))
+    logger.info("Obsidian vault structure initialized (%d folders)", len(structure))
 
 
 async def move_or_rename_file(source_path: str, dest_folder: str, new_name: str) -> dict[str, Any]:
@@ -283,7 +274,7 @@ async def sync_calendar_to_obsidian(
     if not events:
         return {"success": True, "message": "No hay eventos para sincronizar."}
 
-    folder = "02-Areas/Agenda"
+    folder = get_taxonomy().path("agenda")
     filepath = _resolve_path(note_title, folder)
     _ensure_folder(folder)
 
