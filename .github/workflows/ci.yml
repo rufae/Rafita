@@ -65,7 +65,9 @@ jobs:
         run: pip install pip-audit
       # Gate bloqueante: cualquier vulnerabilidad nueva rompe el CI.
       # Los 3 avisos de ChromaDB están aceptados explícitamente (solo afectan
-      # al modo servidor multi-tenant con auth, que Rafita no despliega).
+      # al modo servidor multi-tenant con auth, que Rafita no despliega; sin
+      # versión corregida a 2026-09-26). La invariante "solo modo embebido"
+      # está verificada por agent/tests/test_chromadb_embedded_only.py.
       # Ver SECURITY.md -> "Dependencias con avisos aceptados (ChromaDB)".
       - name: Dependency vulnerability scan
         run: |

@@ -1934,6 +1934,26 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   visión (`llava:7b` vs `gemma4:12b`, que también tiene visión) y repetir las
   métricas 1.3/1.7 contra el LLM remoto.
 
+- [x] **Revisión Dependabot (previa a 3.2)** — completada 2026-09-26
+  GitHub avisó de 3 vulnerabilidades (1 crítica, 2 altas) en la rama principal;
+  son exactamente los 3 avisos ya aceptados de `chromadb==0.5.0`
+  (PYSEC-2026-3813/3814/3815, ignorados en el gate desde 0.2).
+  - `pip-audit -r agent/requirements.txt` (sin ignores): "Found 3 known
+    vulnerabilities in 1 package" (chromadb 0.5.0), **sin fix versions**.
+  - OSV: los tres aplican hasta `last_affected: 1.5.9`, que es la **última
+    versión publicada** en PyPI → no existe parche upstream; actualizar no
+    resuelve. Los tres exigen **modo servidor HTTP** (auth/multi-tenant) o
+    `trust_remote_code`; Rafita usa `PersistentClient` embebido mono-usuario
+    y nunca registra modelos remotos (verificado por grep en todo `agent/src`).
+  - Acción: mitigación convertida en **invariante verificable** con
+    `agent/tests/test_chromadb_embedded_only.py` (falla si aparece
+    `HttpClient`/`AsyncHttpClient`/`chromadb.Client(`/`trust_remote_code`);
+    SECURITY.md y el comentario del gate en CI actualizados con la
+    re-verificación.
+  - Las 3 alertas de Dependabot deben marcarse **"not affected"** en GitHub
+    (requiere sesión web; no hay `gh` en el PC de desarrollo).
+  - Gate: ruff/formato limpios, **158 passed, 20 skipped**.
+
   Depende de 3.0. Tareas: instalar el runtime decidido, descargar/cuantizar
   los modelos, exponer el API solo por la interfaz/red decidida en 3.0(c), y
   ejecutar el benchmark de 3.0(b) contra el servicio real ya desplegado (no
