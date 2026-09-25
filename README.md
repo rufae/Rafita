@@ -1,7 +1,7 @@
 # Rafita AVP — Asistente Virtual Privado con Segundo Cerebro
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![CI](https://github.com/user/rafai/actions/workflows/ci.yml/badge.svg)](https://github.com/user/rafai/actions/workflows/ci.yml)
+[![CI](https://github.com/rufae/Rafita/actions/workflows/ci.yml/badge.svg)](https://github.com/rufae/Rafita/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 Tu propio asistente de IA personal que convierte tu vault de Obsidian en un
@@ -54,7 +54,7 @@ Ejecutable en un portátil o en un servidor doméstico.
 ## Quickstart
 
 ```bash
-git clone https://github.com/user/rafai.git
+git clone https://github.com/rufae/Rafita.git
 cd rafai
 cp .env.example .env
 # Edita .env: pon tu TELEGRAM_TOKEN de @BotFather
@@ -74,7 +74,7 @@ docker compose up -d
 | `/gasto <cantidad> <cat>` | Registrar un gasto |
 | `/finanzas` | Resumen financiero del mes |
 | `/evento <título> <fecha>` | Crear evento en calendario |
-| `/guardar_clave <srv> <val>` | Guardar API key cifrada (AES-256) |
+| `/guardar_clave <srv> <val>` | Guardar API key cifrada (Fernet) |
 | `/status` | Panel de control del sistema |
 
 [Ver documentación completa](#) para todos los comandos.
@@ -93,7 +93,15 @@ También puedes configurar los modelos manualmente en `.env`.
 
 ## Limitaciones conocidas
 
-- **Relevancia RAG >60% en español con bge-m3**: pendiente de validar en hardware con GPU (ver [ADR-003](docs/adr/003-model-selection.md)). La métrica actual en test controlado es prometedora (~68%) pero no conclusiva en CPU.
+- **Relevancia RAG en español con bge-m3**: medida con el dataset de evaluación
+  propio (36 casos) en el PC con RTX 3060: recall@3 = 1.0, MRR@5 = 0.98, umbral
+  calibrado 0.49 con 0 falsos positivos (ver [ADR-003](docs/adr/003-model-selection.md)).
+  Pendiente validar con el vault personal real y más negativos (Fase 3).
+- **Fiabilidad de tools con gemma4:12b**: medida con la suite de 21 tools
+  (2 intentos): 29/46 con equivalencias (63%); 7 tools no se invocan nunca
+  (`create_event`, `remember_fact`, `search_knowledge`, `move_or_rename_file`,
+  `set_recurring_reminder`, `create_google_calendar_event`, `ingest_file`).
+  Mejora planificada para v0.2.0 (prompt/tool definitions).
 - **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a través de bind mounts. El watcher no funciona en este entorno. En Linux nativo funciona correctamente.
 - **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only. El sistema degrada automáticamente a qwen2.5:7b si no detecta GPU.
 
@@ -118,6 +126,13 @@ pre-commit run --all-files
 
 Ver [SECURITY.md](SECURITY.md) para el modelo de amenaza completo, recomendaciones
 de cifrado en reposo y procedimiento de rotación de credenciales.
+
+## Contribuir
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
+- [CHANGELOG.md](CHANGELOG.md): cambios por versión (sección `Unreleased`).
+- [plan.md](plan.md): estado del proyecto y evidencia de cada tarea de la ronda
+  de estabilización.
 
 ## Licencia
 

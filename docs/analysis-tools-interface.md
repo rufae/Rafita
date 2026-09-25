@@ -48,10 +48,16 @@ Usuario → LLM (con tools) → Tool Call → _execute_tool() → Resultado → 
 3. **Auth implementado**: `generate_google_auth_link` y `save_google_verification_code` existen
 4. **Sin cambios estructurales**: No se necesita refactorizar la arquitectura
 
-**Lo que falta**:
-- Implementar la lógica de ejecución en `_execute_tool()` para las 5 funciones de Calendar
-- Conectar con `google_calendar_manager.py` (ya existe en `src/utils/`)
-- Manejar el flujo de OAuth2 (ya está parcialmente implementado)
+**Estado real verificado (2026-09-25):**
+- La lógica de ejecución de las 5 tools de Calendar **ya existe** en
+  `_execute_tool()` (`manage_google_calendar`, `get_google_calendar_events`,
+  `create_google_calendar_event`, `generate_google_auth_link`,
+  `save_google_verification_code`); la auditoría lo confirmó en el código.
+- La suite de tool-calling (tarea 1.7) verificó que el modelo **invoca** las
+  tools de Google correctamente (2/2 en auth link, código y listado; 0/2 en
+  creación, anotado en `plan.md`), pero **sin credenciales OAuth no se ejecutan**.
+- **Lo que sigue faltando**: probar el flujo OAuth2 real de extremo a extremo
+  con una cuenta (no disponible en la sesión) y confirmar scopes/refresh token.
 
 ### ✅ Suficiente para Otras Capacidades
 
@@ -162,8 +168,13 @@ async def execute_save_expense(chat_id, args):
 
 ---
 
-## Próximos Pasos
+## Próximos Pasos (actualizado 2026-09-25)
 
-1. **Inmediato (v0.1.0)**: Implementar lógica de ejecución para las 5 tools de Google Calendar en `_execute_tool()`
-2. **Corto plazo (v0.2.0)**: Evaluar migración a registry pattern si el número de tools supera 30
-3. **Largo plazo**: Considerar framework de tools más robusto si se integra con múltiples servicios externos
+1. **Inmediato**: validar OAuth2 real de Google Calendar con una cuenta (pendiente
+   de credenciales; la ejecución de tools ya existe y la invocación está medida).
+2. **Corto plazo (v0.2.0)**: mejorar la fiabilidad de tool-calling — la suite 1.7
+   mostró 7 tools que gemma4:12b no invoca (prompt/tool definitions) y redundancia
+   entre herramientas RAG/Calendar; evaluar registry pattern y prompts más
+   explícitos para esas tools.
+3. **Largo plazo**: considerar framework de tools más robusto si se integra con
+   múltiples servicios externos.

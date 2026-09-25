@@ -57,7 +57,7 @@ async def run_tests():
     )
 
     # === TEST 3: Credentials ===
-    print("\n🔐 TEST 3: Credenciales (AES-256)")
+    print("\n🔐 TEST 3: Credenciales (Fernet)")
     chat_id = 999999
     await db.store_credential(chat_id, "gemini", "AIza-test-key-123456789")
     await db.store_credential(chat_id, "wifi", "MiRedWiFi-Secret123")
