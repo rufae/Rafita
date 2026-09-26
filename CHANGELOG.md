@@ -66,6 +66,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
   volver el backend. Health check de arranque con timeout corto y prewarm
   omitido si no hay backend.
+- Backup diario de todo el homelab al USB RAFAEL (tarea 3.6): restic cifrado
+  e incremental con retención 7d/4s/6m, solo si el USB está presente; cubre
+  Rafita, BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y la
+  configuración, más snapshot diario de config del Dell. Aviso por Telegram y
+  verificación de restore no destructiva (SQLite, Chroma, Fernet y Postgres).
+  Incluye el renombrado seguro del usuario del HP a `server`.
 - Logs estructurados y seguros (tarea 3.5): `LOG_FORMAT=json` opcional,
   redacción de credenciales en todos los handlers antes de escribir a disco,
   rotación acotada en fichero (10 MB×5 / 5 MB×3) y en Docker
