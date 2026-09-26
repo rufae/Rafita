@@ -61,6 +61,9 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   `OLLAMA_VISION_MODEL == OLLAMA_MODEL` se omite el hot-swap (antes descargaba
   y recargaba los mismos pesos en cada imagen) y se mantiene `keep_alive=-1`.
   Validado con imagen real: `content='Rojo'` (2026-09-26).
+- Seguridad del despliegue: la contraseña de PostgreSQL de Nextcloud se movió
+  de su compose a un fichero `.env` con permisos 600 (se detectó además que el
+  valor del compose era un placeholder distinto del real de los contenedores).
 - Arranque con el LLM caído (tarea 3.4): el agente ya no se bloquea en
   "Connecting to Ollama..." cuando el nodo de IA está apagado; arranca en modo
   degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
