@@ -16,7 +16,7 @@ from src.models.schemas import MessageRole
 app = FastAPI(
     title="Rafita Gateway",
     description="Webhook endpoint for external app integrations",
-    version="1.0.0",
+    version="0.2.0",
 )
 
 _webhook_secret: str | None = None
@@ -48,7 +48,12 @@ def _check_webhook_auth(body: bytes, signature: str) -> None:
 @app.get("/health")
 async def health():
     """Liveness: the process is up. Does not check dependencies (see /ready)."""
-    return {"status": "ok", "service": "rafita-gateway", "timestamp": time.time()}
+    return {
+        "status": "ok",
+        "service": "rafita-gateway",
+        "version": app.version,
+        "timestamp": time.time(),
+    }
 
 
 async def _check_ai() -> dict[str, Any]:
