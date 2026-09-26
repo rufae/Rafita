@@ -246,3 +246,40 @@ async def test_openai_check_health_reports_model(monkeypatch):
     assert health["status"] == "ok"
     assert health["provider"] == "openai"
     assert health["model_available"] is True
+
+
+async def test_initialize_tolerates_unreachable_backend(monkeypatch):
+    """Booting with the LLM down must not hang or fail startup (task 3.4)."""
+    client = OllamaClient()
+    prewarmed = {"n": 0}
+
+    async def failing_check():
+        raise ConnectionError("connection refused")
+
+    async def fake_prewarm():
+        prewarmed["n"] += 1
+
+    monkeypatch.setattr(client, "_check_model_available", failing_check)
+    monkeypatch.setattr(client, "_prewarm_model", fake_prewarm)
+    await client.initialize()
+    assert client._ready is True
+    assert prewarmed["n"] == 0
+    await client.close()
+
+
+async def test_initialize_prewarms_when_backend_ok(monkeypatch):
+    client = OllamaClient()
+    prewarmed = {"n": 0}
+
+    async def ok_check():
+        return None
+
+    async def fake_prewarm():
+        prewarmed["n"] += 1
+
+    monkeypatch.setattr(client, "_check_model_available", ok_check)
+    monkeypatch.setattr(client, "_prewarm_model", fake_prewarm)
+    await client.initialize()
+    assert client._ready is True
+    assert prewarmed["n"] == 1
+    await client.close()
