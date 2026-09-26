@@ -69,7 +69,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | Área | Resultado |
 |---|---|
 | **Calidad RAG** (36 casos, español) | recall@3 = **1.0**, MRR@5 = **0.982**, 0 falsos positivos (umbral 0.49). Repetido en el despliegue real con resultado idéntico. |
-| **Fiabilidad de herramientas** (21 tools, 2 intentos) | **46/46 (100%)** en el despliegue real. La medición previa de 29/46 era un defecto del modo "razonamiento" del modelo, corregido. |
+| **Fiabilidad de herramientas** (21 tools + 2 controles, 2 intentos) | **46/46 (100%)** en el despliegue real, **reproducido en una segunda ejecución completa** (mismo script y dataset; hash verificado) el 2026-09-26. La medición previa de 29/46 era un defecto del modo "razonamiento" del modelo, corregido. Detalle por herramienta y guía de re-verificación en `plan.md` 3.2 y `docs/auditoria-reverificacion.md`. |
 | **Latencia del modelo** (CPU, sin GPU) | 3,87 tok/s; respuesta típica ~16 s. La red entre nodos añade solo ~0,85 s. |
 | **Recursos del HP** | Agente: **160 MB / 2 GB**; los 11 servicios existentes no se degradan (carga 0,08–0,18 bajo backup completo). |
 | **Detección de fallos** | Dell caído: `/ready` en **1,2 s**; corte de red: 10 s (tope de diseño). Recuperación automática en todos los casos. |
@@ -129,7 +129,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | 3.3 | **Readiness real**: distingue "listo" / "degradado" / "no listo" (IA alcanzable y modelo cargado, base vectorial, bóveda, Telegram) y falla rápido (<10 s) si un nodo cae. Cinco escenarios de fallo verificados. |
 | 3.4 | **Pruebas de caos**: agente reiniciado solo tras un fallo real; Dell reiniciado con el agente vivo (detectado en 1,2 s); corte de red simulado (10 s); **arranque en frío de ambos nodos en los dos órdenes** (aquí se encontró y corrigió un fallo: el agente se bloqueaba si arrancaba con el Dell apagado); convivencia de recursos con los 11 servicios existentes sin degradarlos. |
 | 3.5 | **Logs estructurados y seguros**: formato JSON opcional, **redacción de secretos antes de escribir a disco** (verificado con datos de prueba), límites de tamaño en fichero y en Docker, y comando remoto `/logs` (solo administradores) para consultar sin SSH. |
-| 3.6 | **Backup y restore reales** (ampliado por el propietario a *todos* los servicios): restic cifrado al USB, diario 03:30 solo si el USB está conectado, retención 7/4/6, snapshot diario de configuración del Dell y **aviso por Telegram**. Restauración verificada sin destruir producción (detalle en §7). Incluyó el **renombrado seguro del usuario del HP** a `server` (mismo UID/GID, sin pérdida de datos). |
+| 3.6 | **Backup y restore reales** (ampliado por el propietario a *todos* los servicios): restic cifrado al USB, diario 03:30 solo si el USB está conectado, retención 7/4/6, snapshot diario de configuración del Dell y **aviso por Telegram**. Restauración verificada sin destruir producción (detalle en §7). Incluyó el **renombrado seguro del usuario del HP** a `server` (mismo UID/GID, sin pérdida de datos); verificación posterior concreta: **0 rutas antiguas** en composes, montajes de contenedores, cron, systemd y sudoers, más comprobaciones funcionales de NPM, Portainer, Glances, wg-easy, Nextcloud, BuenaTierra y AdGuard. |
 | 3.7 | **Actualización y rollback**: versión verificable (0.2.0 en imagen y `/health`), downtime medido (**4,7 s** actualizar, **5,1 s** volver atrás), rollback ejecutado de verdad y prueba de nodos independientes (Dell actualizado con el agente en marcha). |
 
 ### Fase 4 — Documentación y entrega
@@ -175,23 +175,33 @@ pruebas de caos, backups, observabilidad y documentación.
 - **Path traversal** de la bóveda corregido y cubierto por tests.
 - **Logs**: secretos redactados antes de escribir a disco (verificado con
   datos de prueba), rotación acotada y consulta remota autenticada.
-- **Red**: Tailscale + firewall; nada expuesto a la LAN. Hallazgo documentado:
-  la regla de firewall para la red privada queda cubierta por la propia
-  Tailscale, de modo que **cualquier dispositivo de la red privada del usuario
-  puede usar la IA** (decisión consciente del propietario, que lo considera
-  útil; restringible con una política de Tailscale si se quisiera).
+- **Red**: Tailscale + firewall; nada expuesto a la LAN. Precisión importante
+  (aclarada tras la revisión externa): "red privada" significa **el tailnet
+  completo**, es decir, **cualquier dispositivo autenticado en la cuenta de
+  Tailscale del propietario** — ordenador, portátil e incluso el móvil desde
+  fuera de casa — puede alcanzar el motor de IA. No está limitado a los
+  equipos de la red local de casa. Es una decisión consciente del propietario
+  (le resulta útil poder usar la IA desde cualquier dispositivo); restringirlo
+  a un solo equipo es posible con una política de Tailscale (ACL) y queda como
+  opción futura. Dispositivos actuales del tailnet: HP, Dell, portátil Windows
+  y móvil Android (verificable con `tailscale status`).
 - **Dependencias**: 3 avisos de la base vectorial sin corrección upstream;
   afectan solo a un modo servidor que **no se usa** (el proyecto usa modo
   embebido), con un test que impide introducir ese modo por accidente.
   Pendiente: marcarlos como "no afectados" en GitHub.
+- **Contraseña de Nextcloud (respuesta a la revisión externa)**: se movió del
+  compose a un fichero `.env` protegido y **se rotó**; se comprobó que la
+  contraseña antigua/ejemplo no quedó en el historial de git, ni en el
+  historial de comandos, ni en los logs del agente o de la base de datos. El
+  `.env` se incluye ya en el backup cifrado.
 
 ## 9. Riesgos y recomendaciones (priorizadas)
 
-1. **Contraseña de la base de datos de Nextcloud** — *resuelto parcialmente
-   (2026-09-26)*: se detectó que el compose contenía un valor de ejemplo
-   distinto del real; la contraseña real se movió a un fichero de entorno
-   protegido (permisos 600) y verificado que coincide con los contenedores.
-   **Pendiente recomendado**: rotarla a una nueva contraseña fuerte.
+1. ~~Contraseña de la base de datos de Nextcloud~~ — **resuelto (2026-09-26)**:
+   se detectó que el compose contenía un valor de ejemplo distinto del real;
+   la contraseña se movió a un fichero de entorno protegido (600), se **rotó**
+   y se verificó que la antigua no quedó en git, historial de comandos ni
+   logs. El fichero se incluye en el backup cifrado.
 2. **Marcar en GitHub los 3 avisos de dependencias como "no afectados"**
    (documentado el motivo y con test de invariante).
 3. **Validar el RAG con la bóveda personal real** (la medición actual usa una
@@ -205,6 +215,27 @@ pruebas de caos, backups, observabilidad y documentación.
    script, sin vuelta atrás automática de versión).
 
 ---
+
+## 9-bis. Re-auditoría independiente (respuesta a la revisión externa)
+
+La revisión externa del informe pidió, con razón, que el cierre no se base en
+un autoinforme: el criterio de éxito del propio plan es que **una sesión
+externa que repita el proceso llegue a resultados sosténibles con evidencia**.
+Para facilitarlo se ha creado **`docs/auditoria-reverificacion.md`**, con los
+comandos exactos y los resultados esperados para los tres puntos que la
+revisión señaló como críticos:
+
+1. **Tool-calling 46/46**: mismo script y dataset que en la Fase 1 (hash
+   verificado), ejecución reproducible y explicación precisa de qué se
+   desactivó y cómo (`reasoning_effort:"none"` en el endpoint que usa la app).
+2. **Contraseña de Nextcloud**: estado real (fuera del compose, rotada),
+   coherencia verificable por hashes y barrido de filtraciones.
+3. **Integridad tras el renombrado de usuario**: cero rutas antiguas en
+   composes, montajes, cron, systemd y sudoers; y comprobación **funcional**
+   de los servicios (no solo "contenedor arriba").
+
+Recomendación: ejecutar esa guía en una sesión fresca (sin leer la narrativa
+de `plan.md`, solo repo y nodos) antes de dar el proyecto por cerrado.
 
 ## 10. Registro completo de decisiones, dudas y respuestas
 
@@ -270,7 +301,9 @@ adoptada (el propietario puede confirmar cada punto):
 
 ## 13. Cómo verificar (anexo)
 
-- Evidencia completa por tarea: `plan.md`.
+- Evidencia completa por tarea (comando + salida + fecha + commit):
+  `plan.md`, Fases 0–4.
+- Guía de re-verificación independiente: `docs/auditoria-reverificacion.md`.
 - Decisiones de arquitectura: `docs/adr/001..004`.
 - Operación y recuperación: `docs/runbook.md`.
 - Cambios por versión: `docs/CHANGELOG.md`.

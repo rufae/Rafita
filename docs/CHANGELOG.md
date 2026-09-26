@@ -63,7 +63,13 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   Validado con imagen real: `content='Rojo'` (2026-09-26).
 - Seguridad del despliegue: la contraseña de PostgreSQL de Nextcloud se movió
   de su compose a un fichero `.env` con permisos 600 (se detectó además que el
-  valor del compose era un placeholder distinto del real de los contenedores).
+  valor del compose era un placeholder distinto del real de los contenedores),
+  se **rotó**, se verificó que la antigua no quedó en git/historial/logs y el
+  `.env` se incluye ya en el backup cifrado.
+- Guía de re-verificación independiente (`docs/auditoria-reverificacion.md`)
+  con los comandos reproducibles de los puntos críticos (tool-calling 46/46
+  reproducible con el mismo script, contraseña de Nextcloud e integridad tras
+  el renombrado de usuario).
 - Arranque con el LLM caído (tarea 3.4): el agente ya no se bloquea en
   "Connecting to Ollama..." cuando el nodo de IA está apagado; arranca en modo
   degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al

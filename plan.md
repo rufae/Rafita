@@ -1904,7 +1904,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       vigilar swap/OOM la primera semana.
 
 - [x] **3.1 Desplegar el runtime de IA elegido en el nodo Dell**
-  **Completada 2026-09-26.** Evidencia:
+  **Completada 2026-09-26.** Evidencia [commits `1d1b583`, `5698227`]:
 
   1. **Runtime y modelos** (`deploy/dell/01-install-runtime.sh`, commit
      `1d1b583`): Ollama **0.34.4** instalado y `active` (systemd, bind
@@ -1988,9 +1988,10 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   tokens/segundo con el modelo real en producción.
 
 - [x] **3.2 Apuntar el agente del nodo HP al LLM remoto**
-  **Completada 2026-09-26.** Agente desplegado en el HP contra el LLM del
-  Dell; RAG y tool-calling repetidos con resultados iguales o mejores que el
-  baseline local.
+  **Completada 2026-09-26.** Evidencia [commits `d588760`, `d50b484`,
+  `5698227`]: agente desplegado en el HP contra el LLM del Dell; RAG y
+  tool-calling repetidos con resultados iguales o mejores que el baseline
+  local.
 
   - **Overlay** `deploy/hp/docker-compose.hp.yml` (commit `d588760`): sin
     `ollama-service` (perfil inactivo), sin `depends_on`, gateway en 8010,
@@ -2031,6 +2032,27 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     - Suite completa (`--attempts 2`): **46/46 (100%)**, `failure_modes={}`,
       las 23 tools al 100% (incluidas las 7 que nunca se invocaban en el
       baseline GPU). Duración total ~11 min; latencias por llamada 8–27 s.
+      Tabla completa por tool (todas 2/2): `save_expense`, `create_event`,
+      `create_alert`, `get_finance_summary`, `remember_fact`,
+      `search_knowledge`, `search_web`, `manage_obsidian_note`,
+      `search_obsidian_vault`, `inspect_project_files`,
+      `analyze_system_logs`, `move_or_rename_file`, `ask_deep_knowledge_base`,
+      `search_second_brain`, `manage_google_calendar`,
+      `set_recurring_reminder`, `generate_google_auth_link`,
+      `save_google_verification_code`, `get_google_calendar_events`,
+      `create_google_calendar_event`, `ingest_file`, `no_tool_greeting`,
+      `no_tool_thanks`.
+    - **Instrumento sin cambios desde 1.7** (respuesta a la auditoría):
+      `sha256sum agent/scripts/tool_calling_eval.py` =
+      `fd2f1cda0b8d197eede04c92a7ef0184980501994dfd9e16ccb7b1eb8e9d1a74` en
+      HP y PC, último commit que lo toca `6e83088` (tarea 1.7); dataset de
+      21 tools + 2 controles (el propio script imprime `tools=21
+      tools_json_chars=14161`).
+    - **Reproducibilidad**: re-ejecución completa el 2026-09-26 (inicio
+      14:39:30 UTC, fin 14:51:27 UTC) con el mismo script y dataset →
+      **46/46 (100%)**, `failure_modes={}`, tabla por tool idéntica (log
+      guardado como `/tmp/tool_rerun_20260926.log` en el contenedor; guía en
+      `docs/auditoria-reverificacion.md`).
     - **Comparación honesta con 1.7 (29/46, 63%)**: el baseline se midió con
       el `thinking` de gemma4 activo (consumía tokens antes de emitir la
       tool). Este resultado no mide "mejor red/hardware" sino el efecto del
@@ -2110,17 +2132,21 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       AdGuard (`/data`) no se vieron afectados. `/home/rafa` ya no existe;
       los 12 contenedores arriba y `/ready` OK. Alias SSH del PC de
       desarrollo actualizado a `User server`. Sin pérdida de datos.
-  13. **Contraseña de Nextcloud fuera del compose (2026-09-26)**: el compose
-      de `/opt/homelab/nextcloud` contenía un **placeholder** que no coincidía
-      con la contraseña real de los contenedores en marcha. Se movió la
-      **contraseña real** (leída del contenedor, sin imprimirla) a
-      `/opt/homelab/nextcloud/.env` (chmod 600) y el compose usa ahora
-      `${POSTGRES_PASSWORD}`; verificado que los hashes de `.env`, contenedor
-      de BD y contenedor de app coinciden y que Nextcloud sigue sano. Rotación
-      de la contraseña pendiente como mejora (no urgente).
+  13. **Contraseña de Nextcloud fuera del compose y rotada (2026-09-26)**:
+      el compose de `/opt/homelab/nextcloud` contenía un **placeholder** que
+      no coincidía con la contraseña real de los contenedores en marcha. Se
+      movió la real a `/opt/homelab/nextcloud/.env` (chmod 600), el compose
+      usa `${POSTGRES_PASSWORD}` y **se rotó la contraseña** (`ALTER USER` +
+      `.env` + app recreada; `occ status` = installed:true, sin errores).
+      **Barrido de filtraciones** (respuesta a la auditoría externa): la
+      contraseña de ejemplo no aparece en el historial de git
+      (`git log --all -S 'ClaveSeguraNextcloud'` vacío), ni en
+      `.bash_history` (0), ni en los logs del agente (0), ni en los logs de
+      Docker de Nextcloud (0). El `.env` (con la contraseña nueva) se incluye
+      ahora en el backup restic cifrado.
 
 - [x] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
-  **Completada 2026-09-26.** Evidencia:
+  **Completada 2026-09-26.** Evidencia [commit `42a00d8`]:
 
   - **`check_health()` genérico en los dos proveedores**: `/ready` ya no llama
     a `/api/tags` de Ollama (0.6); usa `AIProvider.check_health()` (2.5).
@@ -2159,7 +2185,8 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
 
 - [x] **3.4 Pruebas de caos, incluyendo caída de un nodo completo** *(antes 3.2, ampliada)*
   **Completada 2026-09-26** (apagado físico coordinado con el usuario; sudo
-  temporal habilitado y revertido al cierre).
+  temporal habilitado y revertido al cierre). Evidencia [commits `4536284`,
+  `875d14d`, `d50b484`, `31bd8d3`]:
 
   - [x] **`docker kill` al agente (HP)** — hallazgo honesto: `docker kill` (y
     `docker stop`) son **paradas explícitas** para Docker y **ninguna** política
@@ -2241,7 +2268,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     (Nextcloud, BuenaTierra, Collabora) se degrada.
 
 - [x] **3.5 Logs estructurados, redactados y acotados** *(antes 3.3)*
-  **Completada 2026-09-26.** Evidencia:
+  **Completada 2026-09-26.** Evidencia [commit `518d47e`]:
   - **Formato estructurado**: `LOG_FORMAT=text|json`; con `json` cada evento es
     una línea JSON (`ts`, `level`, `logger`, `func`, `line`, `msg`, `exc`).
   - **Redacción antes de escribir** (`RedactingFilter` en todos los handlers:
@@ -2305,7 +2332,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   instalador, README), `deploy/dell/dell-config-snapshot.sh` +
   `install-backup.sh`, `deploy/hp/rename-user-rafa-to-server.sh`.
 
-  **Evidencia [2026-09-26]:**
+  **Evidencia [2026-09-26] [commits `3a4c47f`, `dc51099`, `b453a30`]:**
   - **Renombrado** `rafa`→`server`: ver punto 12 del registro de decisiones;
     `/home/rafa` ya no existe, los 12 contenedores arriba y `/ready` OK.
   - **Instalación**: restic 0.18.1, unidades systemd (`mnt-rafael.mount` +
@@ -2338,7 +2365,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - Sudo temporal revertido en ambos nodos al cierre.
 
 - [x] **3.7 Upgrade y rollback** *(antes 3.5, con nota de alcance)*
-  **Completada 2026-09-26.** Evidencia:
+  **Completada 2026-09-26.** Evidencia [commits `dae11e0`, `720e36b`]:
 
   - **Marcador de versión real** (commit `dae11e0`): `LABEL rafita.version=0.2.0`
     en la imagen y campo `version` en `/health`, para verificar qué versión

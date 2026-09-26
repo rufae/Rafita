@@ -207,6 +207,7 @@ restic backup \
     "$HOME_DIR/glances" \
     /opt/homelab/nextcloud/app \
     /opt/homelab/nextcloud/docker-compose.yml \
+    /opt/homelab/nextcloud/.env \
     /data/compose/4 \
     /etc/netplan /etc/ufw /etc/docker/daemon.json /etc/fstab
 
