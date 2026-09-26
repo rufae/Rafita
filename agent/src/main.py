@@ -225,7 +225,7 @@ class Application:
         try:
             import httpx
 
-            async with httpx.AsyncClient(timeout=30.0) as hc:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as hc:
                 resp = await hc.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
                 resp.raise_for_status()
                 data = resp.json()
