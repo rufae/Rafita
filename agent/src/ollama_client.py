@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import httpx
-from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from openai.types.chat import ChatCompletion
 
 from src.config import settings
@@ -113,7 +113,13 @@ class OllamaCircuitBreaker:
 class OllamaClient:
     def __init__(self):
         self._client: AsyncOpenAI | None = None
+        self._gpu_client: AsyncOpenAI | None = None
         self.base_url: str = f"{settings.ollama_host.rstrip('/')}/v1"
+        self.ollama_host: str = settings.ollama_host.rstrip("/")
+        self.gpu_host: str = settings.ollama_gpu_host.strip().rstrip("/")
+        self.gpu_probe_interval: int = settings.ollama_gpu_probe_interval
+        self._active_backend: str = "cpu"
+        self._last_probe: float = 0.0
         self.model: str = settings.ollama_model
         self.vision_model: str = settings.ollama_vision_model
         self.reasoning_effort: str = settings.ollama_reasoning_effort
@@ -124,6 +130,52 @@ class OllamaClient:
         self._ready: bool = False
         self._cb = OllamaCircuitBreaker()
 
+    def _active_host(self) -> str:
+        if self._gpu_client and self._active_backend == "gpu":
+            return self.gpu_host
+        return self.ollama_host
+
+    async def _probe_gpu(self) -> bool:
+        """Torre encendida y con el modelo? (prueba corta, task 3.8)."""
+        if not self._gpu_client:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(4.0, connect=3.0)) as hc:
+                resp = await hc.get("%s/api/tags" % self.gpu_host)
+                resp.raise_for_status()
+                names = [m.get("name", "") for m in resp.json().get("models", [])]
+        except Exception:
+            return False
+        return any(n == self.model or n.startswith(self.model + ":") for n in names)
+
+    async def _pick_backend(self, force: bool = False) -> tuple[str, Any]:
+        """Elige GPU (torre) o CPU (Dell) con cache de sonda (task 3.8)."""
+        if not self._gpu_client:
+            return "cpu", self._client
+        now = time.time()
+        if not force and (now - self._last_probe) < self.gpu_probe_interval:
+            if self._active_backend == "gpu":
+                return "gpu", self._gpu_client
+            return "cpu", self._client
+        self._last_probe = now
+        gpu_ok = await self._probe_gpu()
+        new_backend = "gpu" if gpu_ok else "cpu"
+        if new_backend != self._active_backend:
+            if new_backend == "gpu":
+                logger.info("LLM backend: torre GPU disponible (%s); usando GPU", self.gpu_host)
+            else:
+                logger.info("LLM backend: torre GPU no disponible; usando Dell (CPU)")
+        self._active_backend = new_backend
+        if gpu_ok:
+            return "gpu", self._gpu_client
+        return "cpu", self._client
+
+    def _mark_gpu_down(self, reason: str) -> None:
+        if self._active_backend == "gpu":
+            logger.warning("LLM backend: GPU no responde (%s); cambiando al Dell (CPU)", reason)
+        self._active_backend = "cpu"
+        self._last_probe = time.time()
+
     async def initialize(self) -> None:
         self._client = AsyncOpenAI(
             base_url=self.base_url,
@@ -131,6 +183,14 @@ class OllamaClient:
             timeout=httpx.Timeout(1200.0, connect=15.0),
             max_retries=2,
         )
+        if self.gpu_host:
+            self._gpu_client = AsyncOpenAI(
+                base_url=f"{self.gpu_host}/v1",
+                api_key="ollama",
+                timeout=httpx.Timeout(1200.0, connect=15.0),
+                max_retries=2,
+            )
+            await self._pick_backend(force=True)
         # The LLM may be down when the agent boots (e.g. the Dell is off):
         # startup must NOT block or fail on it. The gateway starts in
         # "not_ready" and recovers automatically when the backend returns
@@ -147,17 +207,18 @@ class OllamaClient:
             logger.info("Skipping model pre-warm (backend unreachable)")
         self._ready = True
         logger.info(
-            "Ollama client initialized: model=%s vision=%s host=%s",
+            "Ollama client initialized: model=%s vision=%s host=%s backend=%s",
             self.model,
             self.vision_model,
             self.base_url,
+            self._active_backend,
         )
 
     async def _check_model_available(self) -> None:
         # Short timeouts: this runs at startup and must fail fast when the
         # backend is down (native /api/tags instead of the SDK's long timeout).
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as hc:
-            resp = await hc.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
+            resp = await hc.get("%s/api/tags" % self._active_host())
             resp.raise_for_status()
             model_ids = [m.get("name", "") for m in resp.json().get("models", [])]
         if self.model in model_ids:
@@ -191,7 +252,7 @@ class OllamaClient:
             logger.info("Pre-warming %s model '%s' (forcing load into RAM)...", label, model_name)
             async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as hc:
                 resp = await hc.post(
-                    "%s/api/generate" % settings.ollama_host.rstrip("/"),
+                    "%s/api/generate" % self._active_host(),
                     json={
                         "model": model_name,
                         "prompt": "hello",
@@ -215,7 +276,7 @@ class OllamaClient:
             logger.info("[HOT-SWAP] Unloading model '%s' from RAM (keep_alive=0)...", model_name)
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as hc:
                 resp = await hc.post(
-                    "%s/api/generate" % settings.ollama_host.rstrip("/"),
+                    "%s/api/generate" % self._active_host(),
                     json={
                         "model": model_name,
                         "prompt": "",
@@ -366,13 +427,20 @@ class OllamaClient:
             )
         return result
 
-    async def _create_completion(self, **kwargs: Any) -> Any:
-        """Chat completion with a hard, configurable ceiling.
+    @staticmethod
+    def _is_connection_error(exc: BaseException) -> bool:
+        return isinstance(
+            exc,
+            (
+                APIConnectionError,
+                httpx.ConnectError,
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+            ),
+        )
 
-        A silent network cut (packets dropped) would otherwise wait for the
-        SDK read timeout (1200 s). Bounded to OLLAMA_REQUEST_TIMEOUT (600 s by
-        default); connection refused/RST still fails in seconds.
-        """
+    async def _create_on_cpu(self, kwargs: dict[str, Any]) -> Any:
         try:
             return await asyncio.wait_for(
                 self._client.chat.completions.create(**kwargs),
@@ -382,6 +450,32 @@ class OllamaClient:
             raise OllamaClientError(
                 "El modelo no respondio en %ds (posible corte de red)" % self.request_timeout
             ) from e
+
+    async def _create_completion(self, **kwargs: Any) -> Any:
+        """Chat completion con backend preferido (GPU torre) y respaldo (Dell).
+
+        - Elige backend con sonda cacheada (`OLLAMA_GPU_PROBE_INTERVAL`).
+        - Si la GPU falla a mitad, reintenta una vez en el Dell (task 3.8).
+        - Techo de tiempo configurable (`OLLAMA_REQUEST_TIMEOUT`).
+        """
+        backend, client = await self._pick_backend()
+        try:
+            return await asyncio.wait_for(
+                client.chat.completions.create(**kwargs),
+                timeout=float(self.request_timeout),
+            )
+        except TimeoutError as e:
+            if backend == "gpu":
+                self._mark_gpu_down("timeout")
+                return await self._create_on_cpu(kwargs)
+            raise OllamaClientError(
+                "El modelo no respondio en %ds (posible corte de red)" % self.request_timeout
+            ) from e
+        except Exception as e:
+            if backend == "gpu" and self._is_connection_error(e):
+                self._mark_gpu_down(type(e).__name__)
+                return await self._create_on_cpu(kwargs)
+            raise
 
     async def _next_chunk(self, stream: Any, timeout: float = 120.0) -> Any:
         """Next streaming chunk with an inter-chunk ceiling (dead peer)."""
@@ -608,7 +702,7 @@ class OllamaClient:
         """Loaded models via Ollama's native `/api/ps`; None if unavailable."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as hc:
-                resp = await hc.get("%s/api/ps" % settings.ollama_host.rstrip("/"))
+                resp = await hc.get("%s/api/ps" % self._active_host())
                 resp.raise_for_status()
                 return [m.get("name", "") for m in resp.json().get("models", [])]
         except Exception:
@@ -625,13 +719,15 @@ class OllamaClient:
         """
         if not self._client:
             return {"status": "uninitialized", "provider": "ollama"}
+        backend, client = await self._pick_backend()
         start = time.time()
         try:
-            models = await asyncio.wait_for(self._client.models.list(), timeout=10.0)
+            models = await asyncio.wait_for(client.models.list(), timeout=10.0)
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "provider": "ollama",
+                "backend": backend,
                 "detail": "AI backend unreachable: %s" % str(e)[:150],
             }
         latency_ms = round((time.time() - start) * 1000)
@@ -640,10 +736,14 @@ class OllamaClient:
         result: dict[str, Any] = {
             "status": "ok",
             "provider": "ollama",
+            "backend": backend,
             "model": self.model,
             "latency_ms": latency_ms,
             "model_available": available,
         }
+        if self.gpu_host:
+            result["gpu_host"] = self.gpu_host
+            result["gpu_available"] = backend == "gpu"
         if not available:
             result["status"] = "unhealthy"
             result["detail"] = "chat model '%s' not pulled" % self.model

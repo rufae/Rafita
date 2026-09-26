@@ -71,6 +71,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | **Calidad RAG** (36 casos, español) | recall@3 = **1.0**, MRR@5 = **0.982**, 0 falsos positivos (umbral 0.49). Repetido en el despliegue real con resultado idéntico. |
 | **Fiabilidad de herramientas** (21 tools + 2 controles, 2 intentos) | **46/46 (100%)** en el despliegue real, **reproducido en una segunda ejecución completa** (mismo script y dataset; hash verificado). Además, **experimento controlado en la misma RTX 3060 donde se midió el 29/46**: con el ajuste del "razonamiento" desactivado vuelve a dar **46/46** → el salto es del ajuste, no del hardware. Detalle en `plan.md` 3.2 y `docs/auditoria-reverificacion.md`. |
 | **Latencia del modelo** (CPU, sin GPU) | 3,87 tok/s; respuesta típica ~16 s. La red entre nodos añade solo ~0,85 s. |
+| **Aceleración opcional con GPU** (tarea 3.8) | Si la torre (RTX 3060) está encendida, el agente la usa automáticamente: **~12× más rápido** (23 pruebas en 40 s frente a ~8 min en CPU). Si está apagada, sigue por el nodo CPU sin intervención. |
 | **Recursos del HP** | Agente: **160 MB / 2 GB**; los 11 servicios existentes no se degradan (carga 0,08–0,18 bajo backup completo). |
 | **Detección de fallos** | Dell caído: `/ready` en **1,2 s**; corte de red: 10 s (tope de diseño). Recuperación automática en todos los casos. |
 | **Backup** | 2,18 GB por snapshot, cifrado, verificado (`restic check` sin errores); retención 7 diarios/4 semanales/6 mensuales. |
@@ -131,6 +132,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | 3.5 | **Logs estructurados y seguros**: formato JSON opcional, **redacción de secretos antes de escribir a disco** (verificado con datos de prueba), límites de tamaño en fichero y en Docker, y comando remoto `/logs` (solo administradores) para consultar sin SSH. |
 | 3.6 | **Backup y restore reales** (ampliado por el propietario a *todos* los servicios): restic cifrado al USB, diario 03:30 solo si el USB está conectado, retención 7/4/6, snapshot diario de configuración del Dell y **aviso por Telegram**. Restauración verificada sin destruir producción (detalle en §7). Incluyó el **renombrado seguro del usuario del HP** a `server` (mismo UID/GID, sin pérdida de datos); verificación posterior concreta: **0 rutas antiguas** en composes, montajes de contenedores, cron, systemd y sudoers, más comprobaciones funcionales de NPM, Portainer, Glances, wg-easy, Nextcloud, BuenaTierra y AdGuard. |
 | 3.7 | **Actualización y rollback**: versión verificable (0.2.0 en imagen y `/health`), downtime medido (**4,7 s** actualizar, **5,1 s** volver atrás), rollback ejecutado de verdad y prueba de nodos independientes (Dell actualizado con el agente en marcha). |
+| 3.8 | **GPU opcional de la torre** (petición del propietario): detección automática con sonda cacheada y respaldo al nodo CPU; medido **~12× más rápido** con GPU. Incluye soporte de cuenta de servicio de Google y el arreglo del panel `/status`. |
 
 ### Fase 4 — Documentación y entrega
 

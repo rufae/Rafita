@@ -2151,6 +2151,18 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       `.bash_history` (0), ni en los logs del agente (0), ni en los logs de
       Docker de Nextcloud (0). El `.env` (con la contraseña nueva) se incluye
       ahora en el backup restic cifrado.
+  14. **Google Calendar con cuenta de servicio (2026-09-26)**: el usuario subió
+      un JSON de **cuenta de servicio** (no OAuth), que hacía fallar el enlace
+      de autorización. Se detecta y renombra automáticamente a
+      `service_account.json`, ambos módulos de Google lo soportan y el
+      calendario a usar es configurable (`GOOGLE_CALENDAR_ID`). Pasos del
+      usuario: compartir su calendario con el email de la cuenta de servicio
+      (`rafita@rafita-500317.iam.gserviceaccount.com`, permiso de cambios) y
+      fijar `GOOGLE_CALENDAR_ID` con su dirección de Gmail.
+  15. **Panel `/status` arreglado y credenciales protegidas (2026-09-26)**:
+      el panel usaba Markdown y los guiones bajos de las herramientas rompían
+      el formato (`Can't parse entities`); ahora usa HTML con escapado.
+      Además, `credentials/` quedó con permisos 700/600 y en `.gitignore`.
 
 - [x] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   **Completada 2026-09-26.** Evidencia [commit `42a00d8`]:
@@ -2418,6 +2430,34 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     procedimiento queda documentado con snapshot de config previo.
   - **Runbook** actualizado con la sección 7 "Actualización y rollback"
     (comandos exactos, verificación y vuelta atrás).
+
+- [x] **3.8 Uso opcional de la GPU de la torre con detección y respaldo**
+  *(petición del propietario, 2026-09-26)*
+  **Completada 2026-09-26.** La torre (RTX 3060) ahora puede servir el modelo
+  cuando está encendida; si no, el agente usa el Dell sin intervención.
+
+  - **Torre**: contenedor `rafita-ollama-gpu` (Ollama 0.34.4, `--gpus all`,
+    `restart unless-stopped`) con el volumen de modelos existente
+    (`gemma4:12b` + `bge-m3`), publicado **solo en su IP Tailscale**
+    (`100.97.252.19:11435`) → no accesible desde la LAN. Se respetó el Ollama
+    nativo de la torre (v0.21.2 en el 11434) sin tocarlo.
+  - **Agente**: `OLLAMA_GPU_HOST` (torre, preferida) + `OLLAMA_GPU_PROBE_INTERVAL`
+    (sonda cacheada, 60 s por defecto). `_pick_backend()` elige GPU si la torre
+    responde y tiene el modelo; si no, Dell. Si la GPU falla a mitad de una
+    petición, se reintenta una vez en el Dell (`_mark_gpu_down`).
+    `/ready` y `/status` informan del backend activo.
+  - **Evidencia**:
+    - Medición real: 23 casos de tool-calling con GPU → **23/23 en 40 s**
+      (16:18:24→16:19:04 UTC); el mismo conjunto en CPU tardó ~8 min
+      (~**12× más rápido**). La suite completa (46) ya había dado 46/46 en
+      70 s en la GPU.
+    - Respaldo: torre apagada → `/ready` `backend=cpu, gpu_available=false` y
+      una respuesta real del agente por el Dell ("¡Hola!", backend cpu);
+      torre encendida → vuelve sola a `backend=gpu` (modelo cargado en 10,1 s).
+  - Config: `OLLAMA_GPU_HOST`, `OLLAMA_GPU_PROBE_INTERVAL` en `.env.example`;
+    activado en el HP (`OLLAMA_GPU_HOST=http://100.97.252.19:11435`).
+  - Tests: +7 (selector, caché de sonda, fallback y config); gate
+    **201 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

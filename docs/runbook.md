@@ -283,3 +283,27 @@ rollback de código es el `git checkout`; el de imagen es el retag.
 config) se hace con el agente arriba; `/ready` pasa por `degraded`/`unhealthy`
 y se recupera solo. Antes de un salto de versión de Ollama, hacer snapshot de
 config (`deploy/dell/dell-config-snapshot.sh`) por si hay que reconstruir.
+
+---
+
+## 8. GPU de la torre (opcional, tarea 3.8)
+
+La torre (`rafael-server`, RTX 3060) puede servir el modelo cuando está
+encendida; si está apagada, el agente usa el nodo Dell sin intervención.
+
+- **Torre**: contenedor `rafita-ollama-gpu` (Ollama con GPU, reinicio
+  automático) publicado solo en su IP Tailscale (`100.97.252.19:11435`).
+  Arrancarlo/pararlo: `docker start|stop rafita-ollama-gpu` en la torre.
+- **Agente (HP)**: `OLLAMA_GPU_HOST=http://100.97.252.19:11435` (vacío =
+  desactivado) y `OLLAMA_GPU_PROBE_INTERVAL=60` (segundos entre sondas).
+- **Comprobar qué backend se usa**:
+  ```bash
+  curl -s http://127.0.0.1:8010/ready | python3 -c "import json,sys; a=json.load(sys.stdin)['checks']['ai']; print(a['status'], a.get('backend'), a.get('gpu_available'))"
+  ```
+  `backend: gpu` = torre; `backend: cpu` = Dell. También se ve en `/status`.
+- **Comportamiento**: sonda con caché (60 s); si la torre se apaga a mitad de
+  una petición, el agente reintenta una vez en el Dell y marca la GPU como no
+  disponible hasta la siguiente sonda.
+- **Nota**: la torre mantiene su propio Ollama nativo (v0.21.2) en el puerto
+  11434 para otros usos; no se toca. Si se quiere apagar la torre sin afectar
+  al bot, no hace falta hacer nada: el respaldo es automático.

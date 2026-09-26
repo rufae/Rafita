@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -212,12 +214,31 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
     service_file = CREDENTIALS_DIR / "service_account.json"
     args = context.args or []
 
+    # Si subieron una cuenta de servicio con el nombre de OAuth, renombrarla.
+    if cred_file.exists():
+        try:
+            data = json.loads(cred_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        if data.get("type") == "service_account":
+            os.replace(cred_file, service_file)
+            logger.info("setup_google: cuenta de servicio detectada y renombrada")
+
     if service_file.exists():
+        sa_email = ""
+        try:
+            sa_email = json.loads(service_file.read_text(encoding="utf-8")).get("client_email", "")
+        except Exception:
+            pass
         await message.reply_text(
-            "✅ *Google Calendar configurado via service account*"
-            "\n\nArchivo encontrado: `service_account.json`"
-            "\n\nUsa `/status` para verificar el panel de control.",
-            parse_mode="Markdown",
+            "✅ Cuenta de servicio detectada.\n\n"
+            "Email de la cuenta: %s\n\n"
+            "Para que funcione:\n"
+            "1. Abre Google Calendar en el navegador, busca tu calendario y "
+            "compártelo con ese email con permiso para «Hacer cambios en los eventos».\n"
+            "2. En el servidor, pon GOOGLE_CALENDAR_ID con tu dirección de Gmail "
+            "y reinicia el bot.\n\n"
+            "Después ya podré crear y listar eventos." % (sa_email or "(no legible)")
         )
         return
 
