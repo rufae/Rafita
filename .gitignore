@@ -58,4 +58,7 @@ mi_boveda_obsidian/
 # === TTS Models ===
 piper-models/
 
+# === Credenciales (OAuth de Google, etc.) ===
+credentials/
+
 cambios.md
