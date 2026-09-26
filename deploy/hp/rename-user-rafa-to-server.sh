@@ -16,12 +16,19 @@ LOG=/root/rename-user.log
 exec >>"$LOG" 2>&1
 echo "=== $(date -Is) inicio renombrado rafa -> server ==="
 
-for _ in $(seq 1 120); do
-    pgrep -u rafa >/dev/null 2>&1 || break
-    sleep 5
-done
+# El agente Rafita corre dentro de Docker con UID 1000 (el usuario `rafita` de
+# la imagen), asi que `pgrep -u rafa` nunca queda vacio por si solo: se para el
+# contenedor (se recrea al final), se terminan las sesiones del usuario y se
+# limpian restos antes del renombrado.
+docker stop rafita-agent-core >/dev/null 2>&1 || true
+loginctl terminate-user rafa >/dev/null 2>&1 || true
+systemctl stop "user@$(id -u rafa).service" >/dev/null 2>&1 || true
+sleep 5
+pkill -9 -u rafa >/dev/null 2>&1 || true
+sleep 2
 if pgrep -u rafa >/dev/null 2>&1; then
-    echo "ABORTADO: siguen existiendo procesos del usuario rafa"
+    echo "ABORTADO: siguen existiendo procesos del usuario rafa:"
+    ps -u rafa -o pid,cmd || true
     exit 1
 fi
 

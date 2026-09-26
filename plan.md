@@ -2080,7 +2080,21 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       verificó antes de decidir; descartada). El sistema **no depende** de la
       IP LAN: agente y scripts usan la IP Tailscale `100.83.40.103`, que no
       cambia. Comprobado tras el corte: ambos nodos volvieron solos (ollama y
-      tailscaled `active`) y `/ready` OK con latencia 17 ms.
+      tailscaled `active`) y `/ready` OK con latencia 17 ms. El usuario aplicó
+      también la reserva DHCP del HP (MAC WiFi `5c:3a:45:85:13:df` →
+      `192.168.1.129`).
+  12. **Renombrado `rafa` → `server` en el HP (2026-09-26, tarea 3.6)**:
+      aprobado por el usuario para unificar el usuario con el Dell
+      (`server@nodochicohp`). Ejecutado de forma desatendida y segura
+      (`deploy/hp/rename-user-rafa-to-server.sh`): se paró el contenedor del
+      agente (corre con UID 1000, igual que el usuario), se terminó la sesión
+      local de `tty1` y restos, `usermod -l server -d /home/server -m rafa` +
+      `groupmod` (mismo UID/GID: permisos y grupo docker intactos), y se
+      recrearon los 5 proyectos con bind mounts en el home (`rafita`,
+      `BuenaTierra`, `npm`, `wireguard`, `glances`); Nextcloud (`/opt`) y
+      AdGuard (`/data`) no se vieron afectados. `/home/rafa` ya no existe;
+      los 12 contenedores arriba y `/ready` OK. Alias SSH del PC de
+      desarrollo actualizado a `User server`. Sin pérdida de datos.
 
 - [x] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   **Completada 2026-09-26.** Evidencia:
@@ -2259,9 +2273,10 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
      `Servidor/server-nodochicohp/` y `Servidor/server-dell/`.
 
   Inventario de datos (2026-09-26): todo el estado de usuario vive en el HP
-  (binds en `/home/rafa` y `/opt/homelab`, volúmenes Docker); el Dell solo
+  (binds en `/home/server` y `/opt/homelab`, volúmenes Docker); el Dell solo
   tiene pesos de modelos (~19 GB, re-descargables) y configuración. Total a
   respaldar ≈ 3-4 GB. USB: 117 GB vfat, label `RAFAEL`, UUID `1916-3621`.
+  Clave SSH HP→Dell creada para traer el snapshot de configuración diario.
 
   Artefactos: `deploy/hp/backup/` (script, unidades systemd, excludes,
   instalador, README), `deploy/dell/dell-config-snapshot.sh` +

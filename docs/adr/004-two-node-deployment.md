@@ -18,7 +18,7 @@ topología real pasa a ser:
   `100.83.40.103`): i7-8700 (6c/12t), 32 GB RAM,
   1 TB NVMe, **sin GPU discreta** (iGPU Intel UHD 630). Solo tiene el SO
   (Ubuntu Server 24.04.5). Rol: inferencia (chat, visión, embeddings).
-- **HP "rafa"** (`192.168.1.129`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
+- **HP "nodochicohp"** (usuario `server` desde el renombrado 3.6; `192.168.1.129`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
   visibles), ~100 GB SSD. Ya corre 11 contenedores de producción. Rol: agente
   Rafita, ChromaDB embebido, vault, BrainMaintainer; llama al LLM del Dell por
   red.

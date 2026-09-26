@@ -1,4 +1,4 @@
-# deploy/hp — nodo de aplicación (HP "rafa", 192.168.1.129)
+# deploy/hp — nodo de aplicación (HP nodochicohp, usuario server, 192.168.1.129)
 
 Aquí vive la app Rafita (agente, ChromaDB embebido, vault, BrainMaintainer).
 El LLM **no** se ejecuta en este nodo: se llama al nodo Dell por la tailnet.
