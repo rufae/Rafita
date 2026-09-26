@@ -49,7 +49,7 @@ Ejecutable en un portátil o en un servidor doméstico.
 - Un bot de Telegram (gratis, se crea con @BotFather)
 - Obsidian (opcional — para editar el vault con interfaz gráfica)
 
-[Ver INSTALL.md](INSTALL.md) para instrucciones detalladas de instalación.
+[Ver docs/INSTALL.md](docs/INSTALL.md) para instrucciones detalladas de instalación.
 
 ## Quickstart
 
@@ -124,13 +124,13 @@ pre-commit run --all-files
 
 ## Seguridad
 
-Ver [SECURITY.md](SECURITY.md) para el modelo de amenaza completo, recomendaciones
+Ver [docs/SECURITY.md](docs/SECURITY.md) para el modelo de amenaza completo, recomendaciones
 de cifrado en reposo y procedimiento de rotación de credenciales.
 
 ## Contribuir
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
-- [CHANGELOG.md](CHANGELOG.md): cambios por versión (sección `Unreleased`).
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
+- [docs/CHANGELOG.md](docs/CHANGELOG.md): cambios por versión (sección `Unreleased`).
 - [plan.md](plan.md): estado del proyecto y evidencia de cada tarea de la ronda
   de estabilización.
 
