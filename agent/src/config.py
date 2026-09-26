@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     ollama_reasoning_effort: str = Field("none", alias="OLLAMA_REASONING_EFFORT")
     ollama_num_thread: int = Field(0, alias="OLLAMA_NUM_THREAD", ge=0)
     ollama_request_timeout: int = Field(600, alias="OLLAMA_REQUEST_TIMEOUT", ge=30)
+    ollama_gpu_host: str = Field("", alias="OLLAMA_GPU_HOST")
+    ollama_gpu_probe_interval: int = Field(60, alias="OLLAMA_GPU_PROBE_INTERVAL", ge=10)
     llm_temperature: float = Field(0.7, alias="LLM_TEMPERATURE", ge=0.0, le=2.0)
     llm_max_tokens: int = Field(4096, alias="LLM_MAX_TOKENS", ge=128, le=16384)
 
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
     openai_vision_model: str = Field("", alias="OPENAI_VISION_MODEL")
     openai_embedding_model: str = Field("", alias="OPENAI_EMBEDDING_MODEL")
     openai_reasoning_effort: str = Field("", alias="OPENAI_REASONING_EFFORT")
+    google_calendar_id: str = Field("primary", alias="GOOGLE_CALENDAR_ID")
 
     @field_validator("ollama_reasoning_effort", "openai_reasoning_effort", mode="before")
     @classmethod

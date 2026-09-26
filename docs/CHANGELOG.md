@@ -66,6 +66,17 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   valor del compose era un placeholder distinto del real de los contenedores),
   se **rotó**, se verificó que la antigua no quedó en git/historial/logs y el
   `.env` se incluye ya en el backup cifrado.
+- Uso opcional de la GPU de la torre con detección y respaldo (tarea 3.8):
+  `OLLAMA_GPU_HOST` preferido con sonda cacheada (`OLLAMA_GPU_PROBE_INTERVAL`);
+  si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
+  mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
+  40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Google Calendar con cuenta de servicio: detección automática del JSON
+  (`service_account.json`), soporte en los dos módulos y calendario
+  configurable (`GOOGLE_CALENDAR_ID`).
+- Panel `/status` migrado a HTML con escapado (los guiones bajos de las
+  herramientas rompían el formato Markdown) y `credentials/` protegido
+  (permisos 600/700 y en `.gitignore`).
 - Timeout del cliente de chat acotado y configurable
   (`OLLAMA_REQUEST_TIMEOUT`, 600 s por defecto; 120 s entre fragmentos en
   streaming): una caída de red silenciosa ya no puede esperar el timeout de la

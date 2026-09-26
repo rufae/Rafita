@@ -115,7 +115,11 @@ class GoogleCalendarManager:
         loop = asyncio.get_running_loop()
 
         def _do_insert():
-            return self._service.events().insert(calendarId="primary", body=event_body).execute()
+            return (
+                self._service.events()
+                .insert(calendarId=settings.google_calendar_id, body=event_body)
+                .execute()
+            )
 
         try:
             event = await loop.run_in_executor(None, _do_insert)
@@ -143,7 +147,7 @@ class GoogleCalendarManager:
             return (
                 self._service.events()
                 .list(
-                    calendarId="primary",
+                    calendarId=settings.google_calendar_id,
                     timeMin=now,
                     maxResults=max_results,
                     singleEvents=True,
@@ -175,7 +179,9 @@ class GoogleCalendarManager:
         loop = asyncio.get_running_loop()
 
         def _do_delete():
-            self._service.events().delete(calendarId="primary", eventId=event_id).execute()
+            self._service.events().delete(
+                calendarId=settings.google_calendar_id, eventId=event_id
+            ).execute()
 
         try:
             await loop.run_in_executor(None, _do_delete)
