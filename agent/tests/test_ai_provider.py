@@ -147,3 +147,102 @@ async def test_chat_vision_different_model_uses_hot_swap(monkeypatch, tmp_path):
     assert result == "ok"
     assert swaps == {"vision": 1, "text": 1}
     assert captured["extra_body"]["keep_alive"] == 0
+
+
+class _FakeModelList:
+    def __init__(self, ids):
+        self.data = [SimpleNamespace(id=i) for i in ids]
+
+
+async def test_ollama_check_health_uninitialized():
+    assert (await OllamaClient().check_health())["status"] == "uninitialized"
+
+
+async def test_ollama_check_health_ok_when_model_loaded(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
+    client = OllamaClient()
+
+    async def fake_list():
+        return _FakeModelList(["gemma4:12b", "bge-m3"])
+
+    async def fake_loaded():
+        return ["gemma4:12b"]
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        models=SimpleNamespace(list=fake_list)
+    )
+    monkeypatch.setattr(client, "_loaded_models", fake_loaded)
+    health = await client.check_health()
+    assert health["status"] == "ok"
+    assert health["provider"] == "ollama"
+    assert health["model_available"] is True
+    assert health["model_loaded"] is True
+
+
+async def test_ollama_check_health_degraded_when_model_not_loaded(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
+    client = OllamaClient()
+
+    async def fake_list():
+        return _FakeModelList(["gemma4:12b"])
+
+    async def fake_loaded():
+        return []
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        models=SimpleNamespace(list=fake_list)
+    )
+    monkeypatch.setattr(client, "_loaded_models", fake_loaded)
+    health = await client.check_health()
+    assert health["status"] == "degraded"
+    assert health["model_loaded"] is False
+
+
+async def test_ollama_check_health_unhealthy_when_model_missing(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
+    client = OllamaClient()
+
+    async def fake_list():
+        return _FakeModelList(["qwen2.5:7b"])
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        models=SimpleNamespace(list=fake_list)
+    )
+    health = await client.check_health()
+    assert health["status"] == "unhealthy"
+    assert "not pulled" in health["detail"]
+
+
+async def test_ollama_check_health_unhealthy_when_unreachable(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
+    client = OllamaClient()
+
+    async def boom():
+        raise ConnectionError("connection refused")
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        models=SimpleNamespace(list=boom)
+    )
+    health = await client.check_health()
+    assert health["status"] == "unhealthy"
+    assert "unreachable" in health["detail"]
+
+
+async def test_openai_check_health_uninitialized():
+    assert (await OpenAICompatClient().check_health())["status"] == "uninitialized"
+
+
+async def test_openai_check_health_reports_model(monkeypatch):
+    monkeypatch.setattr(settings, "openai_model", "gpt-test")
+    client = OpenAICompatClient()
+
+    async def fake_list():
+        return _FakeModelList(["gpt-test"])
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        models=SimpleNamespace(list=fake_list)
+    )
+    health = await client.check_health()
+    assert health["status"] == "ok"
+    assert health["provider"] == "openai"
+    assert health["model_available"] is True

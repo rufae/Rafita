@@ -553,20 +553,59 @@ class OllamaClient:
             if not same_model:
                 await self.hot_swap_to_text()
 
-    async def check_health(self) -> dict[str, Any]:
-        if not self._client:
-            return {"status": "uninitialized"}
+    async def _loaded_models(self) -> list[str] | None:
+        """Loaded models via Ollama's native `/api/ps`; None if unavailable."""
         try:
-            start = time.time()
-            await self._cb.execute("health", self._client.models.list, max_retries=2)
-            elapsed = time.time() - start
-            return {
-                "status": "healthy",
-                "model": self.model,
-                "latency_ms": round(elapsed * 1000),
-            }
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as hc:
+                resp = await hc.get("%s/api/ps" % settings.ollama_host.rstrip("/"))
+                resp.raise_for_status()
+                return [m.get("name", "") for m in resp.json().get("models", [])]
+        except Exception:
+            return None
+
+    async def check_health(self) -> dict[str, Any]:
+        """Generic provider health (task 3.3), used by the gateway `/ready`.
+
+        - `ok`: reachable and the chat model is available and loaded.
+        - `degraded`: reachable and available, but not loaded yet (the first
+          request will load it, which on CPU can take ~15 s).
+        - `unhealthy`: unreachable or the chat model is not pulled.
+        Fast failure: 10 s ceiling so a dead node does not stall readiness.
+        """
+        if not self._client:
+            return {"status": "uninitialized", "provider": "ollama"}
+        start = time.time()
+        try:
+            models = await asyncio.wait_for(self._client.models.list(), timeout=10.0)
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)}
+            return {
+                "status": "unhealthy",
+                "provider": "ollama",
+                "detail": "AI backend unreachable: %s" % str(e)[:150],
+            }
+        latency_ms = round((time.time() - start) * 1000)
+        ids = [m.id for m in (models.data or [])]
+        available = any(i == self.model or i.startswith(self.model + ":") for i in ids)
+        result: dict[str, Any] = {
+            "status": "ok",
+            "provider": "ollama",
+            "model": self.model,
+            "latency_ms": latency_ms,
+            "model_available": available,
+        }
+        if not available:
+            result["status"] = "unhealthy"
+            result["detail"] = "chat model '%s' not pulled" % self.model
+            return result
+        loaded = await self._loaded_models()
+        if loaded is not None:
+            result["model_loaded"] = any(
+                i == self.model or i.startswith(self.model + ":") for i in loaded
+            )
+            if not result["model_loaded"]:
+                result["status"] = "degraded"
+                result["detail"] = "model will load on first request"
+        return result
 
     async def close(self) -> None:
         if self._client:
