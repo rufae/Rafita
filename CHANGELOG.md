@@ -66,6 +66,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
   volver el backend. Health check de arranque con timeout corto y prewarm
   omitido si no hay backend.
+- Versionado verificable y procedimiento de actualización/rollback (tarea 3.7):
+  `LABEL rafita.version` en la imagen y campo `version` en `/health`;
+  medidor de downtime (`deploy/hp/measure-readiness.sh`) y runbook con el
+  ciclo completo. Medido en real: upgrade 4,7 s y rollback 5,1 s hasta
+  `/ready` 200, con rollback ejecutado de verdad y prueba de nodos
+  independientes (Dell actualizado con el agente vivo).
 - Backup diario de todo el homelab al USB RAFAEL (tarea 3.6): restic cifrado
   e incremental con retención 7d/4s/6m, solo si el USB está presente; cubre
   Rafita, BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y la
