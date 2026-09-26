@@ -144,4 +144,10 @@ COMMANDS_REGISTRY: list[BotCommand] = [
     BotCommand(command="limpiar", description="Limpiar historial de conversación"),
     BotCommand(command="backup", description="Generar respaldo ZIP de datos"),
     BotCommand(command="modo_voz", description="Activar/desactivar respuestas por voz"),
+    BotCommand(command="status", description="Panel de control del sistema"),
+    BotCommand(
+        command="logs",
+        description="Ver logs recientes (solo administradores)",
+        admin_only=True,
+    ),
 ]

@@ -136,6 +136,7 @@ class RafitaBot:
             claves_command,
             escanear_command,
             guardar_clave_command,
+            logs_command,
             recordar_command,
             resumen_command,
             status_command,
@@ -172,6 +173,7 @@ class RafitaBot:
         self._app.add_handler(CommandHandler("modo_voz", self._wrap(modo_voz_command)))
 
         self._app.add_handler(CommandHandler("status", self._wrap(status_command)))
+        self._app.add_handler(CommandHandler("logs", self._wrap(logs_command)))
         self._app.add_handler(CommandHandler("cerebro", self._wrap(cerebro_command)))
         self._app.add_handler(CommandHandler("recordar", self._wrap(recordar_command)))
         self._app.add_handler(CommandHandler("escanear", self._wrap(escanear_command)))
