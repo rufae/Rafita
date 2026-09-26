@@ -244,3 +244,42 @@ ls -lt data/backups/ | head -5
 # Endpoint de salud
 curl -s http://localhost:8000/health | python -m json.tool
 ```
+
+---
+
+## 7. Actualización y rollback (tarea 3.7)
+
+Flujo probado el 2026-09-26 para el agente del HP (downtime medido con
+`deploy/hp/measure-readiness.sh`, que registra el hueco sin `/ready` 200):
+
+```bash
+cd /home/server/proyectos/rafita
+
+# 1. Punto de rollback de la imagen actual
+docker tag rafita-rafita-agent-core:latest rafita-rafita-agent-core:pre-<fecha>
+
+# 2. Actualizar el código (rsync del repo desde el PC, o git pull) y desplegar
+bash deploy/hp/measure-readiness.sh \
+  docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml up -d --build
+
+# 3. Verificar versión y funcionalidad
+curl -s http://127.0.0.1:8010/health           # campo "version"
+docker inspect rafita-rafita-agent-core --format '{{ index .Config.Labels "rafita.version" }}'
+docker exec rafita-agent-core python /workspace/agent/scripts/rag_eval.py --top-k 5 | tail -8
+
+# 4. Rollback si algo falla
+git checkout -- <ficheros cambiados>           # volver el código atrás
+docker tag rafita-rafita-agent-core:pre-<fecha> rafita-rafita-agent-core:latest
+bash deploy/hp/measure-readiness.sh \
+  docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml up -d --force-recreate
+```
+
+Medición real (2026-09-26): **upgrade 4,7 s** y **rollback 5,1 s** de downtime
+hasta `/ready` 200 (build cacheado; el `up -d` reconstruye la imagen y recrea
+el contenedor). El código va montado (`./agent/src:/app/src`), así que el
+rollback de código es el `git checkout`; el de imagen es el retag.
+
+**Dell (runtime)**: no ejecuta código de la app. Su actualización (Ollama,
+config) se hace con el agente arriba; `/ready` pasa por `degraded`/`unhealthy`
+y se recupera solo. Antes de un salto de versión de Ollama, hacer snapshot de
+config (`deploy/dell/dell-config-snapshot.sh`) por si hay que reconstruir.

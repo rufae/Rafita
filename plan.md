@@ -2314,15 +2314,35 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - Runbook actualizado (`docs/runbook.md` 5.1 "Backup diario del homelab").
   - Sudo temporal revertido en ambos nodos al cierre.
 
-- [ ] **3.7 Upgrade y rollback** *(antes 3.5, con nota de alcance)*
-  Tareas: documentar y probar un ciclo real de actualización de versión
-  (`git pull` + rebuild + `up -d`) con downtime medido, y un rollback real a
-  la versión anterior si algo sale mal. Con dos nodos de ciclo de vida
-  independiente, probar también actualizar uno sin tocar el otro (agente en
-  HP con el Dell intacto, y viceversa) y confirmar que no se rompe la
-  compatibilidad entre versiones durante la ventana de despliegue.
-  Evidencia requerida: tiempos reales de downtime del upgrade, y un rollback
-  ejecutado de verdad (no solo descrito) para cada nodo.
+- [x] **3.7 Upgrade y rollback** *(antes 3.5, con nota de alcance)*
+  **Completada 2026-09-26.** Evidencia:
+
+  - **Marcador de versión real** (commit `dae11e0`): `LABEL rafita.version=0.2.0`
+    en la imagen y campo `version` en `/health`, para verificar qué versión
+    corre tras cada operación. Gate: 186 passed.
+  - **Upgrade medido en el HP** (`deploy/hp/measure-readiness.sh`, poll de
+    `/ready` cada 0,2 s): punto de rollback
+    (`docker tag ...:pre-3.7`), rsync del código, `up -d --build`
+    (build cacheado ~1,7 s), recreate y arranque → **downtime hasta `/ready`
+    200 = 4,7 s** (19 muestras sin respuesta + 2×503 durante el arranque).
+    Verificado: `/health` con `"version":"0.2.0"`, label `0.2.0` en la imagen
+    y smoke funcional (`rag_eval`: recall@3=1.0, MRR=0.982).
+  - **Rollback real ejecutado**: `git checkout` de los ficheros a la versión
+    anterior + retag `pre-3.7` → `latest` + `up -d --force-recreate` →
+    **downtime hasta `/ready` 200 = 5,1 s**; verificado que `/health` vuelve
+    al formato antiguo (sin `version`) y la imagen no tiene label. Después se
+    re-aplicó el upgrade y quedó en 0.2.0.
+  - **Nodos independientes**: el upgrade del HP se hizo con el Dell intacto
+    (arriba todo el tiempo). Viceversa: actualización del runtime del Dell con
+    el agente vivo (cambio real `OLLAMA_NUM_PARALLEL=1→2`, `daemon-reload` +
+    `restart` de Ollama): `/ready` pasó **ready → degraded** (detección
+    inmediata, sin zombie), se recalentó el modelo (11,2 s) → **ready**, y una
+    llamada de tool por `/v1` siguió funcionando (`get_time {"city":"Madrid"}`);
+    configuración restaurada a `NUM_PARALLEL=1`. No hay salto de versión de
+    Ollama en este test (se instaló por script, sin rollback fácil): el
+    procedimiento queda documentado con snapshot de config previo.
+  - **Runbook** actualizado con la sección 7 "Actualización y rollback"
+    (comandos exactos, verificación y vuelta atrás).
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

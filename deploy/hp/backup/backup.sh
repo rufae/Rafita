@@ -29,21 +29,36 @@ DELL_HOST="server@100.83.40.103"
 DELL_SNAPSHOT="$STAGE/dell-config-latest.tar.gz"
 
 mkdir -p /var/lib/rafita-backup
-exec >>"$LOG" 2>&1
+if [ "${1:-}" != "--notify-test" ]; then
+    exec >>"$LOG" 2>&1
+fi
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 notify() {
     local text="$1"
     [ -f "$ENV_FILE" ] || return 0
-    local token admin
-    token="$(grep -E '^TELEGRAM_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)"
-    admin="$(grep -E '^ADMIN_IDS=' "$ENV_FILE" | head -1 | cut -d= -f2- | cut -d, -f1 || true)"
+    local token admin resp
+    # ADMIN_IDS admite CSV ("1,2") o JSON ("[1,2]"): limpiar corchetes,
+    # comillas, espacios y CR antes de quedarse con el primer id.
+    token="$(grep -E '^TELEGRAM_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r\n ' || true)"
+    admin="$(grep -E '^ADMIN_IDS=' "$ENV_FILE" | head -1 | cut -d= -f2- \
+        | tr -d '\r\n "[]' | cut -d, -f1 || true)"
     [ -n "$token" ] && [ -n "$admin" ] || return 0
-    curl -s -m 20 -o /dev/null \
+    resp="$(curl -s -m 20 \
         "https://api.telegram.org/bot${token}/sendMessage" \
         --data-urlencode "chat_id=${admin}" \
-        --data-urlencode "text=${text}" || true
+        --data-urlencode "text=${text}" || true)"
+    case "$resp" in
+        *'"ok":true'*) ;;
+        *) log "WARN: notificacion Telegram fallida: $(printf '%s' "$resp" | head -c 200)" ;;
+    esac
 }
+
+if [ "${1:-}" = "--notify-test" ]; then
+    notify "🔔 Prueba de notificacion del backup del homelab (--notify-test)"
+    echo "notify-test ejecutado (revisa Telegram)"
+    exit 0
+fi
 
 trap 'notify "❌ Backup del homelab FALLIDO. Revisa /var/log/rafita-backup.log en el HP."' ERR
 
