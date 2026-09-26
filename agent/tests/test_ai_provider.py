@@ -86,3 +86,64 @@ def test_openai_reasoning_effort_is_opt_in(monkeypatch):
     assert OpenAICompatClient()._extra_body() is None
     monkeypatch.setattr(settings, "openai_reasoning_effort", "low")
     assert OpenAICompatClient()._extra_body() == {"reasoning_effort": "low"}
+
+
+def _fake_vision_client(captured: dict):
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        message = SimpleNamespace(content="ok", tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)))
+
+
+async def test_chat_vision_same_model_skips_hot_swap(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
+    monkeypatch.setattr(settings, "ollama_vision_model", "gemma4:12b")
+    client = OllamaClient()
+    swaps = {"vision": 0, "text": 0}
+
+    async def fake_swap():
+        swaps["vision"] += 1
+
+    async def fake_unswap():
+        swaps["text"] += 1
+
+    monkeypatch.setattr(client, "hot_swap_to_vision", fake_swap)
+    monkeypatch.setattr(client, "hot_swap_to_text", fake_unswap)
+    captured: dict = {}
+    client._client = _fake_vision_client(captured)  # type: ignore[assignment]
+    image = tmp_path / "img.png"
+    image.write_bytes(b"fake-image-bytes")
+
+    result = await client.chat_vision([{"role": "user", "content": "mira"}], [str(image)])
+
+    assert result == "ok"
+    assert swaps == {"vision": 0, "text": 0}
+    assert captured["extra_body"]["keep_alive"] == -1
+
+
+async def test_chat_vision_different_model_uses_hot_swap(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ollama_model", "chat-model")
+    monkeypatch.setattr(settings, "ollama_vision_model", "vision-model")
+    client = OllamaClient()
+    swaps = {"vision": 0, "text": 0}
+
+    async def fake_swap():
+        swaps["vision"] += 1
+
+    async def fake_unswap():
+        swaps["text"] += 1
+
+    monkeypatch.setattr(client, "hot_swap_to_vision", fake_swap)
+    monkeypatch.setattr(client, "hot_swap_to_text", fake_unswap)
+    captured: dict = {}
+    client._client = _fake_vision_client(captured)  # type: ignore[assignment]
+    image = tmp_path / "img.png"
+    image.write_bytes(b"fake-image-bytes")
+
+    result = await client.chat_vision([{"role": "user", "content": "mira"}], [str(image)])
+
+    assert result == "ok"
+    assert swaps == {"vision": 1, "text": 1}
+    assert captured["extra_body"]["keep_alive"] == 0
