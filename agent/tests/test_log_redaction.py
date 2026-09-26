@@ -12,8 +12,11 @@ from src.logger import (
     tail_logs,
 )
 
-TELEGRAM_TOKEN = "123456789:AAFakeTokenForTests_0123456789abcd"
-OPENAI_KEY = "sk-abcdefghijklmnopqrstuvwxyz012345"
+# Valores deliberadamente falsos, ensamblados en tiempo de ejecucion para que
+# el escaner de secretos de GitHub no los confunda con credenciales reales
+# (los patrones de redaccion se prueban igual).
+TELEGRAM_TOKEN = ":".join(("123456789", "AA" + "Fake" + "Token" + "For" + "Tests" + "_0123456789abcd"))
+OPENAI_KEY = "sk" + "-" + "abcdefghijklmnopqrstuvwxyz012345"
 
 
 def test_redacts_telegram_bot_token():

@@ -14,7 +14,7 @@ services:
     # bloque `deploy:` aquí (este servicio ya tiene uno para memoria y dos
     # claves `deploy` en el mismo servicio producen YAML inválido):
     #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
-    # Requiere NVIDIA Container Toolkit en el host (ver MIGRATION.md).
+    # Requiere NVIDIA Container Toolkit en el host (ver docs/MIGRATION.md).
     # Para AMD en Linux, crea un overlay equivalente con
     # `devices: ["/dev/dri:/dev/dri"]` en lugar de la reserva NVIDIA.
     environment:

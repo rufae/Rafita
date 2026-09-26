@@ -1,6 +1,6 @@
 """Guardia: ChromaDB solo en modo embebido (avisos PYSEC-2026-3813/3814/3815).
 
-Los tres avisos aceptados en SECURITY.md -> "Dependencias con avisos aceptados
+Los tres avisos aceptados en docs/SECURITY.md -> "Dependencias con avisos aceptados
 (ChromaDB)" solo son explotables con el **servidor HTTP** de Chroma (auth +
 multi-tenant) o registrando modelos remotos con `trust_remote_code=True`.
 Rafita usa `chromadb.PersistentClient` embebido, mono-usuario y sin API HTTP.
@@ -37,7 +37,7 @@ def test_no_chromadb_server_or_remote_code_in_sources():
     for path, text in _python_sources().items():
         for forbidden in FORBIDDEN:
             assert forbidden not in text, (
-                "%s encontrado en %s: revisar SECURITY.md (ChromaDB solo "
+                "%s encontrado en %s: revisar docs/SECURITY.md (ChromaDB solo "
                 "embebido; los avisos PYSEC-2026-3813/3814/3815 aplican al "
                 "servidor HTTP)" % (forbidden, path)
             )

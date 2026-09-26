@@ -6,7 +6,7 @@
 # Requisitos en el host:
 #   - Drivers NVIDIA funcionando (`nvidia-smi` en el host).
 #   - NVIDIA Container Toolkit instalado y Docker configurado
-#     (ver MIGRATION.md -> "Habilitar soporte GPU en Docker").
+#     (ver docs/MIGRATION.md -> "Habilitar soporte GPU en Docker").
 #
 # Este overlay añade la reserva de dispositivo al ÚNICO bloque `deploy` de
 # ollama-service. No copies estas líneas al docker-compose.yml base: un segundo
