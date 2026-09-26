@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup diario del homelab (03:30, solo si el USB esta presente)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

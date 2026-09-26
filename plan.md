@@ -2236,17 +2236,40 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     ruff/formato/mypy limpios; desplegado y verificado en el HP.
 
 - [ ] **3.6 Backup y restore reales** *(antes 3.4, con nota de alcance)*
-  Hallazgo: existe `backup_verify.sh` y un runbook, pero no se ha ejecutado un
-  backup+restore real de SQLite/Chroma/clave de cifrado.
-  Tareas: ejecutar un ciclo completo de backup → destruir el estado actual →
-  restaurar → confirmar que el bot funciona igual que antes, incluyendo que
-  las credenciales cifradas siguen siendo descifrables tras el restore. El
-  alcance es el estado del nodo HP (vault, SQLite, Chroma, clave); el nodo
-  Dell no guarda estado de usuario si solo sirve modelos (los pesos se pueden
-  re-descargar), así que no necesita backup propio salvo documentar su
-  configuración de despliegue por si hay que reconstruirlo desde cero.
-  Evidencia requerida: el log del backup, el log del restore, y una
-  interacción real post-restore confirmando que el sistema quedó íntegro.
+  **En ejecución 2026-09-26. Alcance ampliado por el usuario: backup de TODOS
+  los servicios del HP al USB, no solo Rafita.** Plan aprobado y decisiones:
+
+  1. **Renombrado `rafa` → `server`** en el HP (mismo UID/GID, home movido y
+     proyectos recreados con las rutas nuevas) para unificar con el Dell:
+     `server@nodochicohp`. Se hace **primero**, con procedimiento desatendido
+     que espera a que no haya sesiones de `rafa` (`deploy/hp/rename-user-rafa-to-server.sh`).
+  2. **restic** (cifrado, incremental, dedup) como herramienta; contraseña
+     root-only en `/root/.restic-password` y copia en el gestor del usuario.
+  3. **Diario 03:30** (timer systemd con `Persistent=true`), **solo si el USB
+     está presente** (`ExecCondition` lógico en el script); retención
+     **7 diarios / 4 semanales / 6 mensuales**.
+  4. Parada breve de Portainer (~5 s) y modo mantenimiento de Nextcloud
+     durante la copia de ficheros: aprobado.
+  5. **Verificación no destructiva** del restore (directorio temporal +
+     integridad SQLite, chunks de Chroma, descifrado Fernet y arranque del
+     agente contra el Dell); nada de destruir el estado real.
+  6. **Aviso por Telegram** al terminar (éxito/fallo) y **snapshot de
+     configuración del Dell** incluido (sin pesos de modelos).
+  7. **El contenido actual del USB no se toca**: solo se crea
+     `Servidor/server-nodochicohp/` y `Servidor/server-dell/`.
+
+  Inventario de datos (2026-09-26): todo el estado de usuario vive en el HP
+  (binds en `/home/rafa` y `/opt/homelab`, volúmenes Docker); el Dell solo
+  tiene pesos de modelos (~19 GB, re-descargables) y configuración. Total a
+  respaldar ≈ 3-4 GB. USB: 117 GB vfat, label `RAFAEL`, UUID `1916-3621`.
+
+  Artefactos: `deploy/hp/backup/` (script, unidades systemd, excludes,
+  instalador, README), `deploy/dell/dell-config-snapshot.sh` +
+  `install-backup.sh`, `deploy/hp/rename-user-rafa-to-server.sh`.
+
+  Evidencia requerida: log del backup, verificación de restore no destructiva
+  (integridad SQLite, Chroma, Fernet), snapshot real en el USB y notificación
+  Telegram recibida.
 
 - [ ] **3.7 Upgrade y rollback** *(antes 3.5, con nota de alcance)*
   Tareas: documentar y probar un ciclo real de actualización de versión

@@ -1,0 +1,9 @@
+[Unit]
+Description=Automontaje del USB RAFAEL cuando se conecta
+
+[Automount]
+Where=/mnt/rafael
+TimeoutIdleSec=600
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup diario del homelab al USB RAFAEL (restic)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/server/proyectos/rafita/deploy/hp/backup/backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=7200

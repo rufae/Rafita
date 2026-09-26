@@ -1,0 +1,17 @@
+# Exclusiones del backup restic (tarea 3.6)
+# Caches y artefactos que no son datos de usuario
+.cache
+.copilot
+.docker
+.dotnet
+.local/share
+.git-credentials
+**/node_modules
+**/bin/Debug
+**/obj
+**/data/backups
+**/.pytest_cache
+**/__pycache__
+**/.mypy_cache
+**/.ruff_cache
+**/*.tmp

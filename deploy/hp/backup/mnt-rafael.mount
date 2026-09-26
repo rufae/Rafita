@@ -1,0 +1,12 @@
+[Unit]
+Description=USB RAFAEL (backups del homelab)
+Documentation=file:/home/server/proyectos/rafita/deploy/hp/backup/README.md
+
+[Mount]
+What=UUID=1916-3621
+Where=/mnt/rafael
+Type=vfat
+Options=nofail,umask=077
+
+[Install]
+WantedBy=multi-user.target
