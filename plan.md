@@ -2121,6 +2121,42 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     vivo.
 
 - [ ] **3.4 Pruebas de caos, incluyendo caída de un nodo completo** *(antes 3.2, ampliada)*
+  **En curso 2026-09-26.** Completado lo que no requiere sudo; el resto queda
+  pendiente de habilitación temporal de sudo en ambos nodos o de apagado
+  físico.
+
+  - [x] **`docker kill` al agente (HP)** — hallazgo honesto: `docker kill` (y
+    `docker stop`) son **paradas explícitas** para Docker y **ninguna** política
+    las revive; verificado con contenedores desechables (`unless-stopped` y
+    `always` → ambos `Exited (137)` sin reinicio). La recuperación automática
+    sí se validó con un **crash inesperado**: contenedor desechable con
+    `restart: unless-stopped` que termina con exit 1 → Docker lo reinicia solo
+    (`Up 2 seconds`). Nota: matar el PID 1 del contenedor desde dentro está
+    bloqueado por el kernel (protección del init del namespace); un crash real
+    (OOM/excepción no capturada) sí provoca la salida y el reinicio. Tras el
+    `docker kill` del agente se levantó con `docker start` (la recuperación
+    automática de una parada explícita no es esperable por diseño).
+  - [x] **Convivencia de recursos en HP bajo carga real**: con el `rag_eval`
+    completo corriendo dentro del agente (31 consultas + embeddings contra el
+    Dell), muestreo cada 12 s durante 72 s:
+    ```
+    load average: 0,08–0,18 (antes 0,12; después 0,09)
+    rafita-agent-core: CPU ~0,32% | RAM 151–153 MiB / 2 GiB
+    nextcloud_app:      CPU 0,00–0,01% | RAM 194,6 MiB (sin cambios)
+    buenatierra_collabora: CPU 0,05–3,77% (picos normales) | RAM ~89 MiB
+    buenatierra_api:    CPU 0,51–0,74% | RAM ~154 MiB
+    memoria disponible: 4,8 GiB antes y después
+    ```
+    El RAG terminó con las mismas métricas (recall@3=1.0, MRR=0.982): el
+    servicio funciona bajo convivencia y no degrada los 11 contenedores de
+    producción.
+  - [ ] Arranque en frío de ambos nodos, en los dos órdenes — pendiente
+    (requiere `sudo reboot` o apagado/encendido físico).
+  - [ ] Reinicio del runtime de IA en el Dell con el agente arriba — pendiente
+    (requiere sudo en el Dell).
+  - [ ] Corte de red entre nodos con regla de firewall temporal — pendiente
+    (requiere sudo para `ufw`).
+
   Tareas y evidencia requerida (una por una, con resultado real pegado):
   - Arranque en frío completo de ambos nodos (apagados del todo → arriba,
     probando ambos órdenes de boot: HP antes que Dell y viceversa).
