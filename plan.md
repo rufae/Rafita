@@ -2120,10 +2120,9 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     limpios. Desplegado en el HP (restart del contenedor) y verificado en
     vivo.
 
-- [ ] **3.4 Pruebas de caos, incluyendo caída de un nodo completo** *(antes 3.2, ampliada)*
-  **En curso 2026-09-26.** Completado lo que no requiere sudo; el resto queda
-  pendiente de habilitación temporal de sudo en ambos nodos o de apagado
-  físico.
+- [x] **3.4 Pruebas de caos, incluyendo caída de un nodo completo** *(antes 3.2, ampliada)*
+  **Completada 2026-09-26** (apagado físico coordinado con el usuario; sudo
+  temporal habilitado y revertido al cierre).
 
   - [x] **`docker kill` al agente (HP)** — hallazgo honesto: `docker kill` (y
     `docker stop`) son **paradas explícitas** para Docker y **ninguna** política
@@ -2171,8 +2170,22 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     `model_loaded: true`. **Acción de seguridad pendiente**: restringir de
     verdad el acceso a 11434 (ACL de Tailscale o regla iptables persistente
     antes de `ts-input`); documentado también en ADR-004.
-  - [ ] Arranque en frío de ambos nodos, en los dos órdenes — pendiente del
-    apagado/encendido físico del usuario (coordinado).
+  - [x] **Arranque en frío de ambos nodos, en los dos órdenes** (apagado
+    físico simultáneo del usuario):
+    - **Test A (HP primero, Dell apagado)**: primer intento **falló** — el
+      agente se quedaba colgado en "Connecting to Ollama..." (la SDK esperaba
+      timeouts largos) y no levantaba gateway ni Telegram. **Corregido en el
+      momento** (commit `d50b484`): el arranque ya no bloquea ni falla si el
+      LLM está caído; arranca en modo degradado y se recupera solo. Repetido
+      con el fix: agente arriba con Telegram y `/ready` **503 not_ready**
+      (`ai: unhealthy`), y al encender el Dell el **mismo proceso** pasó a
+      `degraded` (modelo sin cargar) y a `ready` tras la primera petición
+      (carga en frío 27,2 s).
+    - **Test B (Dell primero, HP después)**: HP arriba en 75 s con `docker`
+      activo y **los 12 contenedores arrancados solos** (11 de producción +
+      agente); `/ready` **200 ready** con `ai: ok, model_loaded: true`
+      (el prewarm del arranque cargó gemma4 en el Dell ya encendido) y
+      `telegram: ok`.
 
   Tareas y evidencia requerida (una por una, con resultado real pegado):
   - Arranque en frío completo de ambos nodos (apagados del todo → arriba,

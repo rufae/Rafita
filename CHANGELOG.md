@@ -61,6 +61,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   `OLLAMA_VISION_MODEL == OLLAMA_MODEL` se omite el hot-swap (antes descargaba
   y recargaba los mismos pesos en cada imagen) y se mantiene `keep_alive=-1`.
   Validado con imagen real: `content='Rojo'` (2026-09-26).
+- Arranque con el LLM caído (tarea 3.4): el agente ya no se bloquea en
+  "Connecting to Ollama..." cuando el nodo de IA está apagado; arranca en modo
+  degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
+  volver el backend. Health check de arranque con timeout corto y prewarm
+  omitido si no hay backend.
 - Readiness real (tarea 3.3): `/ready` usa el `check_health()` genérico del
   proveedor de IA (`ok`/`degraded`/`unhealthy` según modelo disponible y
   cargado), añade check de vault (existencia/permisos) y agrega
