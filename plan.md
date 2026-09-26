@@ -2154,11 +2154,15 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   14. **Google Calendar con cuenta de servicio (2026-09-26)**: el usuario subió
       un JSON de **cuenta de servicio** (no OAuth), que hacía fallar el enlace
       de autorización. Se detecta y renombra automáticamente a
-      `service_account.json`, ambos módulos de Google lo soportan y el
-      calendario a usar es configurable (`GOOGLE_CALENDAR_ID`). Pasos del
-      usuario: compartir su calendario con el email de la cuenta de servicio
-      (`rafita@rafita-500317.iam.gserviceaccount.com`, permiso de cambios) y
-      fijar `GOOGLE_CALENDAR_ID` con su dirección de Gmail.
+      `service_account.json` y ambos módulos de Google lo soportan. **El
+      calendario se detecta solo** (`calendarList`): el usuario comparte su
+      calendario con el email de la cuenta de servicio
+      (`rafita@rafita-500317.iam.gserviceaccount.com`, permiso de cambios) y el
+      bot lo encuentra sin que el usuario tenga que revelar su correo;
+      `GOOGLE_CALENDAR_ID` queda como override opcional. Drive y Tasks **no
+      están implementados** (solo se pedía el permiso): si se quieren, hay que
+      habilitar la API en su proyecto, compartir los ficheros con la cuenta de
+      servicio y añadir las herramientas (alcance nuevo).
   15. **Panel `/status` arreglado y credenciales protegidas (2026-09-26)**:
       el panel usaba Markdown y los guiones bajos de las herramientas rompían
       el formato (`Can't parse entities`); ahora usa HTML con escapado.
