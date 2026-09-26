@@ -37,6 +37,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   rafita-agent-core:
     build:
@@ -79,6 +84,11 @@ services:
           memory: 512M
     stdin_open: false
     tty: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   rafita-net:

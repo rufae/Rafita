@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     log_dir: str = Field("/data/logs", alias="LOG_DIR")
     obsidian_vault_dir: str = Field("/data/obsidian_vault", alias="OBSIDIAN_VAULT_DIR")
 
+    log_format: str = Field("text", alias="LOG_FORMAT")
+
+    @field_validator("log_format", mode="before")
+    @classmethod
+    def normalize_log_format(cls, v: Any) -> str:
+        value = "" if v is None else str(v).strip().lower()
+        return value if value in ("text", "json") else "text"
+
     language: str = Field("es", alias="LANGUAGE")
     timezone: str = Field("America/Mexico_City", alias="TIMEZONE")
     max_history_per_chat: int = Field(50, alias="MAX_HISTORY_PER_CHAT", ge=1, le=500)
