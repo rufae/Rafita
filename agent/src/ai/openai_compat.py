@@ -7,7 +7,9 @@ OpenRouter, vLLM, and Ollama's own `/v1` compatibility layer), configured with
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import time
 from pathlib import Path
 from typing import Any
 
@@ -46,20 +48,30 @@ class OpenAICompatClient:
         self._embed_client = None
 
     async def check_health(self) -> dict[str, Any]:
+        """Generic provider health (task 3.3), used by the gateway `/ready`."""
         if not self._client:
-            return {"status": "uninitialized"}
+            return {"status": "uninitialized", "provider": "openai"}
+        start = time.time()
         try:
-            import time
-
-            start = time.time()
-            await self._client.models.list()
-            return {
-                "status": "healthy",
-                "model": self.model,
-                "latency_ms": round((time.time() - start) * 1000),
-            }
+            models = await asyncio.wait_for(self._client.models.list(), timeout=10.0)
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)}
+            return {
+                "status": "unhealthy",
+                "provider": "openai",
+                "detail": "AI backend unreachable: %s" % str(e)[:150],
+            }
+        ids = [m.id for m in (models.data or [])]
+        available = any(i == self.model or i.startswith(self.model + ":") for i in ids)
+        result: dict[str, Any] = {
+            "status": "ok" if available else "degraded",
+            "provider": "openai",
+            "model": self.model,
+            "latency_ms": round((time.time() - start) * 1000),
+            "model_available": available,
+        }
+        if not available:
+            result["detail"] = "model not listed by the provider"
+        return result
 
     def _extra_body(self) -> dict[str, Any] | None:
         """Optional provider-specific field; omitted unless configured.
