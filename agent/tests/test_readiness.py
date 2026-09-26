@@ -99,6 +99,11 @@ class TestReadyEndpoint:
         assert response.status_code == 200
         assert response.json()["status"] == "degraded"
 
+    def test_health_reports_version(self, client):
+        body = client.get("/health").json()
+        assert body["status"] == "ok"
+        assert body["version"] == "0.2.0"
+
     def test_liveness_stays_ok_when_dependencies_down(self, client, monkeypatch):
         self._patch(
             monkeypatch,

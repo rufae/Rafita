@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM python:3.11-slim AS runtime
 
 LABEL maintainer="RafAI-Rafita"
+LABEL rafita.version="0.2.0"
 LABEL description="Rafita Agent Core - Telegram AI Assistant"
 LABEL org.opencontainers.image.source="https://github.com/user/rafai"
 
