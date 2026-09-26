@@ -172,6 +172,17 @@ La restricción efectiva es **ufw**: `11434/tcp` solo desde `100.121.77.29` por
 el puerto queda bloqueado. Enrolamiento: Dell = `100.83.40.103`, conexión
 **directa** HP↔Dell (7 ms, sin relay DERP).
 
+**Corrección (3.4, 2026-09-26) — la regla de ufw para la tailnet está
+sombreada:** en el Dell, Tailscale inserta su cadena `ts-input` **antes** de
+las cadenas de ufw (`-A INPUT -j ts-input` es la primera) y contiene
+`-A ts-input -i tailscale0 -j ACCEPT`, de modo que **cualquier dispositivo de
+la tailnet** alcanza 11434, no solo el HP; `ufw delete allow` no corta el
+acceso (comprobado). La LAN sigue protegida por el `deny` incoming por
+defecto. El control real hoy es la identidad de Tailscale + ACLs (por defecto
+permiten todos los dispositivos de la tailnet). **Pendiente**: restringir
+11434 al HP con una ACL de Tailscale (recomendado) o una regla iptables
+persistente insertada antes de `ts-input`.
+
 ## (d) Presupuesto de recursos en el HP — **cabe con margen, con ajustes**
 
 **Medición real (11 contenedores arriba):** 6,9 GiB totales, **~4,9 GiB

@@ -2150,12 +2150,29 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     El RAG terminó con las mismas métricas (recall@3=1.0, MRR=0.982): el
     servicio funciona bajo convivencia y no degrada los 11 contenedores de
     producción.
-  - [ ] Arranque en frío de ambos nodos, en los dos órdenes — pendiente
-    (requiere `sudo reboot` o apagado/encendido físico).
-  - [ ] Reinicio del runtime de IA en el Dell con el agente arriba — pendiente
-    (requiere sudo en el Dell).
-  - [ ] Corte de red entre nodos con regla de firewall temporal — pendiente
-    (requiere sudo para `ufw`).
+  - [x] **Reinicio del runtime de IA en el Dell con el agente arriba**:
+    `systemctl stop ollama` → `/ready` desde el HP: **503 en 1,23 s**, `ai:
+    unhealthy ("AI backend unreachable")`, resto de checks ok (el agente no se
+    queda zombie). `systemctl start ollama` → `/ready` **200 `degraded`**
+    (`model_available: true, model_loaded: false`, "model will load on first
+    request") y tras una petición de calentamiento (10,97 s de carga desde
+    disco) → `ready` con `model_loaded: true`.
+  - [x] **Corte de red entre nodos**: primera tentativa con `ufw delete
+    allow ...` **no cortó nada** — hallazgo de seguridad: la cadena `ts-input`
+    de Tailscale corre **antes** que las cadenas de ufw (`-A INPUT -j
+    ts-input` va primero) y hace `-A ts-input -i tailscale0 -j ACCEPT`, así
+    que **cualquier dispositivo de la tailnet puede alcanzar 11434** y la
+    regla de ufw "solo desde la IP del HP" está sombreada (el `allow` de la
+    LAN sí funciona porque el default incoming es `deny` y `ts-input` solo
+    acepta tailscale0/loopback). Corte real con `iptables -I INPUT 1 -s
+    100.121.77.29 -p tcp --dport 11434 -j DROP` (por delante de `ts-input`):
+    `/ready` → **503 en 10,00 s** (tope de 10 s del probe; con conexión
+    rechazada eran 1,2 s), `ai: unhealthy`; al retirar la regla → `ready` con
+    `model_loaded: true`. **Acción de seguridad pendiente**: restringir de
+    verdad el acceso a 11434 (ACL de Tailscale o regla iptables persistente
+    antes de `ts-input`); documentado también en ADR-004.
+  - [ ] Arranque en frío de ambos nodos, en los dos órdenes — pendiente del
+    apagado/encendido físico del usuario (coordinado).
 
   Tareas y evidencia requerida (una por una, con resultado real pegado):
   - Arranque en frío completo de ambos nodos (apagados del todo → arriba,
