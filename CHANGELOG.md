@@ -61,6 +61,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   `OLLAMA_VISION_MODEL == OLLAMA_MODEL` se omite el hot-swap (antes descargaba
   y recargaba los mismos pesos en cada imagen) y se mantiene `keep_alive=-1`.
   Validado con imagen real: `content='Rojo'` (2026-09-26).
+- Readiness real (tarea 3.3): `/ready` usa el `check_health()` genérico del
+  proveedor de IA (`ok`/`degraded`/`unhealthy` según modelo disponible y
+  cargado), añade check de vault (existencia/permisos) y agrega
+  `ready`/`degraded`/`not_ready` con fallo rápido (<10 s con el nodo caído);
+  `/health` queda como liveness. Sonda versionada `deploy/hp/ready_probe.py`
+  y 5 escenarios de fallo verificados en el HP.
 
 ### Limitaciones conocidas (ronda de estabilización)
 - La calidad RAG está medida sobre un vault de evaluación sintético; falta
