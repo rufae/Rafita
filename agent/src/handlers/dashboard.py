@@ -16,6 +16,15 @@ from src.utils.vector_manager import vector_db
 from src.vault_config import get_taxonomy
 
 
+def _esc(value: object) -> str:
+    """Escape dynamic content for Telegram HTML parse mode (task 4.1 bugfix).
+
+    The panel used legacy Markdown and broke when dynamic values (tool names
+    with underscores, paths, error text) unbalanced the entities.
+    """
+    return html.escape(str(value))
+
+
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     user = update.effective_user
@@ -24,9 +33,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await message.reply_chat_action("typing")
 
-    lines = ["📊 *PANEL DE CONTROL - RAFITA AGENT*", ""]
+    lines = ["📊 <b>PANEL DE CONTROL - RAFITA AGENT</b>", ""]
 
-    lines.append("*🤖 Estado General*")
+    lines.append("<b>🤖 Estado General</b>")
     health_raw = await llm.check_health()
     provider = health_raw.get("provider", "ia")
     health_status = health_raw.get("status")
@@ -34,22 +43,24 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         lines.append(
             "  IA (%s): ✅ %s (%dms)"
             % (
-                provider,
-                health_raw.get("model", "N/A"),
+                _esc(provider),
+                _esc(health_raw.get("model", "N/A")),
                 health_raw.get("latency_ms", 0),
             )
         )
     elif health_status == "degraded":
         lines.append(
             "  IA (%s): ⚠️ degradado — %s"
-            % (provider, health_raw.get("detail", "modelo sin cargar"))
+            % (_esc(provider), _esc(health_raw.get("detail", "modelo sin cargar")))
         )
     else:
-        lines.append("  IA (%s): ❌ %s" % (provider, health_raw.get("detail", "desconocido")))
+        lines.append(
+            "  IA (%s): ❌ %s" % (_esc(provider), _esc(health_raw.get("detail", "desconocido")))
+        )
     lines.append("  Telegram Bot: ✅ polling activo")
     lines.append("")
 
-    lines.append("*🗄️ Base de Datos*")
+    lines.append("<b>🗄️ Base de Datos</b>")
     db_path = Path(settings.db_path)
     if db_path.exists():
         db_size = db_path.stat().st_size
@@ -65,10 +76,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         lines.append("  Mensajes guardados: %d" % history_count)
         lines.append("  Hechos personales: %d" % fact_count)
     except Exception as e:
-        lines.append("  Error leyendo BD: %s" % e)
+        lines.append("  Error leyendo BD: %s" % _esc(e))
     lines.append("")
 
-    lines.append("*📁 Bóveda Obsidian*")
+    lines.append("<b>📁 Bóveda Obsidian</b>")
     vault = Path("/data/obsidian_vault")
     if vault.exists():
         md_files = list(vault.rglob("*.md"))
@@ -81,16 +92,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         lines.append("  Subcarpetas: %d" % folder_count)
     lines.append("")
 
-    lines.append("*⚙️ Herramientas (Tools)*")
+    lines.append("<b>⚙️ Herramientas (Tools)</b>")
     from src.handlers.chat import TOOLS_DEFINITIONS
 
     tool_names = [t["function"]["name"] for t in TOOLS_DEFINITIONS]
     lines.append("  Registradas: %d" % len(tool_names))
     for name in tool_names:
-        lines.append("    • %s" % name)
+        lines.append("    • %s" % _esc(name))
     lines.append("")
 
-    lines.append("*💾 Disco*")
+    lines.append("<b>💾 Disco</b>")
     try:
         usage = shutil.disk_usage(str(vault if vault.exists() else "/"))
         lines.append("  Total: %s" % _format_size(usage.total))
@@ -102,16 +113,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
     lines.append("")
 
-    lines.append("*🧠 Base Vectorial (RAG)*")
+    lines.append("<b>🧠 Base Vectorial (RAG)</b>")
     try:
         vstats = await vector_db.get_stats()
         lines.append("  Chunks indexados: %d" % vstats["total_chunks"])
         lines.append("  Documentos: %d" % vstats["total_documents"])
     except Exception as e:
-        lines.append("  Error: %s" % e)
+        lines.append("  Error: %s" % _esc(e))
     lines.append("")
 
-    lines.append("*🗣️ Voz*")
+    lines.append("<b>🗣️ Voz</b>")
     whisper_ok = False
     piper_ok = False
     try:
@@ -130,7 +141,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     lines.append("  TTS (Piper): %s" % ("✅" if piper_ok else "❌ no instalado"))
     lines.append("")
 
-    lines.append("*📋 Logs Recientes*")
+    lines.append("<b>📋 Logs Recientes</b>")
     try:
         health = await wm.get_system_health()
         log_info = health.get("logs", {})
@@ -138,31 +149,34 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             errs = log_info["recent_errors"]
             lines.append("  Errores recientes: %d" % len(errs))
             for err in errs[:3]:
-                lines.append("    ⚠️ %s" % err[:100])
+                lines.append("    ⚠️ %s" % _esc(err[:100]))
             if not errs:
                 lines.append("    ✅ Sin errores")
         else:
-            lines.append("  %s" % log_info.get("status", "N/A"))
+            lines.append("  %s" % _esc(log_info.get("status", "N/A")))
     except Exception as e:
-        lines.append("  Error: %s" % e)
+        lines.append("  Error: %s" % _esc(e))
     lines.append("")
 
-    lines.append("*⏱️ Próximo check programado*")
-    try:
-        lines.append("  %s" % "Mañana a las 09:00 (configurado)")
-    except Exception:
-        pass
+    lines.append("<b>⏱️ Próximo check programado</b>")
+    lines.append("  Mañana a las 09:00 (configurado)")
     lines.append("")
 
-    lines.append("─── *%s Agent v4.0-RAG* ───" % settings.assistant_name)
+    lines.append("─── <b>%s Agent v4.0-RAG</b> ───" % _esc(settings.assistant_name))
 
-    text = "\n".join(lines)
-    max_len = 4096
-    if len(text) > max_len:
-        for i in range(0, len(text), max_len):
-            await message.reply_text(text[i : i + max_len], parse_mode="Markdown")
-    else:
-        await message.reply_text(text, parse_mode="Markdown")
+    # Chunking por líneas para no partir una etiqueta HTML a mitad
+    chunks: list[str] = []
+    current = ""
+    for line in lines:
+        if current and len(current) + len(line) + 1 > 4000:
+            chunks.append(current)
+            current = line
+        else:
+            current = current + "\n" + line if current else line
+    if current:
+        chunks.append(current)
+    for chunk in chunks:
+        await message.reply_text(chunk, parse_mode="HTML")
     logger.info("Status panel sent to user %d", user.id)
 
 
