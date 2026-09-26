@@ -558,6 +558,51 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "search_google_drive",
+            "description": "Busca ficheros en el Google Drive del usuario (solo lo que haya "
+            "compartido con la cuenta de servicio) por nombre o por texto contenido. "
+            "Usalo cuando el usuario diga 'busca en mi drive', 'tengo un documento "
+            "sobre...', 'encuentra el archivo...'. Devuelve nombre e id; para leer "
+            "el contenido usa despues read_google_drive_file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Texto a buscar (nombre o contenido del fichero)",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximo de resultados (1-25, por defecto 10)",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_google_drive_file",
+            "description": "Lee el texto de un fichero de Google Drive (Google Docs, Sheets, "
+            "PDF o texto plano) a partir del id devuelto por search_google_drive. "
+            "Usalo cuando el usuario pida 'leeme el documento', 'resume el archivo', "
+            "'que dice el fichero...'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_id": {
+                        "type": "string",
+                        "description": "Id del fichero devuelto por search_google_drive",
+                    },
+                },
+                "required": ["file_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "ingest_file",
             "description": "Registra la existencia de un archivo en el segundo cerebro "
             "creando una nota companion con metadatos. Usalo despues de "
