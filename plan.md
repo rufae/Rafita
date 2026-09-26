@@ -7,6 +7,13 @@ genérico, NO listo para servidor continuo. Índice de generificación medido: 1
 haberse reportado como implementados en un ciclo anterior — trátalos como
 funcionalidad nueva a construir desde cero, no como "arreglo".
 
+**Estado actual (2026-09-26): PLAN COMPLETADO — 35/35 tareas con evidencia.**
+Despliegue real en dos nodos operativo (LLM en el Dell, agente en el HP por
+Tailscale), backup diario al USB verificado con restore, y procedimiento de
+actualización/rollback probado con downtime medido. Resumen ejecutivo para
+revisión no técnica: `docs/informe-final.md`; operación diaria:
+`docs/runbook.md`; decisiones: `docs/adr/`; cambios: `CHANGELOG.md`.
+
 Este documento es la fuente de verdad del avance. Se actualiza en cada sesión de
 trabajo, nunca al final. Un ítem sin evidencia pegada bajo él es un ítem sin hacer,
 sin importar lo que diga el título de esta sección.
@@ -2354,10 +2361,8 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
-Actualizado 2026-09-25: ya no está bloqueada por falta de servidor — los dos
-nodos existen y están operativos. El bloqueo real ahora es que el nodo Dell
-solo tiene el sistema operativo instalado: nada de 3.1 en adelante puede
-ejecutarse con evidencia hasta que 3.0 quede decidido y 3.1 desplegado.
+Ninguno: 3.0–3.7 quedaron decididas, desplegadas y verificadas con evidencia
+(ver cada tarea y el registro de decisiones del documento).
 
 ---
 
@@ -2494,9 +2499,10 @@ contradecirse a sí mismos y reflejen el estado real tras las fases anteriores.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
-- 4.3 arranque completo con bot respondiendo en Telegram: requiere token real,
-  descarga de modelos del compose y puerto 11434 libre; se validará en servidor
-  (Fase 3). El resto de 4.3 quedó ejecutado con log real.
+- 4.3 arranque completo con bot respondiendo en Telegram: **resuelto en Fase 3**
+  (tarea 3.2): el bot quedó desplegado en el HP con token real, `/ready` en
+  verde y el usuario recibe sus mensajes y las notificaciones del backup. El
+  resto de 4.3 se ejecutó con log real.
 
 ---
 
