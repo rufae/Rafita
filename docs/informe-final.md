@@ -187,9 +187,11 @@ pruebas de caos, backups, observabilidad y documentación.
 
 ## 9. Riesgos y recomendaciones (priorizadas)
 
-1. **Contraseña de la base de datos de Nextcloud en texto plano** en su
-   fichero de configuración: rotarla y moverla a un fichero de entorno
-   protegido (tarea corta, recomendada).
+1. **Contraseña de la base de datos de Nextcloud** — *resuelto parcialmente
+   (2026-09-26)*: se detectó que el compose contenía un valor de ejemplo
+   distinto del real; la contraseña real se movió a un fichero de entorno
+   protegido (permisos 600) y verificado que coincide con los contenedores.
+   **Pendiente recomendado**: rotarla a una nueva contraseña fuerte.
 2. **Marcar en GitHub los 3 avisos de dependencias como "no afectados"**
    (documentado el motivo y con test de invariante).
 3. **Validar el RAG con la bóveda personal real** (la medición actual usa una

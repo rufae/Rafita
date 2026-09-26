@@ -2110,6 +2110,14 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       AdGuard (`/data`) no se vieron afectados. `/home/rafa` ya no existe;
       los 12 contenedores arriba y `/ready` OK. Alias SSH del PC de
       desarrollo actualizado a `User server`. Sin pérdida de datos.
+  13. **Contraseña de Nextcloud fuera del compose (2026-09-26)**: el compose
+      de `/opt/homelab/nextcloud` contenía un **placeholder** que no coincidía
+      con la contraseña real de los contenedores en marcha. Se movió la
+      **contraseña real** (leída del contenedor, sin imprimirla) a
+      `/opt/homelab/nextcloud/.env` (chmod 600) y el compose usa ahora
+      `${POSTGRES_PASSWORD}`; verificado que los hashes de `.env`, contenedor
+      de BD y contenedor de app coinciden y que Nextcloud sigue sano. Rotación
+      de la contraseña pendiente como mejora (no urgente).
 
 - [x] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   **Completada 2026-09-26.** Evidencia:
