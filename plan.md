@@ -2484,6 +2484,37 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     ruff/formato/mypy limpios.
   - Nota: el panel `/status` ahora muestra **23 herramientas**.
 
+- [x] **3.10 Auditoría y reparación integral de Google (Calendar/Drive/Sheets/Docs)**
+  *(encargo del propietario, 2026-09-26)*
+  **Completada 2026-09-26** (Sheets/Docs quedan a falta de habilitar la API en
+  su proyecto, documentado y con test que lo verifica).
+  - **Módulo centralizado** `src/services/google_services_manager.py`
+    (`GoogleServicesManager`): único punto de autenticación (cuenta de
+    servicio u OAuth con token en BD), servicios Calendar/Drive/Sheets/Docs/
+    Tasks/Gmail, scopes de mínimo privilegio, `HttpError` con reintentos y
+    backoff exponencial (429/5xx) y mensajes accionables (API deshabilitada,
+    permisos/compartir, 404, 401). `google_service` delega la inicialización
+    en él (sin duplicar credenciales).
+  - **Script E2E** `agent/scripts/test_google_services.py` (crea y borra sus
+    propios recursos): Calendar crear/listar/borrar, Drive listar, Sheets
+    crear/escribir/leer/borrar, Docs crear/escribir/leer/borrar y Tasks/Gmail
+    solo con OAuth.
+  - **Fallos encontrados y corregidos**: fechas sin zona horaria en el listado
+    (400 de Google), zona horaria del bot en `America/Mexico_City` → puesta en
+    `Europe/Madrid`, y **prompt del sistema sin fecha ni estado de Google**
+    (el modelo inventaba fechas y decía no estar conectado): ahora
+    `build_system_prompt()` inyecta fecha/hora actual y el estado real.
+  - **Limpieza**: borrado el evento erróneo «Domingo Feliz» (2025-05-18)
+    creado por el fallo de fecha.
+  - **Evidencia E2E real** (2026-09-26, contenedor aislado): `calendar ok`,
+    `drive ok`, evento de prueba creado/listado/borrado correctamente, 5
+    ficheros de Drive visibles; `sheets` y `docs` → `api_disabled` (403, falta
+    habilitarlas en el proyecto `552699919273`); `tasks`/`gmail` → requieren
+    OAuth.
+  - **Guía de acción** `docs/google-setup.md` con los enlaces exactos para
+    habilitar Sheets/Docs, cómo compartir y el comando del test.
+  - Tests: +9 (225 passed, 26 skipped); ruff/formato/mypy limpios.
+
 **Bloqueado / no verificable (rellenar si aplica):**
 
 Ninguno: 3.0–3.7 quedaron decididas, desplegadas y verificadas con evidencia

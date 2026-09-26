@@ -333,8 +333,17 @@ deseados. En el chat/llamada:
 - «busca en mi drive el documento de …» → `search_google_drive`
 - «léeme/resume ese documento» → `read_google_drive_file`
 
-**APIs de Google Cloud necesarias**: Calendar API y Drive API (ambas
+**APIs de Google Cloud necesarias**: Calendar API y Drive API (habilitadas);
 habilitadas). Tasks y Gmail **no están implementadas** (habría que añadirlas).
 
 **Nota**: la lectura de ficheros muy grandes puede tardar; las herramientas
 recortan el texto a ~8.000 caracteres.
+
+### APIs y diagnóstico (actualizado 2026-09-26)
+
+- Habilitadas y funcionando: **Calendar** y **Drive**.
+- **Sheets y Docs**: hay que habilitarlas en el proyecto de Google Cloud;
+  enlaces directos y pasos en `docs/google-setup.md`.
+- **Tasks y Gmail**: requieren OAuth (no funcionan con cuenta de servicio).
+- Test E2E de todo: `agent/scripts/test_google_services.py` (comando listo en
+  `docs/google-setup.md`, sección 4); crea y borra sus propios recursos.
