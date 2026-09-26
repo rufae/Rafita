@@ -92,7 +92,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | 0.4 | Webhook sin secreto único / aceptaba peticiones inválidas | Secreto único por instancia y **fail-closed**: 503 sin secreto, 401 con firma inválida. |
 | 0.5 | `ADMIN_IDS` del ejemplo no funcionaba tal cual | Acepta CSV, JSON, id único o vacío, sin edición extra. |
 | 0.6 | `/ready` no comprobaba dependencias reales | `/ready` verifica IA, base vectorial y Telegram; `/health` queda como *liveness*. |
-| 0.7 | Overlay GPU con YAML inválido (dos bloques `deploy`) | Overlay corregido y documentado en `MIGRATION.md`. |
+| 0.7 | Overlay GPU con YAML inválido (dos bloques `deploy`) | Overlay corregido y documentado en `docs/MIGRATION.md`. |
 | 0.8 | Runtime Python ambiguo | Fijado **Python 3.11** en imagen y documentación. |
 
 ### Fase 1 — RAG verificable y calidad medible
@@ -137,7 +137,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | Tarea | Trabajo realizado y resultado |
 |---|---|
 | 4.1 | Corregidas las inconsistencias de documentación detectadas en la auditoría (URLs, puertos, estado real de funcionalidades). |
-| 4.2 | `CHANGELOG.md` con sección *Unreleased* y guía de contribución. |
+| 4.2 | `docs/CHANGELOG.md` con sección *Unreleased* y guía de contribución. |
 | 4.3 | **Instalación limpia de extremo a extremo** documentada y probada; la parte de "bot respondiendo en Telegram" se validó en la Fase 3 con el despliegue real. |
 | 4.4 | ADRs 001–003 revisadas con evidencia real y ADR-004 añadida. |
 
@@ -271,7 +271,7 @@ adoptada (el propietario puede confirmar cada punto):
 - Evidencia completa por tarea: `plan.md`.
 - Decisiones de arquitectura: `docs/adr/001..004`.
 - Operación y recuperación: `docs/runbook.md`.
-- Cambios por versión: `CHANGELOG.md`.
+- Cambios por versión: `docs/CHANGELOG.md`.
 - Estado del servicio en vivo: `GET /ready` y `GET /health` (incluye versión).
 - Historial de cambios de código: repositorio Git (`rufae/Rafita`).
 
