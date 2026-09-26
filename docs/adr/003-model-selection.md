@@ -155,9 +155,14 @@ efecto del `thinking` de gemma4 (activo por defecto), que consumía el
 presupuesto de tokens antes de emitir la tool. Desactivándolo
 (`reasoning_effort=none`, commit `5698227`) la suite completa, ejecutada en el
 despliegue real (agente en HP contra el LLM del Dell por Tailscale), da
-**46/46 (100%)** y los controles negativos siguen sin sobre-disparar. La
-fiabilidad de tool-calling de gemma4 queda confirmada; la elección de esta ADR
-se refuerza.
+**46/46 (100%)** y los controles negativos siguen sin sobre-disparar.
+
+**Experimento controlado (2026-09-26, tras revisión externa)**: para separar el
+efecto del ajuste del cambio de máquina, se repitió la suite completa en la
+**misma RTX 3060** donde se midió el 29/46, con el código actual y el ajuste
+activo: **46/46 (100%)** (inicio 15:22:03, fin 15:23:13 UTC; mismo script,
+`sha256 fd2f1cda…`). Conclusión: el salto 29→46 se debe al ajuste del
+`thinking`, no al hardware ni a la red. La elección de esta ADR se refuerza.
 
 ## Nota sobre hardware_detect
 
