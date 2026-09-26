@@ -71,6 +71,16 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Integración de Google refactorizada en un **módulo centralizado**
+  (`GoogleServicesManager`): autenticación única (cuenta de servicio u OAuth),
+  servicios Calendar/Drive/Sheets/Docs (Tasks/Gmail solo vía OAuth), scopes de
+  mínimo privilegio, `HttpError` con reintentos/backoff y mensajes accionables.
+  Incluye **test E2E** (`agent/scripts/test_google_services.py`) y guía
+  (`docs/google-setup.md`).
+- Corregido: el prompt del sistema no incluía la **fecha actual** ni el estado
+  de Google (el modelo inventaba fechas y decía no estar conectado); zona
+  horaria del despliegue puesta en `Europe/Madrid`; el listado de eventos
+  ahora normaliza la zona horaria (evitaba un 400 de Google).
 - Google Drive (solo lectura de lo compartido): herramientas
   `search_google_drive` y `read_google_drive_file` (Docs/Sheets/Slides, PDF y
   texto) y comando `/calendario <id>` para fijar el calendario desde el bot

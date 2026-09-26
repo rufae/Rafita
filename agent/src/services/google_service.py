@@ -1,10 +1,7 @@
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -13,7 +10,8 @@ from googleapiclient.errors import HttpError
 from src.config import settings
 from src.database import db
 from src.logger import logger
-from src.utils.security_manager import decrypt_value, encrypt_value
+from src.services.google_services_manager import google_services
+from src.utils.security_manager import encrypt_value
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
@@ -73,69 +71,22 @@ class GoogleService:
         return configured or "primary"
 
     async def initialize(self) -> bool:
-        if SERVICE_ACCOUNT_FILE.exists():
-            # Cuenta de servicio: no requiere autorizacion interactiva. El
-            # calendario a usar debe estar compartido con el client_email.
-            try:
-                loop = asyncio.get_running_loop()
-
-                def _load_service_account():
-                    creds = service_account.Credentials.from_service_account_file(
-                        str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
-                    )
-                    return (
-                        build("calendar", "v3", credentials=creds),
-                        build("drive", "v3", credentials=creds),
-                        creds.service_account_email,
-                    )
-
-                self._service, self._drive, sa_email = await loop.run_in_executor(
-                    None, _load_service_account
-                )
-                stored_cal = await db.kv_get("google_calendar_id")
-                if stored_cal:
-                    self._calendar_id = stored_cal
-                    logger.info("Google Service: calendario fijado: %s", stored_cal)
-                else:
-                    self._calendar_id = self._resolve_calendar_id(sa_email=sa_email)
-                self._ready = True
-                logger.info(
-                    "Google Service: autenticado con cuenta de servicio (calendario=%s)",
-                    self._calendar_id,
-                )
-                return True
-            except Exception as e:
-                logger.warning("Google Service: error con cuenta de servicio: %s", e)
-                return False
-
-        if not OAUTH_CREDENTIALS_FILE.exists():
-            logger.info("Google Service: credentials.json no encontrado en %s", CRED_DIR)
-            return False
-        try:
-            token_enc = await db.kv_get("google_token")
-            if token_enc:
-                token_json = decrypt_value(token_enc)
-                token_data = json.loads(token_json)
-                self._creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-                if self._creds.expired and self._creds.refresh_token:
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self._creds.refresh, Request())
-                    await self._save_token(self._creds)
-                    logger.info("Google Service: token refrescado")
-                elif not self._creds.valid:
-                    self._creds = None
-                    return False
-                self._service = build("calendar", "v3", credentials=self._creds)
-                self._drive = build("drive", "v3", credentials=self._creds)
-                stored_cal = await db.kv_get("google_calendar_id")
-                if stored_cal:
-                    self._calendar_id = stored_cal
-                self._ready = True
-                logger.info("Google Service: autenticado desde token almacenado")
-                return True
-        except Exception as e:
-            logger.warning("Google Service: error cargando token: %s", e)
-            self._creds = None
+        # Inicialización unificada (auditoría 2026-09-26): el
+        # GoogleServicesManager es el único punto de autenticación; aquí solo
+        # se exponen sus clientes para no duplicar credenciales.
+        if await google_services.initialize():
+            self._service = google_services.calendar
+            self._drive = google_services.drive
+            self._calendar_id = google_services.calendar_id
+            stored = await db.kv_get("google_calendar_id")
+            if stored:
+                self._calendar_id = stored
+            self._ready = True
+            logger.info(
+                "Google Service: listo vía GoogleServicesManager (calendario=%s)",
+                self._calendar_id,
+            )
+            return True
         return False
 
     async def _save_token(self, creds: Credentials) -> None:

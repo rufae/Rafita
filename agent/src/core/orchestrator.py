@@ -10,7 +10,9 @@ This avoids duplicating the prompt/rules/tools logic across interfaces.
 import asyncio
 import json
 import time as _time
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database import db
@@ -19,6 +21,7 @@ from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
 from src.ollama_client import OllamaClientError, llm
+from src.services.google_services_manager import google_services
 from src.utils.telemetry import get_correlation_id, metrics
 from src.vault_config import get_taxonomy
 
@@ -53,10 +56,40 @@ SYSTEM_PROMPT_VOICE = (
     "- search_web / remember_fact / search_knowledge\n"
     "- create_event / create_alert\n"
     "- manage_google_calendar / create_google_calendar_event\n"
+    "- search_google_drive / read_google_drive_file\n"
     "- generate_google_auth_link / save_google_verification_code\n\n"
     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
     f"{reply_instruction()}"
 )
+
+
+def build_system_prompt() -> str:
+    """Prompt del sistema con contexto dinámico (auditoría 2026-09-26).
+
+    Añade la fecha/hora actual (evita fechas inventadas) y el estado real de
+    Google (evita que el modelo diga que no está conectado cuando sí lo está).
+    """
+    try:
+        now = datetime.now(ZoneInfo(settings.timezone))
+    except Exception:
+        now = datetime.now()
+    fecha = now.strftime("%A, %d/%m/%Y %H:%M")
+    if google_services.is_ready:
+        google_state = "conectado (calendario: %s)" % google_services.calendar_id
+    else:
+        google_state = (
+            "no configurado; si el usuario pide calendario/Drive, indica que use "
+            "/setup_google o /calendario <correo>"
+        )
+    contexto = (
+        f"CONTEXTO_ACTUAL: hoy es {fecha} (zona horaria {settings.timezone}). "
+        "Usa SIEMPRE esta fecha para calcular 'hoy', 'mañana', 'pasado mañana', "
+        "'el viernes', etc. Nunca inventes fechas.\n"
+        f"GOOGLE_RULE: Google está {google_state}. Las herramientas de Google "
+        "(calendario y Drive) están disponibles: NO ofrezcas enlaces de "
+        "autorización si ya está conectado; úsalas directamente.\n"
+    )
+    return contexto + SYSTEM_PROMPT_VOICE
 
 
 async def generate_response(text: str, chat_id: int) -> str:
@@ -80,7 +113,7 @@ async def generate_response(text: str, chat_id: int) -> str:
             }
         )
 
-    messages_for_llm: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT_VOICE}]
+    messages_for_llm: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt()}]
     for msg in trimmed_history:
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
 
