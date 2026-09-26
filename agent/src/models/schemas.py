@@ -150,4 +150,9 @@ COMMANDS_REGISTRY: list[BotCommand] = [
         description="Ver logs recientes (solo administradores)",
         admin_only=True,
     ),
+    BotCommand(
+        command="calendario",
+        description="Fijar el calendario de Google (solo administradores)",
+        admin_only=True,
+    ),
 ]
