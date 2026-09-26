@@ -3,7 +3,7 @@
 Topología real (ver `docs/adr/004-two-node-deployment.md`):
 
 ```
-[ HP "rafa" 192.168.1.129 ]                    [ Dell "nodo-dell-1" 192.168.1.201 ]
+[ HP "rafa" 192.168.1.129 ]                    [ Dell "nodo-dell-1" 192.168.1.121 ]
   agente Rafita + ChromaDB                       Ollama 0.34.4 (chat, embeddings,
   vault + BrainMaintainer                        visión; i7-8700, 32GB, sin GPU)
   Tailscale 100.121.77.29  ────── WireGuard ────  Tailscale 100.83.40.103
@@ -18,6 +18,10 @@ fallback (chat y visión respectivamente).
 
 El LLM vive **solo** en el Dell. La app vive **solo** en el HP y llama al LLM
 por la tailnet. El nodo HP no arranca `ollama-service` (ver tarea 3.2).
+
+La dirección estable entre nodos es la **IP Tailscale `100.83.40.103`** (la IP
+LAN `.121` es una reserva DHCP para gestión/SSH desde la LAN; antes rotó por
+DHCP y no debe usarse en configuraciones).
 
 ## Estructura
 
@@ -52,9 +56,9 @@ deploy/
 
 ```bash
 # desde el PC de desarrollo / HP
-ssh server@192.168.1.201 'sudo bash -s' < deploy/dell/01-install-runtime.sh
-ssh server@192.168.1.201 'sudo HP_TS_IP=100.121.77.29 bash -s' < deploy/dell/02-network.sh
-ssh server@192.168.1.201 'bash -s' < deploy/dell/03-benchmark.sh
+ssh server@192.168.1.121 'sudo bash -s' < deploy/dell/01-install-runtime.sh
+ssh server@192.168.1.121 'sudo HP_TS_IP=100.121.77.29 bash -s' < deploy/dell/02-network.sh
+ssh server@192.168.1.121 'bash -s' < deploy/dell/03-benchmark.sh
 ```
 
 ## Convenciones

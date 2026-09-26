@@ -2,7 +2,7 @@
 # Nodo Dell — runtime de IA (tarea 3.1). Idempotente.
 #
 # Local:  sudo bash 01-install-runtime.sh
-# Remoto: ssh server@192.168.1.201 'sudo bash -s' < 01-install-runtime.sh
+# Remoto: ssh server@192.168.1.121 'sudo bash -s' < 01-install-runtime.sh
 #
 # Variables:
 #   MODELS       modelos a descargar (default: "gemma4:12b bge-m3")

@@ -2,7 +2,7 @@
 # Nodo Dell — red segura del LLM (tareas 3.0c/3.1). Idempotente.
 #
 # Local:  sudo HP_TS_IP=100.121.77.29 bash 02-network.sh
-# Remoto: ssh server@192.168.1.201 'sudo HP_TS_IP=100.121.77.29 bash -s' < 02-network.sh
+# Remoto: ssh server@192.168.1.121 'sudo HP_TS_IP=100.121.77.29 bash -s' < 02-network.sh
 #
 # Efectos:
 #   1. Instala Tailscale si falta (la autenticacion es interactiva, ver abajo).

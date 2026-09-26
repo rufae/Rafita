@@ -12,7 +12,10 @@ y desplegada en 3.1 el 2026-09-26 (evidencia en `plan.md`).
 Hasta la Fase 2 el despliegue se asumió mono-máquina (`localhost`). La
 topología real pasa a ser:
 
-- **Dell OptiPlex 7060 Micro** (`192.168.1.201`; originalmente `.121`, cambió tras un reinicio — IP no estática): i7-8700 (6c/12t), 32 GB RAM,
+- **Dell OptiPlex 7060 Micro** (LAN `192.168.1.121` por reserva DHCP en el
+  router para la MAC `6c:2b:59:df:cc:a0`; estable — antes rotó `.121`→`.201`→
+  `.121` por DHCP; el acceso estable entre nodos es la IP Tailscale
+  `100.83.40.103`): i7-8700 (6c/12t), 32 GB RAM,
   1 TB NVMe, **sin GPU discreta** (iGPU Intel UHD 630). Solo tiene el SO
   (Ubuntu Server 24.04.5). Rol: inferencia (chat, visión, embeddings).
 - **HP "rafa"** (`192.168.1.129`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
@@ -223,8 +226,9 @@ Collabora/Nextcloud.
 - La latencia CPU del modelo grande sigue siendo el riesgo principal; está
   medida y aceptada por el usuario (ver (b)).
 - Portainer en 8000 obliga a remapear el gateway en HP (tarea 3.2).
-- La IP LAN del Dell **no es estática** (cambió de `.121` a `.201`): el agente
-  debe usar el nombre/IP de Tailscale (`100.83.40.103`), no la IP LAN.
+- ~~La IP LAN del Dell no es estática~~ → resuelto: reserva DHCP en el router
+  (MAC `6c:2b:59:df:cc:a0` → `192.168.1.121`); aun así el agente usa la IP
+  Tailscale (`100.83.40.103`), que es la referencia estable.
 
 **Estado:** aceptada y ejecutada en 3.1 (2026-09-26). Scripts en `deploy/dell/`
 idempotentes; pendiente 3.2 (agente del HP apuntando a

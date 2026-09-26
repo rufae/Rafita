@@ -1801,7 +1801,9 @@ no conocía esto; queda documentado aquí para que no se pierda):**
 - **Nodo Dell — motor de IA** (`192.168.1.201`; **cambió desde 192.168.1.121**
   tras un reinicio del nodo: la IP no estaba fijada estáticamente. Pendiente
   fijarla con netplan/reserva DHCP y/o usar el DNS de Tailscale para no
-  depender de la IP LAN. Documentado 2026-09-25): Dell OptiPlex 7060 Micro,
+  depender de la IP LAN. Documentado 2026-09-25. **Resuelto 2026-09-26:**
+  reserva DHCP en el router (MAC `6c:2b:59:df:cc:a0`) → `.121`; ver registro
+  de decisiones): Dell OptiPlex 7060 Micro,
   Ubuntu Server 24.04.5 LTS, Intel Core i7-8700 (6c/12t @ 3.20GHz, **sin GPU
   discreta**, solo iGPU Intel UHD 630), 32GB DDR4, 1TB NVMe. Solo tiene el
   sistema operativo instalado; nada del stack de IA desplegado todavía. Rol:
@@ -2069,6 +2071,16 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
      remote a SSH para que los push no vuelvan a pedir credenciales.
   10. **Gateway en 8010** (Portainer ocupa 8000 en el HP) y `OLLAMA_HOST` por
       IP Tailscale (la IP LAN del Dell no es estática).
+  11. **IP fija del Dell**: tras el corte de luz del 2026-09-26 el Dell pasó de
+      `.201` a `.121` (DHCP). El usuario eligió **reserva DHCP en el router**
+      (la opción más segura, sin conflictos de pool) para la MAC
+      `6c:2b:59:df:cc:a0` (interfaz `eno1`) → **192.168.1.121**; pasos
+      indicados (sección DHCP → Reserva/Static Lease del router en
+      `192.168.1.1`). Nota: `.201` está ocupada por otro dispositivo (se
+      verificó antes de decidir; descartada). El sistema **no depende** de la
+      IP LAN: agente y scripts usan la IP Tailscale `100.83.40.103`, que no
+      cambia. Comprobado tras el corte: ambos nodos volvieron solos (ollama y
+      tailscaled `active`) y `/ready` OK con latencia 17 ms.
 
 - [ ] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   Depende de 0.6 y 3.2. Tareas: separar "el proceso vive" de "el servicio

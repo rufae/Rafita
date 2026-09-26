@@ -2,7 +2,7 @@
 # Nodo Dell — benchmark del LLM (tarea 3.1). Solo lectura sobre la API.
 #
 # Local:  bash 03-benchmark.sh
-# Remoto: ssh server@192.168.1.201 'bash -s' < 03-benchmark.sh
+# Remoto: ssh server@192.168.1.121 'bash -s' < 03-benchmark.sh
 # Desde el HP contra el Dell:
 #   HOST=http://100.x.y.z:11434 bash deploy/dell/03-benchmark.sh
 #
