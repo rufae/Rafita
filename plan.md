@@ -1823,7 +1823,15 @@ de arquitectura reales antes de tocar código — no se resuelven solas.
 No empezar sin Fase 2 cerrada (ya lo está). Todo lo de esta fase debe probarse
 contra los dos nodos reales, no solo simulado en el PC de desarrollo.
 
-- [ ] **3.0 Decisiones de arquitectura del despliegue en dos nodos**
+- [x] **3.0 Decisiones de arquitectura del despliegue en dos nodos**
+  **Completada 2026-09-25/26**: las cuatro decisiones quedaron resueltas y
+  confirmadas por el usuario en `docs/adr/004-two-node-deployment.md`
+  (Ollama; modelo elegido por benchmark real = `gemma4:12b`; Tailscale + ufw
+  con acceso tailnet completo aceptado por el usuario; presupuesto del HP con
+  overlay sin Ollama y puerto 8010) y ejecutadas en 3.1–3.7. El detalle de
+  cada decisión y las respuestas del usuario está en el registro de
+  decisiones de este documento y en el propio ADR-004.
+
   Antes de instalar nada en el Dell, resolver y documentar (ADR-004) estas
   cuatro decisiones:
   - **(a) Runtime del LLM en el Dell — Ollama vs llama.cpp+llama-swap.**
