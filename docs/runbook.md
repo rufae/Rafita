@@ -307,3 +307,34 @@ encendida; si está apagada, el agente usa el nodo Dell sin intervención.
 - **Nota**: la torre mantiene su propio Ollama nativo (v0.21.2) en el puerto
   11434 para otros usos; no se toca. Si se quiere apagar la torre sin afectar
   al bot, no hace falta hacer nada: el respaldo es automático.
+
+---
+
+## 9. Google: calendario y Drive (tareas 3.8/3.9)
+
+La integración usa una **cuenta de servicio** (privacidad: solo ve lo que se le
+comparte). El email es `rafita@rafita-500317.iam.gserviceaccount.com`.
+
+**Calendario** (la cuenta de servicio no ve calendarios compartidos en su
+lista, hay que fijarlo una vez):
+
+```text
+/calendario tu-correo@gmail.com     # solo administradores; valida y guarda
+/calendario                          # muestra el calendario actual
+```
+
+Antes hay que compartir el calendario con el email de la cuenta de servicio
+(permiso «Hacer cambios en los eventos»). El id se guarda en la base de datos
+(no en el `.env`); `GOOGLE_CALENDAR_ID` sigue funcionando como override.
+
+**Drive** (solo lectura): compartir con el mismo email las carpetas o ficheros
+deseados. En el chat/llamada:
+
+- «busca en mi drive el documento de …» → `search_google_drive`
+- «léeme/resume ese documento» → `read_google_drive_file`
+
+**APIs de Google Cloud necesarias**: Calendar API y Drive API (ambas
+habilitadas). Tasks y Gmail **no están implementadas** (habría que añadirlas).
+
+**Nota**: la lectura de ficheros muy grandes puede tardar; las herramientas
+recortan el texto a ~8.000 caracteres.

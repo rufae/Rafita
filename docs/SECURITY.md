@@ -135,6 +135,15 @@ exposición directa a internet.
 
 ## Seguridad de la aplicación
 
+### Google (cuenta de servicio, 2026-09-26)
+- La integración usa una **cuenta de servicio** con permisos de **solo
+  lectura de Drive** y **Calendar** sobre lo que el propietario comparte
+  explícitamente; no tiene acceso al resto de la cuenta.
+- El calendario elegido se guarda en la base de datos local (comando
+  `/calendario`), no se envía a terceros.
+- Credenciales en `credentials/` con permisos 700/600, fuera de git
+  (`.gitignore`) y dentro del backup restic cifrado.
+
 ### Cifrado de credenciales (Fernet)
 - Algoritmo: AES-128-CBC con HMAC-SHA256 (via Fernet)
 - Clave: 256 bits (32 bytes), generada con `Fernet.generate_key()`

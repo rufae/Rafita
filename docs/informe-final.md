@@ -133,6 +133,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | 3.6 | **Backup y restore reales** (ampliado por el propietario a *todos* los servicios): restic cifrado al USB, diario 03:30 solo si el USB está conectado, retención 7/4/6, snapshot diario de configuración del Dell y **aviso por Telegram**. Restauración verificada sin destruir producción (detalle en §7). Incluyó el **renombrado seguro del usuario del HP** a `server` (mismo UID/GID, sin pérdida de datos); verificación posterior concreta: **0 rutas antiguas** en composes, montajes de contenedores, cron, systemd y sudoers, más comprobaciones funcionales de NPM, Portainer, Glances, wg-easy, Nextcloud, BuenaTierra y AdGuard. |
 | 3.7 | **Actualización y rollback**: versión verificable (0.2.0 en imagen y `/health`), downtime medido (**4,7 s** actualizar, **5,1 s** volver atrás), rollback ejecutado de verdad y prueba de nodos independientes (Dell actualizado con el agente en marcha). |
 | 3.8 | **GPU opcional de la torre** (petición del propietario): detección automática con sonda cacheada y respaldo al nodo CPU; medido **~12× más rápido** con GPU. Incluye soporte de cuenta de servicio de Google y el arreglo del panel `/status`. |
+| 3.9 | **Google Drive y calendario dirigido** (petición del propietario): búsqueda y lectura de documentos compartidos (solo lectura) y comando `/calendario` para fijar el calendario desde el bot sin revelar el correo. Verificado con datos reales (25 ficheros visibles, búsqueda y lectura OK). |
 
 ### Fase 4 — Documentación y entrega
 

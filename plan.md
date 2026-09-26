@@ -2463,6 +2463,27 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - Tests: +7 (selector, caché de sonda, fallback y config); gate
     **201 passed**, 26 skipped; ruff/formato/mypy limpios.
 
+- [x] **3.9 Google: Drive (buscar/leer) y calendario dirigido**
+  *(petición del propietario, 2026-09-26)*
+  **Completada 2026-09-26.**
+  - **Hallazgo**: la cuenta de servicio **no ve los calendarios compartidos**
+    en `calendarList` (limitación real de Google), así que la autodetección no
+    bastaba. Solución sin revelar el correo: comando **`/calendario <id>`**
+    (solo admins) que valida el acceso y guarda el calendario en la base de
+    datos; `GOOGLE_CALENDAR_ID` queda como override por entorno.
+  - **Drive implementado** (solo lectura de lo compartido con la cuenta):
+    herramientas `search_google_drive` (nombre o texto) y
+    `read_google_drive_file` (Google Docs/Sheets/Slides exportados a texto,
+    PDF con `pypdf`, ficheros de texto). El permiso pasa a `drive.readonly`.
+  - **Evidencia real** (en el contenedor desplegado): autenticado con cuenta de
+    servicio; **25 ficheros visibles**; búsqueda por nombre (5 primeros
+    caracteres de un fichero real) → 1 resultado; lectura de un documento →
+    1.311 caracteres. Sin exponer nombres ni contenido en los logs.
+  - Tests: +7 (búsqueda, lectura de Doc, validación de calendario, comando
+    admin-only, registro de herramientas); gate **212 passed**, 26 skipped;
+    ruff/formato/mypy limpios.
+  - Nota: el panel `/status` ahora muestra **23 herramientas**.
+
 **Bloqueado / no verificable (rellenar si aplica):**
 
 Ninguno: 3.0–3.7 quedaron decididas, desplegadas y verificadas con evidencia

@@ -1120,6 +1120,27 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 result["message"] += "\n%s" % sync_result.get("message", "")
             return result
 
+        elif func_name == "search_google_drive":
+            result = await google_service.search_drive(
+                query=args.get("query", ""),
+                max_results=int(args.get("max_results", 10) or 10),
+            )
+            return result
+
+        elif func_name == "read_google_drive_file":
+            result = await google_service.read_drive_file(file_id=args.get("file_id", ""))
+            if not result.get("success"):
+                return result
+            return {
+                "success": True,
+                "message": "Contenido de '%s'%s:\n\n%s"
+                % (
+                    result.get("name", ""),
+                    " (recortado)" if result.get("truncated") else "",
+                    result.get("text", ""),
+                ),
+            }
+
         elif func_name == "ingest_file":
             filename = args.get("filename", "").strip()
             folder = args.get("folder", get_taxonomy().path("resources")).strip()

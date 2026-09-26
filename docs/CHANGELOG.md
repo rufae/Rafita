@@ -71,6 +71,10 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Google Drive (solo lectura de lo compartido): herramientas
+  `search_google_drive` y `read_google_drive_file` (Docs/Sheets/Slides, PDF y
+  texto) y comando `/calendario <id>` para fijar el calendario desde el bot
+  (la cuenta de servicio no ve calendarios compartidos en su lista).
 - Google Calendar con cuenta de servicio: detección automática del JSON
   (`service_account.json`), soporte en los dos módulos y **autodetección del
   calendario compartido** (sin necesidad de configurar el correo);
