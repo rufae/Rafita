@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from src.config import settings
 from src.database import db
 from src.logger import logger
+from src.services.google_service import google_service
 
 
 async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -201,21 +202,15 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not message or not user:
         return
 
+    admin_ids = settings.admin_ids
+    if admin_ids and user.id not in admin_ids:
+        await message.reply_text("Solo los administradores pueden configurar Google Calendar.")
+        return
+
     CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
     cred_file = CREDENTIALS_DIR / "credentials.json"
     service_file = CREDENTIALS_DIR / "service_account.json"
-
-    if cred_file.exists():
-        await message.reply_text(
-            "✅ *Google Calendar ya está configurado*"
-            "\n\nArchivo encontrado: `credentials.json`"
-            "\n\nUsa `/status` para verificar el panel de control."
-            "\nSi necesitas reemplazar las credenciales, borra el archivo manualmente"
-            " y vuelve a ejecutar este comando.",
-            parse_mode="Markdown",
-        )
-        logger.info("setup_google: credentials already present for user %d", user.id)
-        return
+    args = context.args or []
 
     if service_file.exists():
         await message.reply_text(
@@ -226,9 +221,41 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    admin_ids = settings.admin_ids
-    if admin_ids and user.id not in admin_ids:
-        await message.reply_text(" Solo los administradores pueden configurar Google Calendar.")
+    if cred_file.exists():
+        # Flujo determinista (sin depender del modelo):
+        #   /setup_google            -> estado o enlace de autorizacion
+        #   /setup_google <codigo>   -> intercambia el codigo por el token
+        if args:
+            code = " ".join(args).strip()
+            result = await google_service.exchange_code(code)
+            await message.reply_text(result.get("message", "Resultado desconocido."))
+            logger.info("setup_google: codigo intercambiado para user %d", user.id)
+            return
+
+        if await google_service.initialize():
+            await message.reply_text(
+                "✅ Google Calendar ya está conectado y funcionando.\n\n"
+                "Prueba a pedirme que cree un evento o usa /eventos."
+            )
+            return
+
+        result = await google_service.generate_auth_url()
+        if result.get("success"):
+            await message.reply_text(
+                "Para conectar tu Google Calendar:\n\n"
+                "1. Abre este enlace en tu navegador y autoriza la aplicación:\n"
+                "%s\n\n"
+                "2. Google te dará un código. Envíamelo así:\n"
+                "/setup_google <codigo>\n\n"
+                "(El código caduca pronto; si falla, repite /setup_google para "
+                "obtener un enlace nuevo.)" % result["auth_url"]
+            )
+        else:
+            await message.reply_text(
+                "No se pudo generar el enlace de autorización: %s"
+                % result.get("message", "error desconocido")
+            )
+        logger.info("setup_google: enlace de autorizacion enviado a user %d", user.id)
         return
 
     instructions = (
@@ -244,7 +271,8 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "1. Descarga tu `credentials.json` de Google Cloud Console\n"
         "2. Enviamelo AQUI como archivo adjunto en este chat\n"
         "   (lo guardare automaticamente en la carpeta correcta)\n\n"
-        "Una vez colocado, ejecuta `/setup_google` de nuevo o reinicia el bot."
+        "Despues ejecuta `/setup_google` para recibir el enlace de autorizacion "
+        "y completa con `/setup_google <codigo>`."
     )
 
     await message.reply_text(instructions, parse_mode="Markdown")
