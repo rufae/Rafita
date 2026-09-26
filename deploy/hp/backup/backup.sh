@@ -96,6 +96,15 @@ fi
 
 NC_MAINTENANCE=0
 PORTAINER_STOPPED=0
+USB_LOG_DIR="$USB_MOUNT/Servidor/server-nodochicohp/logs"
+USB_LOG="$USB_LOG_DIR/backup-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "$USB_LOG_DIR"
+
+copy_log_to_usb() {
+    cp -f "$LOG" "$USB_LOG" 2>/dev/null || true
+    ls -1t "$USB_LOG_DIR"/backup-*.log 2>/dev/null | tail -n +31 | xargs -r rm -f
+}
+
 cleanup() {
     if [ "$NC_MAINTENANCE" = "1" ]; then
         docker exec -u www-data nextcloud_app php occ maintenance:mode --off >/dev/null 2>&1 || true
@@ -105,6 +114,7 @@ cleanup() {
         docker start portainer >/dev/null 2>&1 || true
         log "Portainer reiniciado."
     fi
+    copy_log_to_usb
 }
 trap cleanup EXIT
 
