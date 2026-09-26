@@ -118,6 +118,7 @@ class OllamaClient:
         self.vision_model: str = settings.ollama_vision_model
         self.reasoning_effort: str = settings.ollama_reasoning_effort
         self.num_thread: int = settings.ollama_num_thread
+        self.request_timeout: int = settings.ollama_request_timeout
         self.temperature: float = settings.llm_temperature
         self.max_tokens: int = settings.llm_max_tokens
         self._ready: bool = False
@@ -331,11 +332,15 @@ class OllamaClient:
         }
 
         try:
-            stream = await self._client.chat.completions.create(
+            stream = await self._create_completion(
                 **params,
                 extra_body=self._ollama_extra_body(2048),
             )
-            async for chunk in stream:
+            while True:
+                try:
+                    chunk = await self._next_chunk(stream)
+                except StopAsyncIteration:
+                    break
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
@@ -361,6 +366,32 @@ class OllamaClient:
             )
         return result
 
+    async def _create_completion(self, **kwargs: Any) -> Any:
+        """Chat completion with a hard, configurable ceiling.
+
+        A silent network cut (packets dropped) would otherwise wait for the
+        SDK read timeout (1200 s). Bounded to OLLAMA_REQUEST_TIMEOUT (600 s by
+        default); connection refused/RST still fails in seconds.
+        """
+        try:
+            return await asyncio.wait_for(
+                self._client.chat.completions.create(**kwargs),
+                timeout=float(self.request_timeout),
+            )
+        except TimeoutError as e:
+            raise OllamaClientError(
+                "El modelo no respondio en %ds (posible corte de red)" % self.request_timeout
+            ) from e
+
+    async def _next_chunk(self, stream: Any, timeout: float = 120.0) -> Any:
+        """Next streaming chunk with an inter-chunk ceiling (dead peer)."""
+        try:
+            return await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+        except TimeoutError as e:
+            raise OllamaClientError(
+                "El modelo dejo de responder a mitad de la generacion (corte de red)"
+            ) from e
+
     def _ollama_extra_body(self, num_ctx: int, keep_alive: Any = -1) -> dict[str, Any]:
         """Native Ollama fields forwarded through the OpenAI-compatible layer.
 
@@ -377,7 +408,7 @@ class OllamaClient:
         return extra
 
     async def _chat_sync(self, params: dict[str, Any]) -> str:
-        response: ChatCompletion = await self._client.chat.completions.create(
+        response: ChatCompletion = await self._create_completion(
             **params,
             extra_body=self._ollama_extra_body(2048),
         )
@@ -394,11 +425,15 @@ class OllamaClient:
 
     async def _chat_stream(self, params: dict[str, Any]) -> str:
         full_content: list[str] = []
-        stream_response = await self._client.chat.completions.create(
+        stream_response = await self._create_completion(
             **params,
             extra_body=self._ollama_extra_body(2048),
         )
-        async for chunk in stream_response:
+        while True:
+            try:
+                chunk = await self._next_chunk(stream_response)
+            except StopAsyncIteration:
+                break
             if chunk.choices and len(chunk.choices) > 0:
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
@@ -471,7 +506,7 @@ class OllamaClient:
         _t_api_start = _time.time()
 
         async def _do_tool_chat():
-            response = await self._client.chat.completions.create(
+            response = await self._create_completion(
                 **params,
                 extra_body=self._ollama_extra_body(4096),
             )
@@ -536,7 +571,7 @@ class OllamaClient:
         }
 
         try:
-            response = await self._client.chat.completions.create(
+            response = await self._create_completion(
                 **params,
                 extra_body=self._ollama_extra_body(2048, keep_alive=-1 if same_model else 0),
             )
