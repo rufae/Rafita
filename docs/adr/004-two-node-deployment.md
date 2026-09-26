@@ -211,8 +211,9 @@ Collabora/Nextcloud.
 
 - `.env` del HP: `AI_PROVIDER=ollama`, `OLLAMA_HOST=http://100.<dell>:11434`,
   `OLLAMA_MODEL` según benchmark, `EMBEDDING_MODEL` según benchmark.
-- 3.3 (readiness) debe usar `AIProvider.check_health()` (2.5) en lugar del
-  `/api/tags` específico de Ollama si en el futuro cambia el runtime.
+- ~~3.3 (readiness) debe usar `AIProvider.check_health()`~~ → hecho (3.3,
+  2026-09-26): `/ready` es genérico (proveedor ollama u openai-compatible),
+  distingue `ready`/`degraded`/`not_ready`, incluye vault y falla rápido.
 - Pin de versión de Ollama y de los modelos en el Dell; documentar
   configuración para reconstruirlo (3.6).
 - Los pesos viven en el NVMe del Dell; no requieren backup de datos de usuario.

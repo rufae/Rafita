@@ -51,30 +51,22 @@ async def health():
     return {"status": "ok", "service": "rafita-gateway", "timestamp": time.time()}
 
 
-async def _check_ollama() -> dict[str, Any]:
-    import httpx
+async def _check_ai() -> dict[str, Any]:
+    """AI provider health via the generic `AIProvider.check_health()` (task 2.5).
 
-    from src.config import settings
+    Task 3.3: no Ollama-specific `/api/tags` here; the selected provider
+    (ollama or openai-compatible) reports its own state, including whether the
+    chat model is available and loaded.
+    """
+    from src.ollama_client import llm
 
-    t0 = time.time()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
-            resp.raise_for_status()
-            models = [m.get("name", "") for m in resp.json().get("models", [])]
+        return await llm.check_health()
     except Exception as e:
-        return {"status": "error", "detail": "Ollama unreachable: %s" % str(e)[:150]}
-    chat_model = settings.ollama_model
-    available = any(m == chat_model or m.startswith(chat_model + ":") for m in models)
-    result: dict[str, Any] = {
-        "status": "ok" if available else "degraded",
-        "latency_ms": round((time.time() - t0) * 1000),
-        "chat_model": chat_model,
-        "chat_model_available": available,
-    }
-    if not available:
-        result["detail"] = "chat model '%s' not pulled yet" % chat_model
-    return result
+        return {
+            "status": "unhealthy",
+            "detail": "AI health check failed: %s" % str(e)[:150],
+        }
 
 
 async def _check_vector_db() -> dict[str, Any]:
@@ -83,26 +75,64 @@ async def _check_vector_db() -> dict[str, Any]:
     return await vector_db.health()
 
 
+def _check_vault() -> dict[str, Any]:
+    """The Obsidian vault must be mounted, readable and writable (task 3.3)."""
+    import os
+
+    from src.config import settings
+
+    path = settings.obsidian_vault_path
+    if not path.exists():
+        return {"status": "unhealthy", "path": str(path), "detail": "vault path not found"}
+    if not path.is_dir():
+        return {"status": "unhealthy", "path": str(path), "detail": "vault path is not a directory"}
+    readable = os.access(path, os.R_OK)
+    writable = os.access(path, os.W_OK)
+    if not readable:
+        return {"status": "unhealthy", "path": str(path), "detail": "vault not readable"}
+    if not writable:
+        return {"status": "degraded", "path": str(path), "detail": "vault is read-only"}
+    return {"status": "ok", "path": str(path), "writable": True}
+
+
 def _check_telegram() -> dict[str, Any]:
     if _bot_ref is None:
-        return {"status": "error", "detail": "bot not configured"}
+        return {"status": "unhealthy", "detail": "bot not configured"}
     status_fn = getattr(_bot_ref, "polling_status", None)
     if status_fn is None:
-        return {"status": "unknown", "detail": "polling state not available"}
+        return {"status": "unhealthy", "detail": "polling state not available"}
     return status_fn()
+
+
+_NOT_READY_STATES = {"unhealthy", "error", "uninitialized", "unknown"}
 
 
 @app.get("/ready")
 async def readiness():
-    """Readiness: verifies the critical dependencies before serving traffic."""
+    """Readiness: distinguishes process liveness from service readiness (3.3).
+
+    - `ready` (HTTP 200): every dependency is ok.
+    - `degraded` (HTTP 200): the service can answer, but with caveats (e.g.
+      the chat model is not loaded yet and will load on the first request).
+    - `not_ready` (HTTP 503): some dependency is down (AI backend unreachable,
+      vector DB broken, vault missing, Telegram polling dead).
+    """
     checks = {
-        "ollama": await _check_ollama(),
+        "ai": await _check_ai(),
         "vector_db": await _check_vector_db(),
+        "vault": _check_vault(),
         "telegram": _check_telegram(),
     }
-    ready = all(check.get("status") == "ok" for check in checks.values())
+    statuses = {name: check.get("status") for name, check in checks.items()}
+    if all(status == "ok" for status in statuses.values()):
+        overall = "ready"
+    elif any(status in _NOT_READY_STATES for status in statuses.values()):
+        overall = "not_ready"
+    else:
+        overall = "degraded"
+    ready = overall != "not_ready"
     payload = {
-        "status": "ready" if ready else "not_ready",
+        "status": overall,
         "ready": ready,
         "checks": checks,
         "timestamp": time.time(),

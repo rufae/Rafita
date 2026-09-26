@@ -2082,17 +2082,43 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       cambia. Comprobado tras el corte: ambos nodos volvieron solos (ollama y
       tailscaled `active`) y `/ready` OK con latencia 17 ms.
 
-- [ ] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
-  Depende de 0.6 y 3.2. Tareas: separar "el proceso vive" de "el servicio
-  está listo para atender" (LLM remoto alcanzable y con modelos cargados,
-  Chroma accesible, vault montado), con estados degradados explícitos si algo
-  falla parcialmente. Si se eligió un runtime distinto de Ollama en 3.0(a), el
-  check de `/ready` debe usar el método genérico `check_health()` del
-  `AIProvider` (ya construido en 2.5), no la llamada específica a
-  `/api/tags` de Ollama que usa hoy el código de 0.6.
-  Evidencia requerida: apagar cada dependencia una por una (incluyendo
-  desconectar el nodo Dell) y confirmar que el estado de readiness lo refleja
-  de forma distinguible de un fallo de Chroma/vault.
+- [x] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
+  **Completada 2026-09-26.** Evidencia:
+
+  - **`check_health()` genérico en los dos proveedores**: `/ready` ya no llama
+    a `/api/tags` de Ollama (0.6); usa `AIProvider.check_health()` (2.5).
+    `OllamaClient` distingue:
+    - `ok` = alcanzable + modelo de chat disponible **y cargado**;
+    - `degraded` = disponible pero sin cargar (se cargará en la 1ª petición);
+    - `unhealthy` = inalcanzable o modelo sin descargar.
+    `OpenAICompatClient` hace lo equivalente (sin estado "cargado").
+    **Fallo rápido**: techo de 10 s en `models.list` + timeout 5 s en
+    `/api/ps`, para que un nodo caído no bloquee el probe (requisito 3.4).
+  - **Check de vault nuevo** (existencia, legible, escribible): antes no
+    existía. Vault ausente → `unhealthy`; solo lectura → `degraded`.
+  - **Agregación explícita**: `ready` (200, todo ok) / `degraded` (200, el
+    servicio responde con matices) / `not_ready` (503, alguna dependencia
+    caída). `/health` sigue siendo liveness puro.
+  - **Sonda reutilizable versionada** `deploy/hp/ready_probe.py` (sin arrancar
+    el bot; flags `PROBE_SKIP_VECTOR`, `PROBE_UNLOAD`, `PROBE_NO_BOT` y
+    overrides de entorno) y **5 escenarios ejecutados** en el HP con la imagen
+    desplegada:
+    ```
+    baseline real     HTTP 200 ready     ai=ok(loaded) vector=ok vault=ok telegram=ok
+    LLM caído         HTTP 503 not_ready ai=unhealthy("AI backend unreachable") resto ok
+    Chroma no init    HTTP 503 not_ready vector_db=error                          resto ok
+    vault inexistente HTTP 503 not_ready vault=unhealthy                          resto ok
+    modelo descargado HTTP 200 degraded  ai=degraded (resto ok; "se cargará en la 1ª petición")
+    Telegram caído    HTTP 503 not_ready telegram=unhealthy                       resto ok
+    ```
+    (El "LLM caído" se simuló apuntando `OLLAMA_HOST` a un puerto sin servicio
+    del HP: mismo fallo de conexión que un Dell apagado, y falla en <10 s.)
+  - Tras el escenario de descarga se recalentó el modelo (1,4 s desde caché de
+    página del Dell) y producción volvió a `ready` con `model_loaded: true`.
+  - Tests: +11 (readiness, agregación, vault, check_health de ambos
+    proveedores); gate completo **173 passed, 25 skipped**, ruff/formato/mypy
+    limpios. Desplegado en el HP (restart del contenedor) y verificado en
+    vivo.
 
 - [ ] **3.4 Pruebas de caos, incluyendo caída de un nodo completo** *(antes 3.2, ampliada)*
   Tareas y evidencia requerida (una por una, con resultado real pegado):

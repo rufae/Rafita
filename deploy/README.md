@@ -34,7 +34,8 @@ deploy/
 │   └── 03-benchmark.sh       # tokens/s y latencia contra la API real
 └── hp/                       # nodo de aplicación (rafa)
     ├── README.md             # notas de despliegue del HP
-    └── docker-compose.hp.yml # tarea 3.2 (sin ollama-service, puerto remapeado)
+    ├── docker-compose.hp.yml # tarea 3.2 (sin ollama-service, puerto remapeado)
+    └── ready_probe.py        # sonda de readiness para evidencias (3.3/3.4)
 ```
 
 ## Orden de despliegue
