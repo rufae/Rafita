@@ -45,6 +45,8 @@ notify() {
         --data-urlencode "text=${text}" || true
 }
 
+trap 'notify "❌ Backup del homelab FALLIDO. Revisa /var/log/rafita-backup.log en el HP."' ERR
+
 exec 9>"$LOCK"
 if ! flock -n 9; then
     log "Otro backup en curso; se omite esta ejecucion."
@@ -70,6 +72,8 @@ log "USB montado en $USB_MOUNT."
 
 export RESTIC_REPOSITORY="$RESTIC_REPO"
 export RESTIC_PASSWORD_FILE
+export XDG_CACHE_HOME="/var/cache/restic"
+mkdir -p "$XDG_CACHE_HOME"
 if ! restic snapshots >/dev/null 2>&1; then
     log "Repositorio restic no inicializado; ejecuta deploy/hp/backup/install.sh"
     exit 1
@@ -104,19 +108,20 @@ docker exec nextcloud_db pg_dump -U nextcloud -d nextcloud -Fc \
 
 # --- 2. SQLite (Rafita y NPM) con la API .backup ----------------------------
 log "SQLite: rafita.db..."
-docker exec rafita-agent-core python - <<'PY'
+docker exec -i rafita-agent-core python - <<'PY'
 import sqlite3
 src = sqlite3.connect("/data/db/rafita.db")
-dst = sqlite3.connect("/data/backups/rafita.db.snapshot")
+dst = sqlite3.connect("/tmp/rafita.db.snapshot")
 with dst:
     src.backup(dst)
 src.close(); dst.close()
 print("rafita.db snapshot OK")
 PY
-docker cp rafita-agent-core:/data/backups/rafita.db.snapshot "$STAGE/rafita.db" >/dev/null
+docker cp rafita-agent-core:/tmp/rafita.db.snapshot "$STAGE/rafita.db" >/dev/null
+docker exec rafita-agent-core rm -f /tmp/rafita.db.snapshot >/dev/null 2>&1 || true
 
 log "SQLite: nginx-proxy-manager..."
-docker run --rm \
+docker run --rm -i -u 0 \
     -v "$HOME_DIR/npm/data:/src:ro" \
     -v "$STAGE:/dst" \
     rafita-rafita-agent-core python - <<'PY'
@@ -148,6 +153,9 @@ done
 # --- 5. Snapshot de configuracion del Dell ----------------------------------
 log "Snapshot de configuracion del Dell..."
 if scp -q -o BatchMode=yes -o ConnectTimeout=10 \
+    -i /home/server/.ssh/id_ed25519 \
+    -o UserKnownHostsFile=/home/server/.ssh/known_hosts \
+    -o StrictHostKeyChecking=accept-new \
     "$DELL_HOST:/home/server/backups/dell-config-latest.tar.gz" "$DELL_SNAPSHOT" 2>/dev/null; then
     log "  snapshot del Dell descargado."
 else
@@ -183,7 +191,9 @@ restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
 log "restic check..."
 restic check
 
-SNAP="$(restic snapshots --last 1 --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["short_id"] if d else "?")' 2>/dev/null || echo '?')"
+SNAP="$(restic snapshots --latest 1 --json 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[-1]["short_id"] if d else "?")' \
+    || echo '?')"
 SIZE="$(restic stats --mode raw-data 2>/dev/null | grep -i 'Total Size' || true)"
 log "=== Backup completado: snapshot $SNAP ==="
 notify "✅ Backup diario completado en el USB RAFAEL (snapshot $SNAP). $SIZE"

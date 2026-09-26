@@ -160,6 +160,47 @@ docker compose logs rafita-agent-core | grep "TELEMETRY A"
 
 ## 5. Restauración desde backup
 
+### 5.1 Backup diario del homelab (USB RAFAEL, restic)
+
+El backup diario cubre TODOS los servicios del HP (tarea 3.6): Rafita,
+BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y configuración.
+Repositorio: `/mnt/rafael/Servidor/server-nodochicohp/restic`.
+
+```bash
+# Montar el USB si hace falta
+sudo systemctl start mnt-rafael.mount
+
+# Listar snapshots (contrasena: /root/.restic-password o tu gestor)
+sudo bash -c 'export RESTIC_REPOSITORY=/mnt/rafael/Servidor/server-nodochicohp/restic \
+  RESTIC_PASSWORD_FILE=/root/.restic-password; restic snapshots'
+
+# Verificación NO destructiva: restaurar a un directorio temporal
+sudo restic restore latest --target /var/lib/rafita-backup/verify
+sudo restic restore latest --target /var/lib/rafita-backup/verify \
+  --include /var/lib/rafita-backup/stage      # dumps SQL y SQLite del stage
+
+# Restaurar solo un servicio, p. ej. Rafita
+sudo restic restore latest --target /tmp/restore --include /home/server/proyectos/rafita
+```
+
+Postgres (BuenaTierra y Nextcloud): los dumps `-Fc` están en el stage del
+snapshot; se restauran en un contenedor temporal o en el de producción:
+
+```bash
+docker run -d --rm --name restore-pg -e POSTGRES_HOST_AUTH_METHOD=trust postgres:15.4-alpine
+docker cp .../buenatierra.dump restore-pg:/tmp/
+docker exec restore-pg createdb -U postgres buenatierra
+docker exec restore-pg pg_restore -U postgres -d buenatierra --no-owner /tmp/buenatierra.dump
+# Nextcloud: el dump referencia el rol oc_admin; crearlo o usar --no-owner
+```
+
+Verificación de Rafita restaurado (evidencia de 3.6): `PRAGMA integrity_check`
+= ok, `chroma.sqlite3` con sus embeddings, `.env` con la misma `ENCRYPTION_KEY`
+(roundtrip Fernet correcto) y `ready_probe.py` con `DATA_DIR`/`VECTOR_DB_DIR`/
+`OBSIDIAN_VAULT_DIR` apuntando al restore → `HTTP 200 ready`.
+
+### 5.2 Backup local de Rafita (rápido, sin USB)
+
 ```bash
 # 1. Detener Rafita
 docker compose down

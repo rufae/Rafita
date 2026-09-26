@@ -2249,8 +2249,8 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - Tests: +10 (`test_log_redaction.py`); gate **185 passed, 25 skipped**,
     ruff/formato/mypy limpios; desplegado y verificado en el HP.
 
-- [ ] **3.6 Backup y restore reales** *(antes 3.4, con nota de alcance)*
-  **En ejecución 2026-09-26. Alcance ampliado por el usuario: backup de TODOS
+- [x] **3.6 Backup y restore reales** *(antes 3.4, con nota de alcance)*
+  **Completada 2026-09-26. Alcance ampliado por el usuario: backup de TODOS
   los servicios del HP al USB, no solo Rafita.** Plan aprobado y decisiones:
 
   1. **Renombrado `rafa` → `server`** en el HP (mismo UID/GID, home movido y
@@ -2282,9 +2282,37 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   instalador, README), `deploy/dell/dell-config-snapshot.sh` +
   `install-backup.sh`, `deploy/hp/rename-user-rafa-to-server.sh`.
 
-  Evidencia requerida: log del backup, verificación de restore no destructiva
-  (integridad SQLite, Chroma, Fernet), snapshot real en el USB y notificación
-  Telegram recibida.
+  **Evidencia [2026-09-26]:**
+  - **Renombrado** `rafa`→`server`: ver punto 12 del registro de decisiones;
+    `/home/rafa` ya no existe, los 12 contenedores arriba y `/ready` OK.
+  - **Instalación**: restic 0.18.1, unidades systemd (`mnt-rafael.mount` +
+    `.automount` por UUID `1916-3621`, `rafita-backup.service`, timer diario
+    03:30 con `Persistent=true`), `usb-eject`, repositorio restic inicializado
+    en el USB. **Contenido previo del USB intacto** (RAFA, System Volume
+    Information, .Trash) + `Servidor/server-nodochicohp/{restic,logs}` y
+    `Servidor/server-dell`. Snapshot de config del Dell instalado con cron
+    03:00 (`dell-config-20260926.tar.gz`).
+  - **3 pasadas reales del backup** (12:31, 12:33 y 12:37): 2,183 GiB por
+    snapshot, `restic check` "no errors were found" en todas; la última ya con
+    el **snapshot del Dell descargado** (fix del `scp` con la clave de
+    `server`); snapshot final `354738f5`. Notificaciones de Telegram enviadas.
+  - **Contenido del stage en el snapshot**: `buenatierra.dump` (102 MB),
+    `nextcloud.dump`, `rafita.db`, `npm-database.sqlite`,
+    `portainer_data.tgz`, volúmenes de BuenaTierra y
+    `dell-config-latest.tar.gz`.
+  - **Verificación de restore NO destructiva** (a `/var/lib/rafita-backup/verify`):
+    - SQLite restaurado: `PRAGMA integrity_check` = **ok**; Chroma con sus 2
+      embeddings.
+    - `ENCRYPTION_KEY` restaurada **idéntica** a la viva; roundtrip Fernet con
+      la API real del módulo (`encrypt_value`/`decrypt_value`) = **True**.
+    - `ready_probe.py` con `DATA_DIR`/`VECTOR_DB_DIR`/`OBSIDIAN_VAULT_DIR`
+      apuntando al restore: **HTTP 200 ready** (ai/vector_db/vault/telegram).
+    - `pg_restore` en contenedor temporal: **BuenaTierra 36 tablas (33 con
+      datos)**; **Nextcloud 204 tablas y `oc_users`=1**; único error benigno
+      (`role "oc_admin" does not exist`, rol propietario del dump; se resuelve
+      con `--no-owner` o creando el rol).
+  - Runbook actualizado (`docs/runbook.md` 5.1 "Backup diario del homelab").
+  - Sudo temporal revertido en ambos nodos al cierre.
 
 - [ ] **3.7 Upgrade y rollback** *(antes 3.5, con nota de alcance)*
   Tareas: documentar y probar un ciclo real de actualización de versión
