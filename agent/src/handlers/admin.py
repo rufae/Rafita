@@ -198,6 +198,29 @@ async def alertas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 CREDENTIALS_DIR = Path("/workspace/credentials")
 
 
+async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fija el calendario de Google a usar (tarea 3.9). Solo administradores."""
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    admin_ids = settings.admin_ids
+    if admin_ids and user.id not in admin_ids:
+        await message.reply_text("Solo los administradores pueden cambiar el calendario.")
+        return
+    args = context.args or []
+    if not args:
+        await message.reply_text(
+            "Calendario actual: %s\n\nPara fijarlo:\n/calendario tu-correo@gmail.com\n\n"
+            "Antes debes compartir ese calendario con "
+            "rafita@rafita-500317.iam.gserviceaccount.com (permiso «Hacer cambios en "
+            "los eventos»)." % google_service.calendar_id
+        )
+        return
+    result = await google_service.set_calendar_id(args[0])
+    await message.reply_text(result.get("message", "Resultado desconocido."))
+
+
 async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     user = update.effective_user
