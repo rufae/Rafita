@@ -86,21 +86,42 @@ Si necesitas rotar la clave de cifrado (por compromiso sospechado o mantenimient
 
 ## Seguridad de red
 
-### Puertos expuestos por defecto
+### Topología desplegada (dos nodos, actualizado 2026-09-26)
 
-| Puerto | Servicio | Expuesto a | Propósito |
+| Componente | Nodo | Expuesto a | Control |
 |---|---|---|---|
-| 11434 | Ollama API | `localhost` (Docker network interna) | Inferencia de modelos |
-| 8000 | FastAPI Gateway | `localhost` | API interna del asistente |
-| 8001 | Voice Stream WS | `localhost` | Streaming de voz por WebSocket |
+| Ollama API (11434) | Dell | `0.0.0.0:11434` | ufw + Tailscale (**ver nota**) |
+| Gateway (8010) y voz (8001) | HP | `127.0.0.1` | solo local |
+| Tailscale (WireGuard) | ambos | tailnet del propietario | cifrado en tránsito |
 
-**Verificación**: en `docker-compose.yml` los tres puertos se publican enlazados a
-loopback (`127.0.0.1:11434`, `127.0.0.1:8000` y `127.0.0.1:8001`), por lo que
-**no son accesibles desde otras interfaces de red** del host. Si editas el
-compose, mantén el prefijo `127.0.0.1:` para no exponerlos.
+**Nota importante (hallazgo de la prueba de caos 3.4):** en el Dell, la cadena
+`ts-input` de Tailscale se evalúa **antes** que las reglas de ufw y acepta todo
+el tráfico de `tailscale0`. La regla de ufw "11434 solo desde la IP del HP"
+queda por tanto **sombreada** (comprobado: borrarla no corta el acceso). En la
+práctica, el motor de IA es accesible desde **cualquier dispositivo
+autenticado en el tailnet** (incluido un móvil fuera de casa), no solo desde
+el HP. Es una **decisión aceptada explícitamente por el propietario** por
+utilidad; para restringirlo hay procedimiento documentado en `plan.md`
+(3.4.1): ACL de Tailscale o regla iptables insertada antes de `ts-input`.
 
-Si necesitas acceso remoto (homelab), usa **Tailscale** o un túnel SSH en lugar de
-exponer los puertos directamente a internet.
+**La red local sigue protegida**: el `deny` por defecto de ufw bloquea 11434
+desde la LAN (verificado con un `curl` desde el PC de desarrollo).
+
+**Cifrado en tránsito**: todo el tráfico entre nodos viaja por WireGuard
+(Tailscale); no hay HTTP en claro entre máquinas.
+
+**Backups**: repositorio restic **cifrado** en un USB (vfat); la contraseña
+vive solo en el HP (root-only) y en el gestor del propietario. Extracción
+segura con `usb-eject`.
+
+**Timeouts del cliente**: una caída de red silenciosa está acotada por
+`OLLAMA_REQUEST_TIMEOUT` (600 s por defecto); una conexión rechazada falla en
+segundos; los streams tienen un techo de 120 s entre fragmentos. La sonda
+`/ready` falla en ≤10 s.
+
+**Si se despliega en otro entorno**: mantén el prefijo `127.0.0.1:` en los
+puertos del agente y usa **Tailscale** o túnel SSH para el acceso remoto, nunca
+exposición directa a internet.
 
 ---
 

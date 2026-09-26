@@ -2,10 +2,12 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.ai.factory import create_ai_client
 from src.ai.openai_compat import OpenAICompatClient
 from src.config import settings
-from src.ollama_client import OllamaClient
+from src.ollama_client import OllamaClient, OllamaClientError
 
 
 def test_default_provider_is_local(monkeypatch):
@@ -246,6 +248,24 @@ async def test_openai_check_health_reports_model(monkeypatch):
     assert health["status"] == "ok"
     assert health["provider"] == "openai"
     assert health["model_available"] is True
+
+
+async def test_chat_sync_times_out_with_clear_error(monkeypatch):
+    """A hung backend must not wait for the SDK timeout (task 3.4/3.7 audit)."""
+    import asyncio as _asyncio
+
+    monkeypatch.setattr(settings, "ollama_request_timeout", 1)
+    client = OllamaClient()
+
+    async def slow_create(**kwargs):
+        await _asyncio.sleep(5)
+        return SimpleNamespace(choices=[])
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        chat=SimpleNamespace(completions=SimpleNamespace(create=slow_create))
+    )
+    with pytest.raises(OllamaClientError, match="no respondio"):
+        await client._chat_sync({"model": "m", "messages": []})
 
 
 async def test_initialize_tolerates_unreachable_backend(monkeypatch):

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     ollama_vision_model: str = Field("gemma4:12b", alias="OLLAMA_VISION_MODEL")
     ollama_reasoning_effort: str = Field("none", alias="OLLAMA_REASONING_EFFORT")
     ollama_num_thread: int = Field(0, alias="OLLAMA_NUM_THREAD", ge=0)
+    ollama_request_timeout: int = Field(600, alias="OLLAMA_REQUEST_TIMEOUT", ge=30)
     llm_temperature: float = Field(0.7, alias="LLM_TEMPERATURE", ge=0.0, le=2.0)
     llm_max_tokens: int = Field(4096, alias="LLM_MAX_TOKENS", ge=128, le=16384)
 

@@ -69,7 +69,7 @@ pruebas de caos, backups, observabilidad y documentación.
 | Área | Resultado |
 |---|---|
 | **Calidad RAG** (36 casos, español) | recall@3 = **1.0**, MRR@5 = **0.982**, 0 falsos positivos (umbral 0.49). Repetido en el despliegue real con resultado idéntico. |
-| **Fiabilidad de herramientas** (21 tools + 2 controles, 2 intentos) | **46/46 (100%)** en el despliegue real, **reproducido en una segunda ejecución completa** (mismo script y dataset; hash verificado) el 2026-09-26. La medición previa de 29/46 era un defecto del modo "razonamiento" del modelo, corregido. Detalle por herramienta y guía de re-verificación en `plan.md` 3.2 y `docs/auditoria-reverificacion.md`. |
+| **Fiabilidad de herramientas** (21 tools + 2 controles, 2 intentos) | **46/46 (100%)** en el despliegue real, **reproducido en una segunda ejecución completa** (mismo script y dataset; hash verificado). Además, **experimento controlado en la misma RTX 3060 donde se midió el 29/46**: con el ajuste del "razonamiento" desactivado vuelve a dar **46/46** → el salto es del ajuste, no del hardware. Detalle en `plan.md` 3.2 y `docs/auditoria-reverificacion.md`. |
 | **Latencia del modelo** (CPU, sin GPU) | 3,87 tok/s; respuesta típica ~16 s. La red entre nodos añade solo ~0,85 s. |
 | **Recursos del HP** | Agente: **160 MB / 2 GB**; los 11 servicios existentes no se degradan (carga 0,08–0,18 bajo backup completo). |
 | **Detección de fallos** | Dell caído: `/ready` en **1,2 s**; corte de red: 10 s (tope de diseño). Recuperación automática en todos los casos. |
@@ -233,6 +233,22 @@ revisión señaló como críticos:
 3. **Integridad tras el renombrado de usuario**: cero rutas antiguas en
    composes, montajes, cron, systemd y sudoers; y comprobación **funcional**
    de los servicios (no solo "contenedor arriba").
+
+Además, esta segunda revisión dejó dos comprobaciones menores que se han
+resuelto:
+
+- **Timeout del cliente real**: antes, una caída de red silenciosa podía
+  esperar hasta 20 minutos (timeout de la librería). Ahora el chat y las
+  herramientas están acotados por `OLLAMA_REQUEST_TIMEOUT` (600 s por
+  defecto, configurable) y el streaming tiene 120 s entre fragmentos; una
+  conexión rechazada falla en segundos. Con tests.
+- **Restricción de 11434**: el hallazgo del sombreado de ufw tiene ya **ítem
+  propio en el plan (3.4.1)**, con el alcance real documentado, la decisión
+  explícita del propietario y el procedimiento de restricción por si cambia.
+- **Coherencia Fase 3 ↔ Fase 4 (tarea 4.5)**: ADR-003, SECURITY.md y README
+  se han actualizado para reflejar la topología real de dos nodos y los
+  hallazgos de la Fase 3, en lugar de dejar documentación "cerrada" que
+  contradecía la realidad.
 
 Recomendación: ejecutar esa guía en una sesión fresca (sin leer la narrativa
 de `plan.md`, solo repo y nodos) antes de dar el proyecto por cerrado.

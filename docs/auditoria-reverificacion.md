@@ -50,6 +50,22 @@ docker exec rafita-agent-core python /workspace/agent/scripts/tool_calling_eval.
 ajuste; el 46/46 es en CPU (Dell) **con** el ajuste. No se está comparando
 hardware, se está midiendo el efecto del ajuste.
 
+**Experimento controlado (misma máquina del baseline):** para descartar el
+factor hardware, la suite se repitió en la **misma RTX 3060** del 29/46, con
+el código actual y el ajuste activo:
+
+```bash
+# En el PC con GPU (Ollama de evaluación en el puerto 11435)
+docker run --rm --network host -e TELEGRAM_TOKEN=dummy -e PYTHONPATH=/app/src \
+  -e OLLAMA_HOST=http://127.0.0.1:11435 -e OLLAMA_MODEL=gemma4:12b \
+  -e EMBEDDING_MODEL=bge-m3 -v "$PWD/agent/src:/app/src" -v "$PWD:/workspace" \
+  -w /app rafita-audit python /workspace/agent/scripts/tool_calling_eval.py --attempts 2
+# Resultado observado (2026-09-26 15:22:03–15:23:13 UTC): OVERALL: 46/46 (100%)
+```
+
+Con esto, el salto 29→46 queda atribuido al ajuste del `thinking`, no al
+cambio de máquina ni a la red.
+
 ---
 
 ## 2. Nextcloud: estado real de la contraseña

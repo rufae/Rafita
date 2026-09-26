@@ -66,6 +66,14 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   valor del compose era un placeholder distinto del real de los contenedores),
   se **rotó**, se verificó que la antigua no quedó en git/historial/logs y el
   `.env` se incluye ya en el backup cifrado.
+- Timeout del cliente de chat acotado y configurable
+  (`OLLAMA_REQUEST_TIMEOUT`, 600 s por defecto; 120 s entre fragmentos en
+  streaming): una caída de red silenciosa ya no puede esperar el timeout de la
+  SDK (1200 s); una conexión rechazada sigue fallando en segundos.
+- Pasada de coherencia Fase 3 ↔ Fase 4 (tarea 4.5) y ítem propio 3.4.1 para el
+  hallazgo del sombreado de ufw por Tailscale: ADR-003 con el experimento
+  controlado (46/46 en la misma RTX 3060 del baseline), SECURITY.md y README
+  reescritos para la topología real de dos nodos.
 - Guía de re-verificación independiente (`docs/auditoria-reverificacion.md`)
   con los comandos reproducibles de los puntos críticos (tool-calling 46/46
   reproducible con el mismo script, contraseña de Nextcloud e integridad tras

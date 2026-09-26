@@ -1357,9 +1357,11 @@ posterior queda contaminada).
   medición eran efecto del **thinking** de `gemma4:12b` (activo por defecto):
   el razonamiento consumía el presupuesto de tokens antes de emitir la tool.
   Con `reasoning_effort=none` (fix `5698227`), la suite completa repetida
-  desde el HP contra el LLM del Dell da **46/46 (100%)** — ver 3.2. Este
-  baseline de 29/46 queda como histórico (medido sin el ajuste) y no debe
-  usarse como referencia de fiabilidad del modelo.
+  desde el HP contra el LLM del Dell da **46/46 (100%)** — ver 3.2. Además, el
+  **experimento controlado en esta misma RTX 3060** con el ajuste activo
+  volvió a dar **46/46**, confirmando que el salto es del ajuste y no del
+  hardware. Este baseline de 29/46 queda como histórico (medido sin el
+  ajuste) y no debe usarse como referencia de fiabilidad del modelo.
 
 - [x] **1.8 Tests de Fernet no vacuos**
   Hallazgo: en `test_fernet.py`, los casos de clave inválida/token manipulado
@@ -2053,11 +2055,16 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       **46/46 (100%)**, `failure_modes={}`, tabla por tool idéntica (log
       guardado como `/tmp/tool_rerun_20260926.log` en el contenedor; guía en
       `docs/auditoria-reverificacion.md`).
+    - **Experimento controlado en la misma máquina del baseline**: la suite
+      completa se repitió en la **RTX 3060** (la del 29/46) con el código
+      actual y `reasoning_effort=none` → **46/46 (100%)** (inicio 15:22:03,
+      fin 15:23:13 UTC; mismo script `fd2f1cda…`). Esto **aísla la variable**:
+      el salto 29→46 se debe al ajuste del thinking, no al hardware ni a la
+      red.
     - **Comparación honesta con 1.7 (29/46, 63%)**: el baseline se midió con
       el `thinking` de gemma4 activo (consumía tokens antes de emitir la
-      tool). Este resultado no mide "mejor red/hardware" sino el efecto del
-      fix `reasoning_effort=none` de 3.1; aun así confirma que la latencia de
-      red no rompe nada y que los `no_tool` eran el thinking.
+      tool). Con el experimento controlado anterior queda cerrado que el
+      efecto es del ajuste `reasoning_effort=none` de 3.1, no de la máquina.
     - Nota metodológica: la suite usa el prompt compartido del orquestador,
       no el inline de Telegram; los controles negativos siguen sin
       sobre-disparar.
@@ -2266,6 +2273,24 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     contenedores existentes antes y después de desplegar Rafita, bajo carga
     normal del bot, confirmando que ninguno de los servicios de producción
     (Nextcloud, BuenaTierra, Collabora) se degrada.
+
+- [x] **3.4.1 Acceso a 11434: alcance real documentado y decisión explícita**
+  *(hallazgo del sombreado de ufw, revisión externa)*
+  **Completada 2026-09-26.** El hallazgo (la cadena `ts-input` de Tailscale se
+  evalúa antes que ufw y acepta todo el tráfico de la tailnet, de modo que la
+  regla "solo desde el HP" nunca restringió nada) queda como **ítem propio**,
+  no como nota al pie:
+  - Documentado con el alcance exacto en `docs/adr/004` y
+    `docs/SECURITY.md`: **cualquier dispositivo autenticado en el tailnet**
+    (móvil fuera de casa incluido) puede usar el motor de IA.
+  - **Decisión explícita del propietario**: aceptado (utilidad de usar la IA
+    desde sus dispositivos). La LAN sigue bloqueada (verificado con `curl`
+    desde el PC de desarrollo).
+  - **Procedimiento de restricción documentado** por si cambia la decisión:
+    (a) ACL de Tailscale permitiendo 11434 solo desde el HP, o (b) regla
+    `iptables -I INPUT 1 -s <IP HP> -p tcp --dport 11434 -j DROP` insertada
+    **antes** de `ts-input` (+ persistencia). Probado en 3.4 con DROP
+    temporal (corte efectivo: `/ready` 503 en 10 s).
 
 - [x] **3.5 Logs estructurados, redactados y acotados** *(antes 3.3)*
   **Completada 2026-09-26.** Evidencia [commit `518d47e`]:
@@ -2538,6 +2563,28 @@ contradecirse a sí mismos y reflejen el estado real tras las fases anteriores.
   (tarea 3.2): el bot quedó desplegado en el HP con token real, `/ready` en
   verde y el usuario recibe sus mensajes y las notificaciones del backup. El
   resto de 4.3 se ejecutó con log real.
+
+- [x] **4.5 Pasada de coherencia Fase 3 ↔ Fase 4 (revisión externa)**
+  **Completada 2026-09-26.** La Fase 4 se cerró el 25-sep, antes de descubrir
+  los hallazgos de 3.1–3.7 (thinking/46-46, sombreado de ufw, topología real);
+  esta pasada absorbe lo aprendido para que la documentación "cerrada" no
+  contradiga la realidad:
+  - `docs/adr/003-model-selection.md`: añadida la actualización de la Fase 3 y
+    el **experimento controlado en la RTX 3060** (46/46 con el ajuste; el
+    salto 29→46 no es de hardware).
+  - `docs/SECURITY.md`: sección de red **reescrita para dos nodos** (Ollama
+    en el Dell detrás de Tailscale, sombreado de ufw con el alcance real,
+    decisión del propietario, cifrado en tránsito, backups cifrados y
+    timeouts del cliente).
+  - `README.md`: arquitectura actualizada a dos nodos + backup.
+  - `plan.md`: ítem propio **3.4.1** para el hallazgo de 11434 (en vez de
+    enterrado en la evidencia de 3.4).
+  - **Timeout del cliente real acotado** (respuesta a la revisión):
+    `OLLAMA_REQUEST_TIMEOUT` (default 600 s) en chat y tools, techo de 120 s
+    entre fragmentos en streaming; conexión rechazada falla en segundos.
+    +2 tests (gate: **187 passed**, 26 skipped; ruff/formato/mypy limpios).
+  - Dependabot: pendiente de marcado "not affected" en GitHub (papeleo del
+    propietario; el motivo y la mitigación están en `docs/SECURITY.md`).
 
 ---
 

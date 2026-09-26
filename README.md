@@ -31,15 +31,26 @@ Esto no es un SaaS. Es una herramienta que instalas y posees.
 
 ## Arquitectura
 
+Despliegue real en dos nodos (ver `docs/adr/004-two-node-deployment.md`):
+
 ```
-Tu Telegram ──→ rafita-agent-core (Python) ──→ ollama (modelos locales)
+Tu Telegram ──→ rafita-agent-core (HP) ──Tailscale──→ ollama (Dell, gemma4:12b)
                      │        │        │
                 SQLite   ChromaDB  Obsidian vault
               (memoria)  (RAG)    (2º cerebro)
+                     │
+                     └── backup diario (restic cifrado) → USB
 ```
 
-Dos contenedores Docker. Sin bases de datos externas. Sin Redis. Sin colas.
-Ejecutable en un portátil o en un servidor doméstico.
+- El nodo de IA (Dell) **no guarda datos de usuario** (solo pesos de modelos,
+  re-descargables) y se accede por red privada cifrada.
+- El agente (HP) ejecuta el bot, la base vectorial y la bóveda.
+- Backup diario automático solo si el USB está conectado, con aviso por
+  Telegram; operación y recuperación en `docs/runbook.md`.
+
+También puede ejecutarse todo en una sola máquina (dos contenedores Docker,
+sin bases de datos externas); el despliegue de dos nodos es el que está en
+producción.
 
 ## Requisitos
 
