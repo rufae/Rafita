@@ -17,8 +17,6 @@ from src.utils.security_manager import decrypt_value, encrypt_value
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/tasks",
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
 CRED_DIR = Path("/workspace/credentials")
@@ -32,6 +30,41 @@ class GoogleService:
         self._creds: Credentials | None = None
         self._ready = False
         self._flow = None
+        self._calendar_id = (settings.google_calendar_id or "primary").strip() or "primary"
+
+    def _resolve_calendar_id(self, sa_email: str = "") -> str:
+        """Si no hay calendario configurado, detecta el compartido (task 3.8).
+
+        Con cuenta de servicio, el calendario del usuario aparece en su
+        calendarList tras compartirlo; se elige el primero que no sea el
+        propio de la cuenta de servicio. Sin compartir nada, se mantiene
+        'primary' y se registra un aviso claro.
+        """
+        configured = (settings.google_calendar_id or "").strip()
+        if configured and configured != "primary":
+            return configured
+        try:
+            items = self._service.calendarList().list().execute().get("items", [])
+        except Exception as e:
+            logger.warning("Google: no se pudo listar calendarios (%s)", e)
+            return configured or "primary"
+        candidates = [c for c in items if c.get("id") and c.get("id") != sa_email]
+        for role in ("owner", "writer", "reader"):
+            for cal in candidates:
+                if cal.get("accessRole") == role:
+                    logger.info(
+                        "Google: calendario detectado '%s' (%s)",
+                        cal.get("summary", cal.get("id")),
+                        cal.get("accessRole"),
+                    )
+                    return str(cal.get("id"))
+        if sa_email:
+            logger.warning(
+                "Google: no hay calendario compartido con %s; comparte tu calendario "
+                "con ese email para que pueda leerlo/crearlo",
+                sa_email,
+            )
+        return configured or "primary"
 
     async def initialize(self) -> bool:
         if SERVICE_ACCOUNT_FILE.exists():
@@ -44,13 +77,15 @@ class GoogleService:
                     creds = service_account.Credentials.from_service_account_file(
                         str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
                     )
-                    return build("calendar", "v3", credentials=creds)
+                    svc = build("calendar", "v3", credentials=creds)
+                    return svc, creds.service_account_email
 
-                self._service = await loop.run_in_executor(None, _load_service_account)
+                self._service, sa_email = await loop.run_in_executor(None, _load_service_account)
+                self._calendar_id = self._resolve_calendar_id(sa_email=sa_email)
                 self._ready = True
                 logger.info(
                     "Google Service: autenticado con cuenta de servicio (calendario=%s)",
-                    settings.google_calendar_id,
+                    self._calendar_id,
                 )
                 return True
             except Exception as e:
@@ -159,7 +194,7 @@ class GoogleService:
             logger.info("Google Service: autenticacion completada y token almacenado")
             return {
                 "success": True,
-                "message": "Google conectado exitosamente. Ya puedo acceder a tu Calendar, Tasks y Drive.",
+                "message": "Google conectado exitosamente. Ya puedo acceder a tu Calendar.",
             }
         except Exception as e:
             logger.exception("Google Service: error intercambiando codigo")
@@ -182,7 +217,7 @@ class GoogleService:
                 return (
                     self._service.events()
                     .list(
-                        calendarId=settings.google_calendar_id,
+                        calendarId=self._calendar_id,
                         timeMin=now,
                         maxResults=max_results,
                         singleEvents=True,
@@ -250,7 +285,7 @@ class GoogleService:
             def _do_insert():
                 return (
                     self._service.events()
-                    .insert(calendarId=settings.google_calendar_id, body=event_body)
+                    .insert(calendarId=self._calendar_id, body=event_body)
                     .execute()
                 )
 

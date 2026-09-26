@@ -91,7 +91,7 @@ async def test_service_account_uploaded_as_oauth_is_renamed(monkeypatch, tmp_pat
     assert not (tmp_path / "credentials.json").exists()
     reply = update.effective_message.replies[-1]
     assert "rafita@proyecto.iam.gserviceaccount.com" in reply
-    assert "GOOGLE_CALENDAR_ID" in reply
+    assert "Detectará tu calendario automáticamente" in reply
 
 
 async def test_without_credentials_sends_instructions(monkeypatch, tmp_path):

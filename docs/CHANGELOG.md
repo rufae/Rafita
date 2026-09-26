@@ -72,8 +72,10 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
 - Google Calendar con cuenta de servicio: detección automática del JSON
-  (`service_account.json`), soporte en los dos módulos y calendario
-  configurable (`GOOGLE_CALENDAR_ID`).
+  (`service_account.json`), soporte en los dos módulos y **autodetección del
+  calendario compartido** (sin necesidad de configurar el correo);
+  `GOOGLE_CALENDAR_ID` queda como override. Se retiraron los permisos de
+  Tasks/Drive que no se usaban. Drive y Tasks siguen **sin implementar**.
 - Panel `/status` migrado a HTML con escapado (los guiones bajos de las
   herramientas rompían el formato Markdown) y `credentials/` protegido
   (permisos 600/700 y en `.gitignore`).

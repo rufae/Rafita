@@ -233,12 +233,13 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await message.reply_text(
             "✅ Cuenta de servicio detectada.\n\n"
             "Email de la cuenta: %s\n\n"
-            "Para que funcione:\n"
-            "1. Abre Google Calendar en el navegador, busca tu calendario y "
-            "compártelo con ese email con permiso para «Hacer cambios en los eventos».\n"
-            "2. En el servidor, pon GOOGLE_CALENDAR_ID con tu dirección de Gmail "
-            "y reinicia el bot.\n\n"
-            "Después ya podré crear y listar eventos." % (sa_email or "(no legible)")
+            "Para que pueda leer y crear eventos:\n"
+            "1. Abre Google Calendar en el navegador → tu calendario → "
+            "«Compartir con determinadas personas» → añade ese email con "
+            "permiso «Hacer cambios en los eventos».\n"
+            "2. Reinicia el bot.\n\n"
+            "Detectará tu calendario automáticamente (no hace falta que me "
+            "des tu correo). Si no lo detecta, avisará en los logs." % (sa_email or "(no legible)")
         )
         return
 

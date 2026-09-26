@@ -25,6 +25,34 @@ class GoogleCalendarManager:
         self._service = None
         self._ready = False
         self._auth_method = None
+        self._calendar_id = (settings.google_calendar_id or "primary").strip() or "primary"
+
+    def _resolve_calendar_id(self, sa_email: str = "") -> str:
+        """Detecta el calendario compartido si no hay uno configurado (3.8)."""
+        configured = (settings.google_calendar_id or "").strip()
+        if configured and configured != "primary":
+            return configured
+        try:
+            items = self._service.calendarList().list().execute().get("items", [])
+        except Exception as e:
+            logger.warning("Google Calendar: no se pudo listar calendarios (%s)", e)
+            return configured or "primary"
+        candidates = [c for c in items if c.get("id") and c.get("id") != sa_email]
+        for role in ("owner", "writer", "reader"):
+            for cal in candidates:
+                if cal.get("accessRole") == role:
+                    logger.info(
+                        "Google Calendar: calendario detectado '%s' (%s)",
+                        cal.get("summary", cal.get("id")),
+                        cal.get("accessRole"),
+                    )
+                    return str(cal.get("id"))
+        if sa_email:
+            logger.warning(
+                "Google Calendar: comparte tu calendario con %s para poder usarlo",
+                sa_email,
+            )
+        return configured or "primary"
 
     async def initialize(self) -> bool:
         loop = asyncio.get_running_loop()
@@ -52,6 +80,7 @@ class GoogleCalendarManager:
                     str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
                 )
                 self._service = build("calendar", "v3", credentials=creds)
+                self._calendar_id = self._resolve_calendar_id(sa_email=creds.service_account_email)
                 self._auth_method = "service_account"
                 return True
             except Exception as e:
@@ -117,7 +146,7 @@ class GoogleCalendarManager:
         def _do_insert():
             return (
                 self._service.events()
-                .insert(calendarId=settings.google_calendar_id, body=event_body)
+                .insert(calendarId=self._calendar_id, body=event_body)
                 .execute()
             )
 
@@ -147,7 +176,7 @@ class GoogleCalendarManager:
             return (
                 self._service.events()
                 .list(
-                    calendarId=settings.google_calendar_id,
+                    calendarId=self._calendar_id,
                     timeMin=now,
                     maxResults=max_results,
                     singleEvents=True,
@@ -179,9 +208,7 @@ class GoogleCalendarManager:
         loop = asyncio.get_running_loop()
 
         def _do_delete():
-            self._service.events().delete(
-                calendarId=settings.google_calendar_id, eventId=event_id
-            ).execute()
+            self._service.events().delete(calendarId=self._calendar_id, eventId=event_id).execute()
 
         try:
             await loop.run_in_executor(None, _do_delete)
