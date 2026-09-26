@@ -40,6 +40,12 @@ def test_admin_ids_missing_value(tmp_path):
     assert _settings_from(tmp_path).admin_ids == []
 
 
+def test_ollama_request_timeout_default_and_override(tmp_path):
+    assert _settings_from(tmp_path).ollama_request_timeout == 600
+    settings = _settings_from(tmp_path, "OLLAMA_REQUEST_TIMEOUT=120\n")
+    assert settings.ollama_request_timeout == 120
+
+
 def test_whisper_cpu_threads_default_is_4(tmp_path):
     assert _settings_from(tmp_path).whisper_cpu_threads == 4
 
