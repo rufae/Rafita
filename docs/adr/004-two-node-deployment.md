@@ -193,6 +193,12 @@ Collabora/Nextcloud.
    8001 (voz) está libre.
 4. Reducir los hilos de Whisper de 4 a 2 en el HP (`voice_stream`), porque el
    i3 solo tiene 2c/4t y la transcripción no debe degradar Nextcloud/Collabora.
+   Implementado en 3.2 como `WHISPER_CPU_THREADS=2` configurable.
+6. **Visión (decisión del usuario 2026-09-26)**: `OLLAMA_VISION_MODEL` pasa a
+   `gemma4:12b` (el mismo que chat) en el HP; `llava:7b` queda como fallback.
+   Validado con imagen real ("Rojo", 115+3 tokens, sin thinking). El cliente
+   omite el hot-swap cuando visión y chat son el mismo modelo (antes recargaba
+   7,6 GB por imagen) y mantiene `keep_alive=-1`.
 5. Mantener el swap actual como red de seguridad (no añadir zram por ahora);
    si el swap empieza a moverse con regularidad, revisar antes de ampliar RAM.
 

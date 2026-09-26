@@ -11,9 +11,10 @@ Topología real (ver `docs/adr/004-two-node-deployment.md`):
                                                   11434 solo desde el HP)
 ```
 
-Modelos desplegados en el Dell (decisión 3.1, 2026-09-26): `gemma4:12b` (chat,
-con `reasoning_effort=none` para desactivar su thinking por defecto),
-`bge-m3` (embeddings) y `llava:7b` (visión). `qwen2.5:7b` queda como fallback.
+Modelos desplegados en el Dell (decisiones 3.1/3.2, 2026-09-26): `gemma4:12b`
+(chat **y visión**, con `reasoning_effort=none` para desactivar su thinking por
+defecto), `bge-m3` (embeddings); `qwen2.5:7b` y `llava:7b` quedan como
+fallback (chat y visión respectivamente).
 
 El LLM vive **solo** en el Dell. La app vive **solo** en el HP y llama al LLM
 por la tailnet. El nodo HP no arranca `ollama-service` (ver tarea 3.2).

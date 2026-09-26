@@ -2027,8 +2027,48 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     `OLLAMA_MODEL=gemma4:12b` y `OLLAMA_HOST` al Dell (copiado desde el PC de
     desarrollo; `ADMIN_IDS` siguen siendo placeholders → el usuario los
     actualizará con su ID real de @userinfobot).
-  - Pendiente de decidir (heredado 3.0(d)): modelo de visión
-    (`llava:7b` en uso; `gemma4:12b` también soporta visión).
+  - **Modelo de visión decidido por el usuario (2026-09-26): `gemma4:12b`**
+    (el mismo que chat; `llava:7b` queda instalado como fallback). Validado
+    con una imagen real generada al vuelo desde el HP contra el Dell:
+    `content='Rojo'` (32x32 rojo, 115 prompt / 3 completion, sin thinking).
+    Optimización de código asociada: si `OLLAMA_VISION_MODEL == OLLAMA_MODEL`
+    se omite el hot-swap (antes descargaba y recargaba los mismos 7,6 GB en
+    cada imagen) y se mantiene `keep_alive=-1`; 2 tests nuevos (gate:
+    162 passed, 20 skipped, ruff/formato/mypy limpios).
+
+- **Registro de decisiones y respuestas del usuario (2026-09-26)** — para la
+  auditoría posterior; todo lo acordado durante 3.1/3.2:
+  1. **Modelo de chat**: `gemma4:12b` definitivo aunque tarde más
+     (3,87 tok/s). Motivos del usuario: más inteligente, herramientas más
+     seguras, posibilidad futura de usar la GPU de la torre por túnel, y no
+     querer reconfigurar al migrar a hardware con más VRAM. Se descarta
+     cambiar a `qwen2.5:7b` pese a ser 1,7x más rápido.
+  2. **Thinking**: se desactiva por defecto en el cliente
+     (`OLLAMA_REASONING_EFFORT=none`); el usuario aceptó el cambio de
+     comportamiento y sus consecuencias (46/46 en tools).
+  3. **`.env` del HP**: copiado del PC de desarrollo (mismo bot y llaves) con
+     `OLLAMA_MODEL=gemma4:12b`; el usuario confirmó que no hay otra instancia
+     del bot corriendo.
+  4. **`ADMIN_IDS`**: el usuario no conocía su ID; se le indicó @userinfobot;
+     lo añadió al `.env` del PC de desarrollo y se copió al del HP (valor no
+     impreso en logs). Pendiente verificar que los comandos admin funcionan.
+  5. **Dos carpetas en el HP**: `~/proyectos/Rafita` (mayúscula, copia vieja
+     del 25-sep en el commit `0992b52`, sin `.env`, NO en uso) y
+     `~/proyectos/rafita` (minúscula, despliegue activo desde `d588760` con
+     `.env`; el contenedor en ejecución corre desde ahí). Confusión del
+     usuario resuelta: el `.env` a tocar es `~/proyectos/rafita/.env`.
+     Recomendado borrar la carpeta vieja (pendiente de su OK).
+  6. **Modelo de visión**: `gemma4:12b` (no `llava:7b`), validado con imagen
+     real; `llava` queda como fallback.
+  7. **Whisper en el HP**: 2 hilos (`WHISPER_CPU_THREADS=2`), configurable.
+  8. **Dependabot**: los 3 avisos son los de chromadb ya aceptados y sin fix
+     upstream; deben marcarse "not affected" en GitHub (pendiente, requiere
+     sesión web del usuario).
+  9. **Git**: el helper GCM (backend `cache`) caducó y no puede autenticar sin
+     interacción; el usuario registró su clave SSH en GitHub y se cambia el
+     remote a SSH para que los push no vuelvan a pedir credenciales.
+  10. **Gateway en 8010** (Portainer ocupa 8000 en el HP) y `OLLAMA_HOST` por
+      IP Tailscale (la IP LAN del Dell no es estática).
 
 - [ ] **3.3 Readiness real diferenciado de liveness** *(antes 3.1)*
   Depende de 0.6 y 3.2. Tareas: separar "el proceso vive" de "el servicio

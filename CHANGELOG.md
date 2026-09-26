@@ -57,6 +57,10 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si se introduce modo servidor o `trust_remote_code`, convirtiendo en
   invariante verificable la mitigación de los avisos PYSEC-2026-3813/3814/3815
   (revisión Dependabot 2026-09-26; no existe versión corregida).
+- Visión con el mismo modelo que chat (`gemma4:12b`): si
+  `OLLAMA_VISION_MODEL == OLLAMA_MODEL` se omite el hot-swap (antes descargaba
+  y recargaba los mismos pesos en cada imagen) y se mantiene `keep_alive=-1`.
+  Validado con imagen real: `content='Rojo'` (2026-09-26).
 
 ### Limitaciones conocidas (ronda de estabilización)
 - La calidad RAG está medida sobre un vault de evaluación sintético; falta
