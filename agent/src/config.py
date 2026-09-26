@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     openai_embedding_model: str = Field("", alias="OPENAI_EMBEDDING_MODEL")
     openai_reasoning_effort: str = Field("", alias="OPENAI_REASONING_EFFORT")
     google_calendar_id: str = Field("primary", alias="GOOGLE_CALENDAR_ID")
+    google_drive_folder_id: str = Field("", alias="GOOGLE_DRIVE_FOLDER_ID")
 
     @field_validator("ollama_reasoning_effort", "openai_reasoning_effort", mode="before")
     @classmethod
