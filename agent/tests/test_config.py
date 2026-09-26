@@ -40,6 +40,12 @@ def test_admin_ids_missing_value(tmp_path):
     assert _settings_from(tmp_path).admin_ids == []
 
 
+def test_google_calendar_id_default_and_override(tmp_path):
+    assert _settings_from(tmp_path).google_calendar_id == "primary"
+    settings = _settings_from(tmp_path, "GOOGLE_CALENDAR_ID=yo@gmail.com\n")
+    assert settings.google_calendar_id == "yo@gmail.com"
+
+
 def test_ollama_request_timeout_default_and_override(tmp_path):
     assert _settings_from(tmp_path).ollama_request_timeout == 600
     settings = _settings_from(tmp_path, "OLLAMA_REQUEST_TIMEOUT=120\n")
