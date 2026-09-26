@@ -127,11 +127,23 @@ class OllamaClient:
         self._client = AsyncOpenAI(
             base_url=self.base_url,
             api_key="ollama",
-            timeout=httpx.Timeout(1200.0, connect=60.0),
+            timeout=httpx.Timeout(1200.0, connect=15.0),
             max_retries=2,
         )
-        await self._cb.execute("health", self._check_model_available)
-        await self._prewarm_model()
+        # The LLM may be down when the agent boots (e.g. the Dell is off):
+        # startup must NOT block or fail on it. The gateway starts in
+        # "not_ready" and recovers automatically when the backend returns
+        # (task 3.4).
+        backend_ok = True
+        try:
+            await self._cb.execute("health", self._check_model_available, max_retries=1)
+        except Exception as e:
+            backend_ok = False
+            logger.warning("Ollama not reachable at startup (%s); starting in degraded mode", e)
+        if backend_ok:
+            await self._prewarm_model()
+        else:
+            logger.info("Skipping model pre-warm (backend unreachable)")
         self._ready = True
         logger.info(
             "Ollama client initialized: model=%s vision=%s host=%s",
@@ -141,8 +153,12 @@ class OllamaClient:
         )
 
     async def _check_model_available(self) -> None:
-        models = await self._client.models.list()
-        model_ids = [m.id for m in (models.data or [])]
+        # Short timeouts: this runs at startup and must fail fast when the
+        # backend is down (native /api/tags instead of the SDK's long timeout).
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=3.0)) as hc:
+            resp = await hc.get("%s/api/tags" % settings.ollama_host.rstrip("/"))
+            resp.raise_for_status()
+            model_ids = [m.get("name", "") for m in resp.json().get("models", [])]
         if self.model in model_ids:
             logger.info("Model %s is available", self.model)
         else:
@@ -172,7 +188,7 @@ class OllamaClient:
             import httpx
 
             logger.info("Pre-warming %s model '%s' (forcing load into RAM)...", label, model_name)
-            async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=120.0)) as hc:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as hc:
                 resp = await hc.post(
                     "%s/api/generate" % settings.ollama_host.rstrip("/"),
                     json={
