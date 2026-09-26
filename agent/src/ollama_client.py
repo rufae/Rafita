@@ -212,7 +212,11 @@ class OllamaClient:
             logger.warning("[HOT-SWAP] Failed to unload '%s': %s", model_name, e)
 
     async def hot_swap_to_vision(self) -> None:
-        logger.info("[HOT-SWAP] Swapping Qwen -> llava (freeing RAM for vision model)...")
+        logger.info(
+            "[HOT-SWAP] Swapping %s -> %s (freeing RAM for vision model)...",
+            self.model,
+            self.vision_model,
+        )
         await self.unload_model(self.model)
         import gc as _gc
 
@@ -220,7 +224,9 @@ class OllamaClient:
 
     async def hot_swap_to_text(self) -> None:
         logger.info(
-            "[HOT-SWAP] Reloading Qwen after vision (llava already unloaded via keep_alive=0)..."
+            "[HOT-SWAP] Reloading %s after vision (%s unloaded via keep_alive=0)...",
+            self.model,
+            self.vision_model,
         )
         import gc as _gc
 
@@ -496,7 +502,12 @@ class OllamaClient:
         if not self._client:
             raise OllamaClientError("Client not initialized. Call initialize() first.")
 
-        await self.hot_swap_to_vision()
+        # If the vision model IS the chat model (e.g. gemma4:12b, which has
+        # vision), swapping would unload and reload the same weights for every
+        # image. Skip the swap and keep the model resident (keep_alive=-1).
+        same_model = self.vision_model == self.model
+        if not same_model:
+            await self.hot_swap_to_vision()
 
         messages = self._inject_images(messages, images)
 
@@ -511,7 +522,7 @@ class OllamaClient:
         try:
             response = await self._client.chat.completions.create(
                 **params,
-                extra_body=self._ollama_extra_body(2048, keep_alive=0),
+                extra_body=self._ollama_extra_body(2048, keep_alive=-1 if same_model else 0),
             )
             content = response.choices[0].message.content or ""
             return content
@@ -539,7 +550,8 @@ class OllamaClient:
             logger.exception("Unexpected error in Ollama chat_vision")
             raise OllamaClientError(f"Error inesperado: {e}")
         finally:
-            await self.hot_swap_to_text()
+            if not same_model:
+                await self.hot_swap_to_text()
 
     async def check_health(self) -> dict[str, Any]:
         if not self._client:
