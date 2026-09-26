@@ -66,6 +66,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
   volver el backend. Health check de arranque con timeout corto y prewarm
   omitido si no hay backend.
+- Logs estructurados y seguros (tarea 3.5): `LOG_FORMAT=json` opcional,
+  redacción de credenciales en todos los handlers antes de escribir a disco,
+  rotación acotada en fichero (10 MB×5 / 5 MB×3) y en Docker
+  (`json-file` 10m×3), y comando remoto `/logs` (solo administradores) para
+  consultar logs sin SSH. Arreglado `/status` con los estados de 3.3.
 - Readiness real (tarea 3.3): `/ready` usa el `check_health()` genérico del
   proveedor de IA (`ok`/`degraded`/`unhealthy` según modelo disponible y
   cargado), añade check de vault (existencia/permisos) y agrega

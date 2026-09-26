@@ -1,3 +1,4 @@
+import html
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +9,7 @@ from telegram.ext import ContextTypes
 from src.config import settings
 from src.database import db
 from src.i18n import language_name
-from src.logger import logger
+from src.logger import logger, tail_logs
 from src.ollama_client import llm
 from src.utils import workspace_manager as wm
 from src.utils.vector_manager import vector_db
@@ -27,16 +28,24 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     lines.append("*🤖 Estado General*")
     health_raw = await llm.check_health()
-    if health_raw.get("status") == "healthy":
+    provider = health_raw.get("provider", "ia")
+    health_status = health_raw.get("status")
+    if health_status == "ok":
         lines.append(
-            "  IA (Ollama): ✅ %s (%dms)"
+            "  IA (%s): ✅ %s (%dms)"
             % (
+                provider,
                 health_raw.get("model", "N/A"),
                 health_raw.get("latency_ms", 0),
             )
         )
+    elif health_status == "degraded":
+        lines.append(
+            "  IA (%s): ⚠️ degradado — %s"
+            % (provider, health_raw.get("detail", "modelo sin cargar"))
+        )
     else:
-        lines.append("  IA (Ollama): ❌ %s" % health_raw.get("error", "desconocido"))
+        lines.append("  IA (%s): ❌ %s" % (provider, health_raw.get("detail", "desconocido")))
     lines.append("  Telegram Bot: ✅ polling activo")
     lines.append("")
 
@@ -155,6 +164,42 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         await message.reply_text(text, parse_mode="Markdown")
     logger.info("Status panel sent to user %d", user.id)
+
+
+async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remote log query without SSH (task 3.5), admin-only.
+
+    Usage: /logs [n]        (default 50, max 200 lines, already redacted)
+    """
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+
+    admin_ids = settings.admin_ids
+    if admin_ids and user.id not in admin_ids:
+        await message.reply_text("Solo los administradores pueden consultar los logs.")
+        return
+
+    args = context.args or []
+    try:
+        requested = int(args[0]) if args else 50
+    except (TypeError, ValueError):
+        requested = 50
+    requested = max(1, min(requested, 200))
+
+    lines = tail_logs(requested)
+    if not lines:
+        await message.reply_text("No hay logs disponibles todavía.")
+        return
+
+    body = "\n".join(lines)
+    if len(body) > 3500:
+        body = body[-3500:]
+    await message.reply_text(
+        "<b>🧾 Últimos %d registros</b>\n<pre>%s</pre>" % (requested, html.escape(body)),
+        parse_mode="HTML",
+    )
 
 
 def _format_size(size_bytes: int) -> str:

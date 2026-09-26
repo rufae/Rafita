@@ -2203,15 +2203,37 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     normal del bot, confirmando que ninguno de los servicios de producción
     (Nextcloud, BuenaTierra, Collabora) se degrada.
 
-- [ ] **3.5 Logs estructurados, redactados y acotados** *(antes 3.3)*
-  Hallazgo: rotación local existe, pero no hay confirmación de redacción de
-  datos sensibles, límites de tamaño acotados, ni acceso sin SSH.
-  Tareas: formato estructurado, redacción de credenciales/datos sensibles
-  antes de escribir a disco, límites de tamaño/retención, y un mecanismo de
-  exportación o consulta remota sin acceso interactivo a la máquina.
-  Evidencia requerida: log real mostrando que un dato sensible de prueba
-  queda redactado, y confirmación de que el tamaño de logs no crece sin
-  límite tras una prueba prolongada.
+- [x] **3.5 Logs estructurados, redactados y acotados** *(antes 3.3)*
+  **Completada 2026-09-26.** Evidencia:
+  - **Formato estructurado**: `LOG_FORMAT=text|json`; con `json` cada evento es
+    una línea JSON (`ts`, `level`, `logger`, `func`, `line`, `msg`, `exc`).
+  - **Redacción antes de escribir** (`RedactingFilter` en todos los handlers:
+    consola, `rafita.log`, `error.log`): tokens de Telegram
+    (`NNNNNNNN:AAA...`), claves `sk-...`, `Bearer ...` y pares
+    clave=valor de nombres sensibles (`TELEGRAM_TOKEN`, `OPENAI_API_KEY`,
+    `password`, `ENCRYPTION_KEY`...). Los argumentos numéricos conservan su
+    tipo (`%d` sigue funcionando).
+  - **Evidencia real en el contenedor desplegado** (secretos de prueba):
+    ```
+    $ docker exec rafita-agent-core grep 'prueba de redaccion' /data/logs/rafita.log
+    ... | INFO  | demo | prueba de redaccion TELEGRAM_TOKEN=*** y password=***
+    ... | ERROR | demo | OPENAI_API_KEY=***
+    $ docker exec -e LOG_FORMAT=json ... (formato estructurado)
+    {"ts": "2026-09-26T11:48:01", "level": "INFO", "logger": "demo", ..., "msg": "evento json TELEGRAM_TOKEN=***"}
+    ```
+  - **Límites acotados**: ficheros con `RotatingFileHandler` (10 MB × 5 y
+    5 MB × 3) y contenedores con `logging: json-file, max-size 10m,
+    max-file 3` (verificado con `docker inspect`); test de rotación real con
+    límites pequeños (`test_setup_logging_rotation_is_bounded`).
+  - **Consulta remota sin SSH**: comando de Telegram **`/logs [n]`** (solo
+    administradores, máximo 200 líneas, redactado y escapado HTML) registrado
+    en `COMMANDS_REGISTRY`, más el helper `tail_logs()` con whitelist de
+    ficheros y redacción en lectura (defensa en profundidad).
+  - **Arreglo colateral**: `status_command` seguía esperando el estado
+    `healthy` de 0.6 y mostraba ❌ siempre tras 3.3; ahora maneja
+    `ok`/`degraded`/`unhealthy` con su `detail`.
+  - Tests: +10 (`test_log_redaction.py`); gate **185 passed, 25 skipped**,
+    ruff/formato/mypy limpios; desplegado y verificado en el HP.
 
 - [ ] **3.6 Backup y restore reales** *(antes 3.4, con nota de alcance)*
   Hallazgo: existe `backup_verify.sh` y un runbook, pero no se ha ejecutado un
