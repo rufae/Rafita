@@ -76,6 +76,24 @@ async def test_already_connected(monkeypatch, tmp_path):
     assert "ya está conectado" in update.effective_message.replies[-1]
 
 
+async def test_service_account_uploaded_as_oauth_is_renamed(monkeypatch, tmp_path):
+    monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
+    monkeypatch.setattr(admin_module.settings, "admin_ids", [1])
+    (tmp_path / "credentials.json").write_text(
+        '{"type": "service_account", "client_email": "rafita@proyecto.iam.gserviceaccount.com"}',
+        encoding="utf-8",
+    )
+
+    update = _update()
+    await admin_module.setup_google_command(update, SimpleNamespace(args=[]))
+
+    assert (tmp_path / "service_account.json").exists()
+    assert not (tmp_path / "credentials.json").exists()
+    reply = update.effective_message.replies[-1]
+    assert "rafita@proyecto.iam.gserviceaccount.com" in reply
+    assert "GOOGLE_CALENDAR_ID" in reply
+
+
 async def test_without_credentials_sends_instructions(monkeypatch, tmp_path):
     monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
     monkeypatch.setattr(admin_module.settings, "admin_ids", [1])

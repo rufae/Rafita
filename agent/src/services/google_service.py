@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -22,6 +23,7 @@ SCOPES = [
 
 CRED_DIR = Path("/workspace/credentials")
 OAUTH_CREDENTIALS_FILE = CRED_DIR / "credentials.json"
+SERVICE_ACCOUNT_FILE = CRED_DIR / "service_account.json"
 
 
 class GoogleService:
@@ -32,6 +34,29 @@ class GoogleService:
         self._flow = None
 
     async def initialize(self) -> bool:
+        if SERVICE_ACCOUNT_FILE.exists():
+            # Cuenta de servicio: no requiere autorizacion interactiva. El
+            # calendario a usar debe estar compartido con el client_email.
+            try:
+                loop = asyncio.get_running_loop()
+
+                def _load_service_account():
+                    creds = service_account.Credentials.from_service_account_file(
+                        str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
+                    )
+                    return build("calendar", "v3", credentials=creds)
+
+                self._service = await loop.run_in_executor(None, _load_service_account)
+                self._ready = True
+                logger.info(
+                    "Google Service: autenticado con cuenta de servicio (calendario=%s)",
+                    settings.google_calendar_id,
+                )
+                return True
+            except Exception as e:
+                logger.warning("Google Service: error con cuenta de servicio: %s", e)
+                return False
+
         if not OAUTH_CREDENTIALS_FILE.exists():
             logger.info("Google Service: credentials.json no encontrado en %s", CRED_DIR)
             return False
@@ -157,7 +182,7 @@ class GoogleService:
                 return (
                     self._service.events()
                     .list(
-                        calendarId="primary",
+                        calendarId=settings.google_calendar_id,
                         timeMin=now,
                         maxResults=max_results,
                         singleEvents=True,
@@ -224,7 +249,9 @@ class GoogleService:
 
             def _do_insert():
                 return (
-                    self._service.events().insert(calendarId="primary", body=event_body).execute()
+                    self._service.events()
+                    .insert(calendarId=settings.google_calendar_id, body=event_body)
+                    .execute()
                 )
 
             event = await loop.run_in_executor(None, _do_insert)

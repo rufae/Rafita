@@ -268,6 +268,93 @@ async def test_chat_sync_times_out_with_clear_error(monkeypatch):
         await client._chat_sync({"model": "m", "messages": []})
 
 
+async def test_pick_backend_without_gpu_is_cpu(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_gpu_host", "")
+    client = OllamaClient()
+    backend, _ = await client._pick_backend(force=True)
+    assert backend == "cpu"
+    assert client._active_host() == settings.ollama_host.rstrip("/")
+
+
+async def test_pick_backend_uses_gpu_when_probe_ok(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_gpu_host", "http://gpu.example:11434")
+    client = OllamaClient()
+    client._gpu_client = SimpleNamespace()  # type: ignore[assignment]
+
+    async def probe_ok():
+        return True
+
+    monkeypatch.setattr(client, "_probe_gpu", probe_ok)
+    backend, _ = await client._pick_backend(force=True)
+    assert backend == "gpu"
+    assert client._active_host() == "http://gpu.example:11434"
+
+
+async def test_pick_backend_falls_back_to_cpu_when_probe_fails(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_gpu_host", "http://gpu.example:11434")
+    client = OllamaClient()
+    client._gpu_client = SimpleNamespace()  # type: ignore[assignment]
+
+    async def probe_fail():
+        return False
+
+    monkeypatch.setattr(client, "_probe_gpu", probe_fail)
+    backend, _ = await client._pick_backend(force=True)
+    assert backend == "cpu"
+    assert client._active_host() == settings.ollama_host.rstrip("/")
+
+
+async def test_probe_result_is_cached(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_gpu_host", "http://gpu.example:11434")
+    monkeypatch.setattr(settings, "ollama_gpu_probe_interval", 60)
+    client = OllamaClient()
+    client._gpu_client = SimpleNamespace()  # type: ignore[assignment]
+    calls = {"n": 0}
+
+    async def probe_ok():
+        calls["n"] += 1
+        return True
+
+    monkeypatch.setattr(client, "_probe_gpu", probe_ok)
+    await client._pick_backend(force=True)
+    await client._pick_backend()
+    await client._pick_backend()
+    assert calls["n"] == 1
+
+
+async def test_create_completion_falls_back_to_cpu_on_gpu_error(monkeypatch):
+    import httpx as _httpx
+
+    monkeypatch.setattr(settings, "ollama_gpu_host", "http://gpu.example:11434")
+    client = OllamaClient()
+    client._gpu_client = SimpleNamespace()  # type: ignore[assignment]
+
+    async def probe_ok():
+        return True
+
+    monkeypatch.setattr(client, "_probe_gpu", probe_ok)
+
+    class _GpuCompletions:
+        async def create(self, **_kwargs):
+            raise _httpx.ConnectError("torre apagada")
+
+    client._gpu_client = SimpleNamespace(  # type: ignore[assignment]
+        chat=SimpleNamespace(completions=_GpuCompletions())
+    )
+
+    async def cpu_create(**_kwargs):
+        message = SimpleNamespace(content="hola desde el Dell", tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    client._client = SimpleNamespace(  # type: ignore[assignment]
+        chat=SimpleNamespace(completions=SimpleNamespace(create=cpu_create))
+    )
+
+    result = await client._create_completion(model="m", messages=[])
+    assert result.choices[0].message.content == "hola desde el Dell"
+    assert client._active_backend == "cpu"
+
+
 async def test_initialize_tolerates_unreachable_backend(monkeypatch):
     """Booting with the LLM down must not hang or fail startup (task 3.4)."""
     client = OllamaClient()
