@@ -117,6 +117,11 @@ class GoogleCalendarManager:
         end_datetime: str | None = None,
         description: str | None = None,
     ) -> dict[str, Any]:
+        from src.services.google_services_manager import event_start_error
+
+        start_error = event_start_error(start_datetime)
+        if start_error:
+            return {"success": False, "message": start_error}
         if not self._ready or not self._service:
             return {
                 "success": False,

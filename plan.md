@@ -2514,6 +2514,26 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - **Guía de acción** `docs/google-setup.md` con los enlaces exactos para
     habilitar Sheets/Docs, cómo compartir y el comando del test.
   - Tests: +9 (225 passed, 26 skipped); ruff/formato/mypy limpios.
+  - **Seguimiento 2026-09-27** (fallos reportados por el usuario):
+    - **El flujo de Telegram usaba otro prompt sin fecha** (por eso volvió a
+      crear un evento en 2025): `chat.py` ahora usa `build_system_prompt()`
+      (fecha/hora + estado de Google) en sus dos ramas. Además se añadió una
+      **guardia servidor-side** (`event_start_error`) que rechaza fechas en el
+      pasado con la fecha actual en el mensaje, aplicada en los tres caminos
+      (manager, `google_service`, `gcal`).
+    - **Eventos erróneos limpiados**: borrados «Domingo Feliz» (2025-05-18) y
+      «Lunes de la tristeza» (2025-05-19).
+    - **Lentitud**: el contenedor GPU de la torre estaba detenido (salida 0)
+      y el agente respondía con la CPU del Dell (~80 s por llamada). Se
+      levantó con `--restart always`; latencia medida de una llamada de
+      herramienta con GPU: **0,8 s** (backend gpu verificado en `/ready`).
+    - **Sheets/Docs habilitadas** por el usuario: el diagnóstico E2E las ve
+      (`sheets ok`, `docs ok`), pero **crear** archivos da 403 por la
+      limitación de cuota de las cuentas de servicio en cuentas personales;
+      soluciones documentadas en `docs/google-setup.md` §6 (carpeta compartida
+      con `GOOGLE_DRIVE_FOLDER_ID` u OAuth).
+  - Tests tras el seguimiento: **228 passed**, 26 skipped; ruff/formato/mypy
+    limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
