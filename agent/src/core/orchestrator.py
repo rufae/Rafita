@@ -107,10 +107,14 @@ def build_system_prompt(voice: bool = False) -> str:
         "preguntar detalles que puedas asumir razonablemente.\n"
         "CONTACT_RULE: si el usuario pide el telefono, movil, correo o "
         "direccion de una persona (mama, papa, Ana, un amigo...), usa SIEMPRE "
-        "find_contact (Google Contacts) ANTES de responder. No busques "
-        "telefonos ni correos en el segundo cerebro, y NUNCA digas que no lo "
-        "tienes sin haber llamado antes a find_contact. Si find_contact no lo "
-        "encuentra, dilo con claridad.\n"
+        "find_contact (Google Contacts) ANTES de responder. NUNCA uses "
+        "search_knowledge ni search_second_brain para telefonos ni correos: "
+        "find_contact ya busca en tus contactos de Google. Si el usuario dice "
+        "'mi madre/padre/hermano...', find_contact lo resuelve por variantes y "
+        "alias; si devuelve varios, pregunta cual. Si no lo encuentra, dilo y "
+        "pide el nombre exacto con el que lo tiene guardado. Cuando el usuario "
+        "diga 'X es mi madre/padre/...', guardalo con remember_fact para "
+        "resolverlo la proxima vez.\n"
     )
     format_rule = (
         "FORMAT_RULE: cuando el usuario pida una tabla, estadisticas, "
@@ -173,6 +177,10 @@ async def _prepare_tool_phase(
                 messages_for_llm[index]["content"],
             )
             break
+    else:
+        # Garantiza que la pregunta actual llegue al modelo aunque el
+        # historial no la incluya (o este vacio).
+        messages_for_llm.append({"role": "user", "content": "%s %s" % (date_context_line(), text)})
 
     tools_for_call = await select_tools_semantic(text)
 

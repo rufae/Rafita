@@ -71,6 +71,15 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Contactos en llamada (2026-09-27): matching difuso («A A mamá» del STT ya
+  encuentra «Aa Mama»), variantes de parentesco («mi madre»), alias
+  aprendidos con `remember_fact`, relevancia por palabras y filtro de
+  alucinaciones del STT. Verificado en real con alias y variantes.
+- Fase 5 (2026-09-27): bot privado (whitelist por ADMIN_IDS + rate limiting
+  por usuario), candado de cobertura en CI (39% medido), Dependabot y
+  `web/call_rafita.html`.
+- Propuesta de integración n8n y menú de extensiones gratuitas:
+  `docs/n8n-y-extensiones.md` (pendiente de elección del propietario).
 - Modo llamada (2026-09-27): tartamudeo de audio corregido (caché singleton de
   Piper, corte de frases en fin de palabra, WAV directo sin ffmpeg por
   fragmento, reproducción gapless); barge-in por voz + botón Parar (cancela

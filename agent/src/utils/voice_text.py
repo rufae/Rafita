@@ -55,3 +55,48 @@ def sanitize_for_tts(text: str) -> str:
     out = _MULTISPACE_RE.sub(" ", out)
     out = _MULTINEWLINE_RE.sub(" ", out)
     return out.strip()
+
+
+_WORD_RE = re.compile(r"[\w\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1]+")
+
+
+def _collapse_word_loop(words: list[str]) -> list[str]:
+    """Colapsa repeticiones consecutivas de 1-4 palabras ('la vida, la vida')."""
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        matched = False
+        for n in (1, 2, 3, 4):
+            if i + 2 * n <= len(words) and words[i : i + n] == words[i + n : i + 2 * n]:
+                j = i + n
+                while j + n <= len(words) and words[j : j + n] == words[i : i + n]:
+                    j += n
+                out.extend(words[i : i + n])
+                i = j
+                matched = True
+                break
+        if not matched:
+            out.append(words[i])
+            i += 1
+    return out
+
+
+def clean_stt_transcript(text: str | None) -> str | None:
+    """Limpia la transcripcion del STT y rechaza alucinaciones por bucle.
+
+    Whisper a veces repite una frase en bucle sobre ruido de fondo
+    ('la vida, la vida, la vida...'); eso no es habla del usuario.
+    Devuelve None si el texto es una alucinacion degenerada.
+    """
+    if not text or not text.strip():
+        return None
+    words = _WORD_RE.findall(text.lower())
+    if not words:
+        return None
+    collapsed = _collapse_word_loop(words)
+    # Alucinacion: el bucle se ha comido casi todo el texto original.
+    if len(text) > 40 and len(collapsed) < len(words) * 0.5:
+        return None
+    if len(collapsed) == len(words):
+        return text.strip()
+    return " ".join(collapsed)
