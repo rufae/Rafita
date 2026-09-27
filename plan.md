@@ -3226,7 +3226,7 @@ Tareas y evidencia requerida:
     llamada sin penalización de carga.
   - Evidencia pegada aquí + `CHANGELOG.md` + commit.
 
-**Evidencia [2026-09-27] [commit pendiente, base `022a4ae`]:**
+**Evidencia [2026-09-27] [commit `b3dba9d`, base `022a4ae`]:**
 
 Línea base real (logs de las llamadas del propietario con el código anterior):
 TTS de **1,4-2,0 s por CADA fragmento** (el modelo Piper se recargaba en cada
