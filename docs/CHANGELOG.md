@@ -71,6 +71,16 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Modo llamada (2026-09-27): tartamudeo de audio corregido (caché singleton de
+  Piper, corte de frases en fin de palabra, WAV directo sin ffmpeg por
+  fragmento, reproducción gapless); barge-in por voz + botón Parar (cancela
+  generación y síntesis); colgar detiene el audio y vuelve a llamarse sin
+  recargar; streaming real con `chat_stream_tokens` y prompt de voz (1-3
+  frases, sin Markdown); métrica `first_audio_ms`; UI nueva con dos orbes
+  animados; precalentado de Whisper/Piper. Medido: TTS por fragmento
+  1,4-2,0 s → ~0,23 s (×6-8) y total 13,5-27,1 s → 4,0-11,2 s.
+- Contestador (2026-09-27): el prompt se identifica como IA al inicio
+  (transparencia, Ley UE de IA art. 50).
 - Saneamiento de datos sensibles (2026-09-27): email de cuenta de servicio
   leído del JSON; IPs a variables de entorno; unidades de backup renombradas
   (`mnt-backup.*`) con UUID fuera del repo (`install.sh` lo sustituye) y

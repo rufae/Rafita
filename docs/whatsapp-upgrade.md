@@ -50,6 +50,19 @@ documentado para hacerlo más adelante. Todo lo de abajo es gratuito.
 - «Ilimitado gratis»: no existe en ninguna vía (las no oficiales arriesgan
   bloqueo; las oficiales cobran fuera de las ventanas gratuitas).
 
+## Legalidad y ToS (verificado 2026-09-27)
+- **Evolution API (Baileys)**: usa el protocolo de WhatsApp Web, **no la API
+  oficial**; Meta puede bloquear el número por uso no autorizado. Es la vía
+  gratuita más completa, pero asume ese riesgo (mitigación: número secundario).
+- **Cloud API**: es la vía oficial; cumplir sus políticas es obligatorio.
+- **Transparencia de IA (Ley UE de IA, art. 50)**: desde el **02/08/2026** los
+  sistemas de IA que conversan con personas (chatbots incluidos) deben
+  identificarse como IA al inicio de la interacción. Si Rafita responde por
+  WhatsApp, el primer mensaje debe decirlo. Sanciones de hasta 15 M € o 3 %
+  de la facturación (art. 99).
+- **RGPD**: los mensajes y contactos son datos personales; guardar solo lo
+  necesario, con finalidad clara y borrado a petición.
+
 ## Referencias
 - Evolution API: <https://github.com/evolution-foundation/evolution-api>
 - Precios WhatsApp: <https://developers.facebook.com/docs/whatsapp/pricing>

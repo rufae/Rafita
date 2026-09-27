@@ -2,79 +2,197 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Llamar a Rafita</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .card { background: #1e293b; border-radius: 24px; padding: 40px; width: 380px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-  h1 { font-size: 24px; margin-bottom: 8px; }
-  .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
-  .status { font-size: 13px; padding: 8px 16px; border-radius: 20px; margin-bottom: 16px; min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s; }
-  .status.idle { background: #334155; color: #94a3b8; }
-  .status.connecting { background: #1e3a5f; color: #60a5fa; }
-  .status.listening { background: #14532d; color: #4ade80; }
-  .status.processing { background: #713f12; color: #fbbf24; }
-  .status.speaking { background: #1e3a5f; color: #93c5fd; }
-  .status.error { background: #450a0a; color: #fca5a5; }
-  .btn-group { display: flex; gap: 12px; justify-content: center; margin: 8px 0; }
-  .btn { width: 120px; height: 120px; border-radius: 60px; border: 4px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 16px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; user-select: none; }
-  .btn:hover { border-color: #60a5fa; }
-  .btn.active { border-color: #ef4444; background: #7f1d1d; animation: pulse 1.5s infinite; }
-  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
-  .btn .icon { font-size: 36px; line-height: 1; }
-  .btn .label { font-size: 12px; }
-  .btn .sub { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .btn.ptt { width: 80px; height: 80px; }
-  .btn.ptt .icon { font-size: 24px; }
-  .btn.ptt.pressed { border-color: #4ade80; background: #14532d; box-shadow: 0 0 20px rgba(74,222,128,0.3); }
-  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } }
-  .transcript { background: #0f172a; border-radius: 12px; padding: 16px; margin-top: 20px; max-height: 200px; overflow-y: auto; text-align: left; font-size: 13px; display: none; }
-  .transcript .tu { color: #60a5fa; margin-bottom: 4px; }
-  .transcript .rafita { color: #4ade80; margin-bottom: 12px; }
-  .log { color: #64748b; font-size: 11px; margin-top: 12px; max-height: 100px; overflow-y: auto; text-align: left; padding: 0 8px; }
-  .settings { margin-top: 12px; font-size: 13px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-  .settings label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  .server-row { margin: 8px 0; display: flex; gap: 6px; justify-content: center; align-items: center; }
-  .server-row input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 4px 10px; border-radius: 8px; font-size: 12px; width: 180px; }
-  .server-row button { background: #334155; border: none; color: #e2e8f0; padding: 4px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
-  .server-row button:hover { background: #475569; }
+  :root {
+    --bg-1: #070b18;
+    --bg-2: #0d1430;
+    --glass: rgba(22, 30, 56, 0.62);
+    --glass-border: rgba(148, 163, 184, 0.16);
+    --text: #e8edf7;
+    --muted: #93a1bd;
+    --user-1: #38bdf8;
+    --user-2: #6366f1;
+    --rafita-1: #a78bfa;
+    --rafita-2: #22d3ee;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(1200px 800px at 20% -10%, #16204a 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+    color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px; overflow-x: hidden;
+  }
+  .bg-orb {
+    position: fixed; border-radius: 50%; filter: blur(90px); opacity: 0.28;
+    pointer-events: none; z-index: 0; animation: drift 18s ease-in-out infinite alternate;
+  }
+  .bg-orb.a { width: 380px; height: 380px; background: var(--user-2); top: -120px; left: -100px; }
+  .bg-orb.b { width: 420px; height: 420px; background: var(--rafita-1); bottom: -160px; right: -120px; animation-delay: -6s; }
+  @keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(40px,30px,0) scale(1.12); } }
+
+  .shell {
+    position: relative; z-index: 1;
+    width: min(520px, 100%);
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 28px;
+    padding: 26px 24px 20px;
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: 0 30px 80px rgba(2, 6, 23, 0.65), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; justify-content: center; margin-bottom: 4px; }
+  .brand h1 { font-size: 26px; letter-spacing: 0.4px; font-weight: 700;
+    background: linear-gradient(92deg, var(--user-1), var(--rafita-1));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand .sub { color: var(--muted); font-size: 12px; }
+
+  .stage { display: flex; align-items: center; justify-content: center; gap: clamp(14px, 6vw, 42px); margin: 22px 0 10px; }
+  .orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .orb {
+    --level: 0;
+    width: clamp(96px, 30vw, 132px); height: clamp(96px, 30vw, 132px);
+    border-radius: 50%; position: relative; display: grid; place-items: center;
+    transition: box-shadow 0.35s ease, opacity 0.35s ease;
+  }
+  .orb .core {
+    width: 100%; height: 100%; border-radius: 50%;
+    transform: scale(calc(0.86 + var(--level) * 0.22));
+    transition: transform 0.09s linear;
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255,255,255,0.55), rgba(255,255,255,0) 42%),
+      radial-gradient(circle at 50% 60%, var(--c1), var(--c2) 72%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 14px 40px rgba(0,0,0,0.45);
+  }
+  .orb .ring {
+    position: absolute; inset: -8px; border-radius: 50%;
+    border: 2px solid var(--c1); opacity: calc(0.18 + var(--level) * 0.55);
+    transform: scale(calc(1 + var(--level) * 0.16));
+    transition: transform 0.09s linear, opacity 0.15s linear;
+  }
+  .orb .pulse {
+    position: absolute; inset: -8px; border-radius: 50%;
+    border: 2px solid var(--c1); opacity: 0; pointer-events: none;
+  }
+  .orb.active .pulse { animation: pulseRing 1.6s ease-out infinite; }
+  @keyframes pulseRing {
+    0% { transform: scale(0.96); opacity: 0.55; }
+    100% { transform: scale(1.35); opacity: 0; }
+  }
+  .orb.user { --c1: var(--user-1); --c2: var(--user-2); }
+  .orb.rafita { --c1: var(--rafita-1); --c2: var(--rafita-2); }
+  .orb.idle .core { animation: breathe 4.2s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { transform: scale(0.88); } 50% { transform: scale(0.94); } }
+  .orb-label { font-size: 12px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; }
+  .orb-wrap.talking .orb-label { color: var(--text); }
+
+  .status {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 6px auto 16px; padding: 9px 18px; width: fit-content; max-width: 100%;
+    border-radius: 999px; font-size: 13px; color: var(--muted);
+    background: rgba(15, 23, 42, 0.55); border: 1px solid var(--glass-border);
+  }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status.listening .dot { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  .status.processing .dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: blink 1s infinite; }
+  .status.speaking .dot { background: var(--user-1); box-shadow: 0 0 12px var(--user-1); }
+  .status.error .dot { background: var(--err); box-shadow: 0 0 12px var(--err); }
+  @keyframes blink { 50% { opacity: 0.35; } }
+
+  .controls { display: flex; gap: 10px; justify-content: center; align-items: stretch; flex-wrap: wrap; }
+  .ctl {
+    border: 1px solid var(--glass-border); background: rgba(30, 41, 59, 0.7);
+    color: var(--text); font-size: 14px; font-weight: 600;
+    padding: 13px 22px; border-radius: 16px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s;
+  }
+  .ctl:hover { transform: translateY(-1px); }
+  .ctl:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .ctl.primary { background: linear-gradient(135deg, #059669, #10b981); border-color: transparent; box-shadow: 0 10px 30px rgba(16,185,129,0.25); }
+  .ctl.hangup { background: linear-gradient(135deg, #b91c1c, #ef4444); border-color: transparent; box-shadow: 0 10px 30px rgba(239,68,68,0.3); }
+  .ctl.stop { background: linear-gradient(135deg, #7c3aed, #a855f7); border-color: transparent; }
+  .ctl.ghost { background: rgba(30, 41, 59, 0.45); }
+  .ctl.pressed { background: linear-gradient(135deg, #065f46, #10b981); }
+  .hidden { display: none !important; }
+
+  .settings { display: flex; flex-wrap: wrap; gap: 10px 14px; justify-content: center; align-items: center; margin-top: 16px; font-size: 12px; color: var(--muted); }
+  .settings label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .settings input[type="text"] {
+    background: rgba(15, 23, 42, 0.7); border: 1px solid var(--glass-border);
+    color: var(--text); padding: 7px 11px; border-radius: 10px; font-size: 12px; width: 170px;
+  }
+  .mini {
+    background: rgba(30, 41, 59, 0.6); border: 1px solid var(--glass-border);
+    color: var(--muted); padding: 7px 12px; border-radius: 10px; font-size: 12px; cursor: pointer;
+  }
+  .mini:hover { color: var(--text); }
+
+  .transcript {
+    display: none; margin-top: 16px; padding: 14px 16px;
+    background: rgba(10, 16, 34, 0.6); border: 1px solid var(--glass-border);
+    border-radius: 16px; max-height: 190px; overflow-y: auto; font-size: 13px; line-height: 1.5;
+  }
+  .transcript .tu { color: #7dd3fc; margin-bottom: 3px; }
+  .transcript .rafita { color: #c4b5fd; margin-bottom: 11px; }
+  .log { color: #5b6b8c; font-size: 11px; margin-top: 10px; max-height: 84px; overflow-y: auto; padding: 0 4px; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Rafita</h1>
-  <p class="subtitle">Llamada de voz con IA local &middot; Streaming</p>
+<div class="bg-orb a"></div>
+<div class="bg-orb b"></div>
 
-  <div id="status" class="status idle">Presiona Iniciar para llamar</div>
+<main class="shell">
+  <div class="brand">
+    <h1>Rafita</h1>
+    <span class="sub">Llamada de voz · IA local</span>
+  </div>
 
-  <div class="btn-group">
-    <button id="callBtn" class="btn" onclick="toggleCall()">
-      <span class="icon">&#128222;</span>
-      <span class="label">Iniciar</span>
-    </button>
-    <button id="pttBtn" class="btn ptt" disabled style="opacity:0.3">
-      <span class="icon">&#127908;</span>
-      <span class="label">PTT</span>
-      <span class="sub">mantener</span>
-    </button>
+  <section class="stage">
+    <div class="orb-wrap" id="userWrap">
+      <div class="orb user idle" id="userOrb"><div class="ring"></div><div class="pulse"></div><div class="core"></div></div>
+      <span class="orb-label">Tú</span>
+    </div>
+    <div class="orb-wrap" id="rafitaWrap">
+      <div class="orb rafita idle" id="rafitaOrb"><div class="ring"></div><div class="pulse"></div><div class="core"></div></div>
+      <span class="orb-label">Rafita</span>
+    </div>
+  </section>
+
+  <div id="status" class="status"><span class="dot"></span><span id="statusText">Presiona Iniciar para llamar</span></div>
+
+  <div class="controls">
+    <button id="callBtn" class="ctl primary" onclick="toggleCall()">📞 Iniciar</button>
+    <button id="stopBtn" class="ctl stop hidden" onclick="stopSpeaking()">⏹ Parar</button>
+    <button id="pttBtn" class="ctl ghost" disabled>🎤 Mantener</button>
   </div>
 
   <div class="settings">
-    <label><input type="checkbox" id="vadMode" checked> VAD automatico</label>
+    <label><input type="checkbox" id="vadMode" checked> VAD automático</label>
     <label><input type="checkbox" id="echoCancel" checked> Cancelar eco</label>
-  </div>
-  <div class="server-row">
-    <input type="text" id="serverUrl" placeholder="vacio = mismo servidor" >
-    <button onclick="testTTS()">Probar TTS</button>
+    <input type="text" id="serverUrl" placeholder="servidor (vacío = este)">
+    <button class="mini" onclick="testTTS()">Probar TTS</button>
   </div>
 
   <div id="transcript" class="transcript"></div>
   <div id="log" class="log"></div>
-</div>
+</main>
 
 <script>
-// === URL RESOLUTION — always derive from window.location ===
+// ============================================================
+// Rafita Voice Call — cliente (2026-09-27)
+// Arreglos: teardown real al colgar, re-llamada sin recargar,
+// reproduccion gapless, barge-in por voz + boton Parar, UI con
+// dos orbes animados (nivel real de micro y de la voz de Rafita).
+// ============================================================
+
 function getApiBase() {
   const custom = document.getElementById('serverUrl').value.trim();
   if (custom) {
@@ -86,29 +204,47 @@ function getApiBase() {
 function getWsBase() {
   const custom = document.getElementById('serverUrl').value.trim();
   if (custom) {
-    let host = custom.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '');
+    const host = custom.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '');
     return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + host;
   }
   return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
 }
 
 const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
-let ws = null, sessionId = null, audioContext = null, micStream = null, gainNode = null;
-let isCallActive = false, isSpeaking = false;
-let audioQueue = [], isAudioPlaying = false;
+
+let ws = null, sessionId = null;
+let audioContext = null, micStream = null;
+let micSource = null, micProcessor = null, micGain = null, micAnalyser = null;
+let playbackGain = null, rafitaAnalyser = null;
+let isCallActive = false, callState = STATUS.IDLE;
+let audioQueue = [], activeSources = [], nextPlayTime = 0;
 let rafitaTextBuffer = '';
+let userLevel = 0, rafitaLevel = 0, targetUserLevel = 0, targetRafitaLevel = 0;
 
 const statusDiv = document.getElementById('status');
+const statusText = document.getElementById('statusText');
 const logDiv = document.getElementById('log');
 const transcriptDiv = document.getElementById('transcript');
 const callBtn = document.getElementById('callBtn');
+const stopBtn = document.getElementById('stopBtn');
 const pttBtn = document.getElementById('pttBtn');
 const vadMode = document.getElementById('vadMode');
 const echoCancel = document.getElementById('echoCancel');
+const userOrb = document.getElementById('userOrb');
+const rafitaOrb = document.getElementById('rafitaOrb');
+const userWrap = document.getElementById('userWrap');
+const rafitaWrap = document.getElementById('rafitaWrap');
 
 function setStatus(state, msg) {
-  statusDiv.className = 'status ' + state;
-  statusDiv.textContent = msg;
+  callState = state;
+  statusDiv.className = 'status ' + (state === STATUS.IDLE ? '' : state);
+  statusText.textContent = msg;
+  const active = state !== STATUS.IDLE && state !== STATUS.ERROR;
+  userOrb.classList.toggle('idle', !active || state === STATUS.PROCESSING);
+  rafitaOrb.classList.toggle('idle', !active || state !== STATUS.SPEAKING);
+  userOrb.classList.toggle('active', state === STATUS.LISTENING);
+  rafitaOrb.classList.toggle('active', state === STATUS.SPEAKING);
+  stopBtn.classList.toggle('hidden', state !== STATUS.SPEAKING);
 }
 function log(msg) {
   const t = new Date().toLocaleTimeString();
@@ -117,38 +253,118 @@ function log(msg) {
 function addTranscript(role, text) {
   transcriptDiv.style.display = 'block';
   const cls = role === 'tu' ? 'tu' : 'rafita';
-  const prefix = role === 'tu' ? 'Tu' : 'Rafita';
+  const prefix = role === 'tu' ? 'Tú' : 'Rafita';
   transcriptDiv.innerHTML += '<div class="' + cls + '"><strong>' + prefix + ':</strong> ' + text + '</div>';
   transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
 }
 
+// ---------- Audio ----------
 async function ensureAudioContext() {
-  if (!audioContext) {
+  if (!audioContext || audioContext.state === 'closed') {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-      log('AudioContext creado a 16kHz');
     } catch (e) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      log('AudioContext fallback a ' + audioContext.sampleRate + 'Hz (browser no soporta 16kHz forzado)');
     }
+    playbackGain = audioContext.createGain();
+    rafitaAnalyser = audioContext.createAnalyser();
+    rafitaAnalyser.fftSize = 1024;
+    playbackGain.connect(rafitaAnalyser);
+    rafitaAnalyser.connect(audioContext.destination);
   }
-  if (audioContext.state === 'suspended') {
-    await audioContext.resume();
-  }
+  if (audioContext.state === 'suspended') await audioContext.resume();
   return audioContext;
 }
 
+function startAudioCapture() {
+  if (!micStream || !audioContext) return;
+  micSource = audioContext.createMediaStreamSource(micStream);
+  micAnalyser = audioContext.createAnalyser();
+  micAnalyser.fftSize = 1024;
+  micSource.connect(micAnalyser);
+
+  micGain = audioContext.createGain();
+  micGain.gain.value = 0;
+  micProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+  micSource.connect(micProcessor);
+  micProcessor.connect(micGain);
+  micGain.connect(audioContext.destination);
+
+  micProcessor.onaudioprocess = function (e) {
+    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (pttActive === false && !vadMode.checked) return;
+    // El micro NO se silencia mientras Rafita habla: asi el servidor puede
+    // detectar barge-in (hablar por encima) y el orbe del usuario se mueve.
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      pcm[i] = s < 0 ? s * 32768 : s * 32767;
+    }
+    ws.send(pcm.buffer);
+  };
+  log('Captura de audio lista (' + audioContext.sampleRate + ' Hz)');
+}
+
+function stopAudioCapture() {
+  if (micProcessor) { micProcessor.onaudioprocess = null; try { micProcessor.disconnect(); } catch (e) {} micProcessor = null; }
+  if (micSource) { try { micSource.disconnect(); } catch (e) {} micSource = null; }
+  if (micAnalyser) { try { micAnalyser.disconnect(); } catch (e) {} micAnalyser = null; }
+  if (micGain) { try { micGain.disconnect(); } catch (e) {} micGain = null; }
+  if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
+  targetUserLevel = 0;
+}
+
+function stopPlayback() {
+  audioQueue = [];
+  activeSources.forEach(function (src) { try { src.stop(); } catch (e) {} });
+  activeSources = [];
+  nextPlayTime = 0;
+  targetRafitaLevel = 0;
+  rafitaTextBuffer = '';
+  if (rafitaWrap) rafitaWrap.classList.remove('talking');
+}
+
+async function playChunk(arrayBuffer) {
+  if (!audioContext || !isCallActive) return;
+  try {
+    const audioBuf = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    if (!isCallActive) return;
+    const src = audioContext.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(playbackGain);
+    const startAt = Math.max(nextPlayTime, audioContext.currentTime);
+    src.start(startAt);
+    nextPlayTime = startAt + audioBuf.duration;
+    activeSources.push(src);
+    rafitaWrap.classList.add('talking');
+    src.onended = function () {
+      const idx = activeSources.indexOf(src);
+      if (idx >= 0) activeSources.splice(idx, 1);
+      if (activeSources.length === 0) {
+        targetRafitaLevel = 0;
+        rafitaWrap.classList.remove('talking');
+      }
+    };
+  } catch (e) {
+    log('Error audio: ' + e.message);
+  }
+}
+
+function drainQueue() {
+  while (audioQueue.length > 0) {
+    playChunk(audioQueue.shift());
+  }
+}
+
+// ---------- Llamada ----------
 async function startCall() {
-  const apiBase = getApiBase();
-  const wsBase = getWsBase();
-
   setStatus(STATUS.CONNECTING, 'Conectando...');
-  log('API: ' + apiBase + ' | WS: ' + wsBase);
-
+  stopPlayback();
   await ensureAudioContext();
 
   try {
-    const resp = await fetch(apiBase + '/call/start', {
+    const resp = await fetch(getApiBase() + '/call/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -156,72 +372,58 @@ async function startCall() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     sessionId = data.session_id;
-    log('Sesion: ' + sessionId.slice(0, 8) + '...');
+    log('Sesión: ' + sessionId.slice(0, 8) + '...');
   } catch (e) {
     setStatus(STATUS.ERROR, 'Error al iniciar: ' + e.message);
     return false;
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    micStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        sampleRate: 16000,
-        channelCount: 1,
+        sampleRate: 16000, channelCount: 1,
         echoCancellation: echoCancel.checked,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: true, autoGainControl: true,
       },
     });
-    micStream = stream;
-    log('Microfono activo');
   } catch (e) {
-    setStatus(STATUS.ERROR, 'Permiso de microfono denegado');
+    setStatus(STATUS.ERROR, 'Permiso de micrófono denegado');
     return false;
   }
 
-  return new Promise(function(resolve) {
-    ws = new WebSocket(wsBase + '/call/ws/' + sessionId);
+  return new Promise(function (resolve) {
+    ws = new WebSocket(getWsBase() + '/call/ws/' + sessionId);
     ws.binaryType = 'arraybuffer';
 
-    ws.onopen = function() {
+    ws.onopen = function () {
       log('WebSocket conectado');
       isCallActive = true;
-      var actualRate = audioContext ? audioContext.sampleRate : 48000;
-      ws.send(JSON.stringify({ type: 'audio_config', sample_rate: actualRate }));
-      log('Enviado audio_config: ' + actualRate + 'Hz');
+      const rate = audioContext ? audioContext.sampleRate : 48000;
+      ws.send(JSON.stringify({ type: 'audio_config', sample_rate: rate }));
       startAudioCapture();
       pttBtn.disabled = false;
-      pttBtn.style.opacity = '1';
-      pttBtn.addEventListener('mousedown', pttDown);
-      pttBtn.addEventListener('mouseup', pttUp);
-      pttBtn.addEventListener('mouseleave', pttUp);
-      pttBtn.addEventListener('touchstart', pttDown);
-      pttBtn.addEventListener('touchend', pttUp);
-      setStatus(STATUS.LISTENING, 'Escuchando... Habla');
+      setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
       resolve(true);
     };
 
-    ws.onclose = function() {
+    ws.onclose = function () {
       log('WebSocket cerrado');
       if (isCallActive) setStatus(STATUS.IDLE, 'Llamada finalizada');
       isCallActive = false;
       resolve(false);
     };
 
-    ws.onerror = function() {
-      setStatus(STATUS.ERROR, 'Error de conexion');
+    ws.onerror = function () {
+      setStatus(STATUS.ERROR, 'Error de conexión');
       resolve(false);
     };
 
-    ws.onmessage = async function(event) {
+    ws.onmessage = function (event) {
       if (event.data instanceof ArrayBuffer) {
         audioQueue.push(event.data);
-        if (!isAudioPlaying) processAudioQueue();
+        drainQueue();
       } else {
-        try {
-          const msg = JSON.parse(event.data);
-          handleServerMessage(msg);
-        } catch (e) {}
+        try { handleServerMessage(JSON.parse(event.data)); } catch (e) {}
       }
     };
   });
@@ -237,7 +439,7 @@ function handleServerMessage(msg) {
     case 'transcript':
       if (msg.text) addTranscript('tu', msg.text);
       setStatus(STATUS.PROCESSING, 'Pensando...');
-      log('STT: ' + (msg.stt_time || 0).toFixed(1) + 's');
+      if (msg.stt_time) log('STT: ' + msg.stt_time.toFixed(1) + 's');
       break;
     case 'thinking':
       setStatus(STATUS.PROCESSING, 'Pensando...');
@@ -246,20 +448,24 @@ function handleServerMessage(msg) {
     case 'token':
       rafitaTextBuffer += msg.text;
       setStatus(STATUS.SPEAKING, 'Respondiendo...');
-      isSpeaking = true;
       break;
     case 'speaking_fragment':
-      isSpeaking = true;
       setStatus(STATUS.SPEAKING, 'Hablando...');
       break;
     case 'response_text':
       if (msg.text) addTranscript('rafita', msg.text);
-      log('LLM: ' + (msg.llm_time || 0).toFixed(1) + 's');
+      if (msg.llm_time) log('LLM: ' + msg.llm_time.toFixed(1) + 's');
       break;
     case 'latency_report':
-      log('STT=' + msg.stt_ms + 'ms LLM=' + msg.llm_ms + 'ms TTS=' + msg.tts_ms + 'ms Total=' + msg.total_ms + 'ms Fragments=' + (msg.fragments || 0));
-      setStatus(STATUS.LISTENING, 'Escuchando...');
-      isSpeaking = false;
+      log('STT=' + msg.stt_ms + 'ms LLM=' + msg.llm_ms + 'ms TTS=' + msg.tts_ms +
+          'ms PrimerAudio=' + (msg.first_audio_ms != null ? msg.first_audio_ms + 'ms' : 'n/a') +
+          ' Total=' + msg.total_ms + 'ms Frag=' + (msg.fragments || 0));
+      setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
+      break;
+    case 'interrupted':
+      stopPlayback();
+      setStatus(STATUS.LISTENING, 'Te escucho...');
+      log('Respuesta interrumpida (' + (msg.reason || '') + ')');
       break;
     case 'error':
       setStatus(STATUS.ERROR, msg.message);
@@ -274,7 +480,7 @@ function pttDown(e) {
   if (!isCallActive) return;
   if (e) e.preventDefault();
   pttActive = true;
-  pttBtn.className = 'btn ptt pressed';
+  pttBtn.classList.add('pressed');
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'ptt_start' }));
   }
@@ -283,52 +489,25 @@ function pttUp(e) {
   if (!isCallActive) return;
   if (e) e.preventDefault();
   pttActive = false;
-  pttBtn.className = 'btn ptt';
+  pttBtn.classList.remove('pressed');
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'end_speech' }));
   }
 }
 
-function startAudioCapture() {
-  if (!micStream || !audioContext) return;
-  var ctx = audioContext;
-  var source = ctx.createMediaStreamSource(micStream);
-
-  gainNode = ctx.createGain();
-  gainNode.gain.value = 0;
-
-  var processor = ctx.createScriptProcessor(4096, 1, 1);
-
-  source.connect(processor);
-  processor.connect(gainNode);
-  gainNode.connect(ctx.destination);
-
-  processor.onaudioprocess = function(e) {
-    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
-    if (isSpeaking || (pttActive === false && !vadMode.checked)) return;
-
-    var input = e.inputBuffer.getChannelData(0);
-    var len = input.length;
-    var pcm = new Int16Array(len);
-    for (var i = 0; i < len; i++) {
-      var s = Math.max(-1, Math.min(1, input[i]));
-      pcm[i] = s < 0 ? s * 32768 : s * 32767;
-    }
-    ws.send(pcm.buffer);
-  };
-
-  log('Audio capture: ' + ctx.sampleRate + ' Hz');
-}
-
-function stopAudioCapture() {
-  if (micStream) { micStream.getTracks().forEach(function(t) { t.stop(); }); micStream = null; }
+function stopSpeaking() {
+  stopPlayback();
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'stop_speaking' }));
+  }
+  setStatus(STATUS.LISTENING, 'Te escucho...');
 }
 
 async function endCall() {
-  if (!sessionId) return;
-  try {
-    await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST' });
-  } catch (e) {}
+  stopSpeaking();
+  if (sessionId) {
+    try { await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST' }); } catch (e) {}
+  }
   sessionId = null;
 }
 
@@ -337,90 +516,95 @@ async function toggleCall() {
     callBtn.disabled = true;
     isCallActive = false;
     stopAudioCapture();
-    if (ws) { ws.onclose = null; ws.close(); ws = null; }
+    stopPlayback();
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} ws = null; }
     await endCall();
     pttBtn.disabled = true;
-    pttBtn.style.opacity = '0.3';
-    callBtn.innerHTML = '<span class="icon">&#128222;</span><span class="label">Iniciar</span>';
-    callBtn.className = 'btn';
+    callBtn.innerHTML = '📞 Iniciar';
+    callBtn.className = 'ctl primary';
     setStatus(STATUS.IDLE, 'Llamada finalizada');
     callBtn.disabled = false;
   } else {
     callBtn.disabled = true;
-    callBtn.innerHTML = '<span class="icon">&#9203;</span><span class="label">Conectando...</span>';
-    var ok = await startCall();
+    callBtn.innerHTML = '⏳ Conectando...';
+    const ok = await startCall();
     if (ok) {
-      callBtn.innerHTML = '<span class="icon">&#128308;</span><span class="label">Colgar</span>';
-      callBtn.className = 'btn active';
+      callBtn.innerHTML = '📞 Colgar';
+      callBtn.className = 'ctl hangup';
     } else {
-      callBtn.innerHTML = '<span class="icon">&#128222;</span><span class="label">Iniciar</span>';
-      callBtn.className = 'btn';
+      callBtn.innerHTML = '📞 Iniciar';
+      callBtn.className = 'ctl primary';
     }
     callBtn.disabled = false;
   }
 }
 
-// === Streaming audio playback queue (Sesame-style) ===
-async function processAudioQueue() {
-  isAudioPlaying = true;
-  var nextPlayTime = audioContext.currentTime;
-
-  while (audioQueue.length > 0) {
-    var buf = audioQueue.shift();
-    try {
-      await ensureAudioContext();
-      var audioBuf = await audioContext.decodeAudioData(buf.slice(0));
-      var src = audioContext.createBufferSource();
-      src.buffer = audioBuf;
-      src.connect(audioContext.destination);
-
-      // Schedule playback seamlessly after previous chunk
-      var startAt = Math.max(nextPlayTime, audioContext.currentTime);
-      src.start(startAt);
-      nextPlayTime = startAt + audioBuf.duration;
-
-      // Wait for this chunk to finish before decoding next
-      await new Promise(function(resolve) { src.onended = resolve; });
-    } catch (e) {
-      log('Error audio: ' + e.message);
-    }
+// ---------- Animación de orbes ----------
+function rmsFromAnalyser(analyser) {
+  if (!analyser) return 0;
+  const data = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    const v = (data[i] - 128) / 128;
+    sum += v * v;
   }
-  isAudioPlaying = false;
+  return Math.sqrt(sum / data.length);
 }
 
-window.addEventListener('beforeunload', function() {
+function animationLoop() {
+  const rawUser = rmsFromAnalyser(micAnalyser);
+  const rawRafita = rmsFromAnalyser(rafitaAnalyser);
+  const userTarget = isCallActive ? Math.min(1, rawUser * 3.4) : 0;
+  const rafitaTarget = Math.min(1, rawRafita * 3.0);
+  targetUserLevel += (userTarget - targetUserLevel) * 0.28;
+  targetRafitaLevel += (rafitaTarget - targetRafitaLevel) * 0.28;
+
+  const breath = 0.5 + 0.5 * Math.sin(performance.now() / 1300);
+  const userShown = Math.max(targetUserLevel, isCallActive ? breath * 0.10 : 0);
+  const rafitaShown = Math.max(targetRafitaLevel, callState === STATUS.SPEAKING ? breath * 0.12 : 0);
+
+  userOrb.style.setProperty('--level', userShown.toFixed(3));
+  rafitaOrb.style.setProperty('--level', rafitaShown.toFixed(3));
+  requestAnimationFrame(animationLoop);
+}
+
+// ---------- Eventos ----------
+pttBtn.addEventListener('mousedown', pttDown);
+pttBtn.addEventListener('mouseup', pttUp);
+pttBtn.addEventListener('mouseleave', pttUp);
+pttBtn.addEventListener('touchstart', pttDown, { passive: false });
+pttBtn.addEventListener('touchend', pttUp, { passive: false });
+transcriptDiv.addEventListener('click', function () { transcriptDiv.innerHTML = ''; transcriptDiv.style.display = 'none'; });
+window.addEventListener('beforeunload', function () {
   if (isCallActive) {
     isCallActive = false;
     stopAudioCapture();
+    stopPlayback();
     if (ws) ws.close();
   }
 });
-
-transcriptDiv.addEventListener('click', function() { transcriptDiv.innerHTML = ''; transcriptDiv.style.display = 'none'; });
+requestAnimationFrame(animationLoop);
 
 async function testTTS() {
-  var apiBase = getApiBase();
   setStatus(STATUS.PROCESSING, 'Probando TTS...');
-  log('Probando TTS en ' + apiBase + '...');
   try {
-    var resp = await fetch(apiBase + '/call/test_tts');
+    const resp = await fetch(getApiBase() + '/call/test_tts');
     if (!resp.ok) {
-      var err = await resp.json().catch(function() { return { reason: resp.statusText }; });
+      const err = await resp.json().catch(function () { return { reason: resp.statusText }; });
       throw new Error(err.reason || 'HTTP ' + resp.status);
     }
-    var blob = await resp.blob();
-    var dur = resp.headers.get('X-TTS-Duration') || '?';
-    log('TTS OK: ' + blob.size + ' bytes en ' + dur + 's');
+    const blob = await resp.blob();
+    log('TTS OK: ' + blob.size + ' bytes en ' + (resp.headers.get('X-TTS-Duration') || '?') + 's');
     await ensureAudioContext();
-    var buf = await blob.arrayBuffer();
-    var audioBuf = await audioContext.decodeAudioData(buf);
-    var source = audioContext.createBufferSource();
+    const audioBuf = await audioContext.decodeAudioData(await blob.arrayBuffer());
+    const source = audioContext.createBufferSource();
     source.buffer = audioBuf;
-    source.connect(audioContext.destination);
+    source.connect(playbackGain);
     source.start(0);
-    setStatus(STATUS.LISTENING, 'TTS funciona!');
+    setStatus(STATUS.LISTENING, 'TTS funciona');
   } catch (e) {
-    setStatus(STATUS.ERROR, 'TTS fallo: ' + e.message);
+    setStatus(STATUS.ERROR, 'TTS falló: ' + e.message);
   }
 }
 </script>

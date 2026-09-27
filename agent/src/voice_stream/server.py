@@ -19,7 +19,7 @@ from src.logger import logger
 app = FastAPI(
     title="Rafita Voice Stream",
     description="Real-time voice interaction via WebSocket",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -140,6 +140,7 @@ async def start_call(request: Request):
         "state": "listening",
         "vad_chunks": 0,
         "sample_rate": 48000,
+        "processing_task": None,
     }
 
     logger.info("VoiceStream: call started session=%s chat=%d", session_id, chat_id)
@@ -151,6 +152,18 @@ async def end_call(session_id: str):
     session = _active_sessions.pop(session_id, None)
     if not session:
         return JSONResponse(status_code=404, content={"error": "session not found"})
+
+    # Colgado limpio (2026-09-27): antes la generacion/TTS seguian vivos tras
+    # colgar y el navegador seguia reproduciendo audio en cola.
+    session["state"] = "ended"
+    task = session.get("processing_task")
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
     duration = time.time() - session["started_at"]
     logger.info("VoiceStream: call ended session=%s duration=%.1fs", session_id, duration)
     return {
@@ -159,6 +172,57 @@ async def end_call(session_id: str):
         "transcript": session.get("transcript", ""),
         "vad_chunks": session.get("vad_chunks", 0),
     }
+
+
+async def _safe_send_json(websocket: WebSocket, session: dict, payload: dict) -> bool:
+    if session.get("state") == "ended":
+        return False
+    try:
+        await websocket.send_json(payload)
+        return True
+    except Exception:
+        session["state"] = "ended"
+        return False
+
+
+async def _safe_send_bytes(websocket: WebSocket, session: dict, data: bytes) -> bool:
+    if session.get("state") == "ended":
+        return False
+    try:
+        await websocket.send_bytes(data)
+        return True
+    except Exception:
+        session["state"] = "ended"
+        return False
+
+
+async def _interrupt(session: dict, websocket: WebSocket, reason: str = "barge_in") -> None:
+    """Corta la respuesta en curso (barge-in por voz o boton Parar)."""
+    task = session.get("processing_task")
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+    session["processing_task"] = None
+    if session.get("state") != "ended":
+        session["state"] = "listening"
+    await _safe_send_json(websocket, session, {"type": "interrupted", "reason": reason})
+    logger.info("VoiceStream: respuesta interrumpida (%s)", reason)
+
+
+def _start_utterance(websocket: WebSocket, session: dict, session_id: str) -> None:
+    """Lanza el procesado del turno sin bloquear la recepcion (barge-in)."""
+    if session.get("state") == "ended":
+        return
+    task = session.get("processing_task")
+    if task and not task.done():
+        return
+    audio_data = session["audio_buffer"].getvalue()
+    session["processing_task"] = asyncio.create_task(
+        _process_utterance(websocket, session, session_id, audio_data)
+    )
 
 
 @app.websocket("/call/ws/{session_id}")
@@ -182,6 +246,17 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
 
             if "bytes" in data and data["bytes"]:
                 audio_chunk = data["bytes"]
+                task = session.get("processing_task")
+
+                if task and not task.done():
+                    # Rafita esta respondiendo: si el usuario habla, se corta
+                    # (barge-in) y su voz pasa a ser el nuevo turno.
+                    if not session.get("ptt_mode") and _simple_vad(audio_chunk):
+                        await _interrupt(session, websocket, reason="barge_in")
+                        session["audio_buffer"] = io.BytesIO()
+                        session["audio_buffer"].write(audio_chunk)
+                        session["vad_chunks"] = 1
+                    continue
 
                 if session.get("ptt_mode", False):
                     session["audio_buffer"].write(audio_chunk)
@@ -192,28 +267,34 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                         session["audio_buffer"].write(audio_chunk)
                         session["vad_chunks"] += 1
                     elif session["vad_chunks"] > 0:
-                        await _process_utterance(websocket, session, session_id)
+                        _start_utterance(websocket, session, session_id)
                         session["audio_buffer"] = io.BytesIO()
                         session["vad_chunks"] = 0
 
             elif "text" in data and data["text"]:
                 try:
                     msg = json.loads(data["text"])
-                    if msg.get("type") == "end_speech":
-                        if session["vad_chunks"] > 0:
-                            await _process_utterance(websocket, session, session_id)
+                    msg_type = msg.get("type")
+                    if msg_type == "end_speech":
+                        if session.get("vad_chunks", 0) > 0:
+                            _start_utterance(websocket, session, session_id)
                         session["audio_buffer"] = io.BytesIO()
                         session["vad_chunks"] = 0
                         session["ptt_mode"] = False
-                    elif msg.get("type") == "ptt_start":
+                    elif msg_type == "ptt_start":
+                        task = session.get("processing_task")
+                        if task and not task.done():
+                            await _interrupt(session, websocket, reason="barge_in")
                         session["ptt_mode"] = True
                         session["vad_chunks"] = 0
                         session["audio_buffer"] = io.BytesIO()
-                    elif msg.get("type") == "audio_config":
+                    elif msg_type == "stop_speaking":
+                        await _interrupt(session, websocket, reason="user_stop")
+                    elif msg_type == "audio_config":
                         sr = int(msg.get("sample_rate", 48000))
                         session["sample_rate"] = sr
                         logger.info("VoiceStream: client sample_rate=%d session=%s", sr, session_id)
-                    elif msg.get("type") == "ping":
+                    elif msg_type == "ping":
                         await websocket.send_json({"type": "pong"})
                 except json.JSONDecodeError:
                     pass
@@ -226,9 +307,9 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
         if session_id in _active_sessions:
             session = _active_sessions[session_id]
             session["state"] = "ended"
-            llm_task = session.pop("_llm_task", None)
-            if llm_task and not llm_task.done():
-                llm_task.cancel()
+            task = session.get("processing_task")
+            if task and not task.done():
+                task.cancel()
 
 
 def _simple_vad(audio_bytes: bytes, threshold: int = 300) -> bool:
@@ -241,193 +322,215 @@ def _simple_vad(audio_bytes: bytes, threshold: int = 300) -> bool:
         return False
 
 
-async def _process_utterance(websocket: WebSocket, session: dict, session_id: str) -> None:
-    buffer = session["audio_buffer"]
-    buffer.seek(0)
-    audio_data = buffer.getvalue()
+async def _process_utterance(
+    websocket: WebSocket, session: dict, session_id: str, audio_data: bytes
+) -> None:
+    """Turno completo: STT -> LLM en streaming real -> TTS por frases.
 
-    if len(audio_data) < 1000:
-        return
+    Corre como tarea cancelable: el bucle del WebSocket sigue leyendo audio
+    para permitir barge-in y para parar al colgar.
+    """
+    try:
+        if len(audio_data) < 1000:
+            return
 
-    rms = _compute_rms(audio_data)
-    if rms < SILENCE_RMS_THRESHOLD:
+        rms = _compute_rms(audio_data)
+        if rms < SILENCE_RMS_THRESHOLD:
+            logger.info(
+                "VoiceStream: silence detected (RMS=%.0f), skipping STT session=%s",
+                rms,
+                session_id,
+            )
+            return
+
+        session["state"] = "processing"
+        source_rate = session.get("sample_rate", 48000)
         logger.info(
-            "VoiceStream: silence detected (RMS=%.0f), skipping STT session=%s", rms, session_id
+            "VoiceStream: processing utterance %d bytes RMS=%.0f source=%dHz session=%s",
+            len(audio_data),
+            rms,
+            source_rate,
+            session_id,
         )
-        return
 
-    source_rate = session.get("sample_rate", 48000)
-    logger.info(
-        "VoiceStream: processing utterance %d bytes RMS=%.0f source=%dHz session=%s",
-        len(audio_data),
-        rms,
-        source_rate,
-        session_id,
-    )
+        await _safe_send_json(
+            websocket, session, {"type": "transcribing", "timestamp": time.time()}
+        )
 
-    await websocket.send_json({"type": "transcribing", "timestamp": time.time()})
+        t0 = time.time()
+        try:
+            transcript = await _transcribe_audio_bytes(audio_data, source_rate)
+        except Exception as e:
+            logger.warning("VoiceStream: STT error session=%s: %s", session_id, e)
+            transcript = None
+        t_stt = time.time() - t0
 
-    t0 = time.time()
-    try:
-        transcript = await _transcribe_audio_bytes(audio_data, source_rate)
-    except Exception as e:
-        logger.warning("VoiceStream: STT error session=%s: %s", session_id, e)
-        transcript = None
-    t_stt = time.time() - t0
+        if not transcript or not transcript.strip():
+            await _safe_send_json(
+                websocket,
+                session,
+                {"type": "transcript", "text": "", "error": "no speech detected"},
+            )
+            return
 
-    if not transcript or not transcript.strip():
-        await websocket.send_json({"type": "transcript", "text": "", "error": "no speech detected"})
-        return
+        session["transcript"] += transcript + " "
+        logger.info("VoiceStream: STT done [%.1fs] text=%s", t_stt, transcript[:100])
+        await _safe_send_json(
+            websocket,
+            session,
+            {"type": "transcript", "text": transcript, "stt_time": round(t_stt, 2)},
+        )
 
-    session["transcript"] += transcript + " "
-    logger.info("VoiceStream: STT done [%.1fs] text=%s", t_stt, transcript[:100])
-    await websocket.send_json(
-        {"type": "transcript", "text": transcript, "stt_time": round(t_stt, 2)}
-    )
+        await _safe_send_json(websocket, session, {"type": "thinking", "timestamp": time.time()})
 
-    await websocket.send_json({"type": "thinking", "timestamp": time.time()})
+        from src.core import generate_response_stream
+        from src.utils.voice_text import sanitize_for_tts
 
-    t1 = time.time()
-    full_response = ""
-    fragment_buffer = ""
-    t_tts_total = 0.0
-    fragment_count = 0
+        t1 = time.time()
+        full_response = ""
+        fragment_buffer = ""
+        t_tts_total = 0.0
+        t_first_audio: float | None = None
+        fragment_count = 0
 
-    try:
-        async for token in _generate_response_stream(
-            transcript, session.get("chat_id", 0), session
+        async def _emit_fragment(fragment: str) -> None:
+            nonlocal t_tts_total, t_first_audio, fragment_count
+            spoken = sanitize_for_tts(fragment)
+            await _safe_send_json(
+                websocket,
+                session,
+                {"type": "speaking_fragment", "text": fragment, "index": fragment_count},
+            )
+            if not spoken:
+                fragment_count += 1
+                return
+            t_tts_start = time.time()
+            audio_chunk = await _synthesize_speech_bytes(spoken)
+            t_tts_total += time.time() - t_tts_start
+            if audio_chunk:
+                if t_first_audio is None:
+                    t_first_audio = time.time() - t0
+                sent = await _safe_send_bytes(websocket, session, audio_chunk)
+                if not sent:
+                    return
+                logger.info(
+                    "VoiceStream: fragment %d TTS [%.1fs] %d bytes: %s",
+                    fragment_count,
+                    time.time() - t_tts_start,
+                    len(audio_chunk),
+                    fragment[:60],
+                )
+            fragment_count += 1
+
+        async for token in generate_response_stream(
+            transcript, session.get("chat_id", 0), voice=True
         ):
+            if session.get("state") == "ended":
+                return
             full_response += token
             fragment_buffer += token
+            await _safe_send_json(websocket, session, {"type": "token", "text": token})
 
-            await websocket.send_json({"type": "token", "text": token})
+            fragment, fragment_buffer = _split_fragment(fragment_buffer)
+            if fragment:
+                await _emit_fragment(fragment)
 
-            if _is_sentence_boundary(fragment_buffer):
-                fragment = fragment_buffer.strip()
-                fragment_buffer = ""
+        if fragment_buffer.strip():
+            await _emit_fragment(fragment_buffer.strip())
 
-                if fragment:
-                    await websocket.send_json(
-                        {
-                            "type": "speaking_fragment",
-                            "text": fragment,
-                            "index": fragment_count,
-                        }
-                    )
+        t_llm = time.time() - t1
 
-                    t_tts_start = time.time()
-                    audio_chunk = await _synthesize_speech_bytes(fragment)
-                    t_tts_frag = time.time() - t_tts_start
-                    t_tts_total += t_tts_frag
-
-                    if audio_chunk:
-                        await websocket.send_bytes(audio_chunk)
-                        logger.info(
-                            "VoiceStream: fragment %d TTS [%.1fs] %d bytes: %s",
-                            fragment_count,
-                            t_tts_frag,
-                            len(audio_chunk),
-                            fragment[:60],
-                        )
-                    fragment_count += 1
-
-    except Exception as e:
-        logger.warning("VoiceStream: streaming error: %s", e)
-        if not full_response:
-            full_response = "Error de procesamiento."
-
-    if fragment_buffer.strip():
-        fragment = fragment_buffer.strip()
-        await websocket.send_json(
+        await _safe_send_json(
+            websocket,
+            session,
             {
-                "type": "speaking_fragment",
-                "text": fragment,
-                "index": fragment_count,
-            }
+                "type": "response_text",
+                "text": sanitize_for_tts(full_response) or full_response,
+                "llm_time": round(t_llm, 2),
+            },
         )
-        t_tts_start = time.time()
-        audio_chunk = await _synthesize_speech_bytes(fragment)
-        t_tts_total += time.time() - t_tts_start
-        if audio_chunk:
-            await websocket.send_bytes(audio_chunk)
-        fragment_count += 1
 
-    t_llm = time.time() - t1
-
-    await websocket.send_json(
-        {
-            "type": "response_text",
-            "text": full_response,
-            "llm_time": round(t_llm, 2),
-        }
-    )
-
-    total_latency = time.time() - t0
-    await websocket.send_json(
-        {
-            "type": "latency_report",
-            "stt_ms": round(t_stt * 1000),
-            "llm_ms": round(t_llm * 1000),
-            "tts_ms": round(t_tts_total * 1000),
-            "total_ms": round(total_latency * 1000),
-            "fragments": fragment_count,
-        }
-    )
-    logger.info(
-        "VoiceStream: utterance complete total=%.0fms fragments=%d response=%s",
-        total_latency * 1000,
-        fragment_count,
-        full_response[:100],
-    )
+        total_latency = time.time() - t0
+        await _safe_send_json(
+            websocket,
+            session,
+            {
+                "type": "latency_report",
+                "stt_ms": round(t_stt * 1000),
+                "llm_ms": round(t_llm * 1000),
+                "tts_ms": round(t_tts_total * 1000),
+                "total_ms": round(total_latency * 1000),
+                "first_audio_ms": round(t_first_audio * 1000) if t_first_audio else None,
+                "fragments": fragment_count,
+            },
+        )
+        logger.info(
+            "VoiceStream: utterance complete total=%.0fms first_audio=%sms fragments=%d",
+            total_latency * 1000,
+            round(t_first_audio * 1000) if t_first_audio else "n/a",
+            fragment_count,
+        )
+    except asyncio.CancelledError:
+        logger.info("VoiceStream: utterance cancelled session=%s", session_id)
+        raise
+    finally:
+        if session.get("processing_task") is asyncio.current_task():
+            session["processing_task"] = None
+        if session.get("state") != "ended":
+            session["state"] = "listening"
 
 
-_SENTENCE_ENDINGS = ".!?\n"
+_SENTENCE_ENDINGS = ".!?…\n"
 _CLAUSE_ENDINGS = ";,"
+_FRAGMENT_MAX_CHARS = 140
 
 
 def _is_sentence_boundary(text: str) -> bool:
-    if not text:
-        return False
-    if text[-1] in _SENTENCE_ENDINGS:
-        return True
-    return (len(text) > 60 and text[-1] in _CLAUSE_ENDINGS) or len(text) > 120
+    """True si el buffer ya se puede sintetizar.
 
-
-async def _generate_response_stream(text: str, chat_id: int, session: dict):
-    """Generate AI response using the shared orchestrator (tools + RAG).
-
-    Stores the orchestrator task in session['_llm_task'] so it can be cancelled
-    when the user hangs up.
+    Bug 2026-09-27: las palabras se emitian con espacio final, asi que
+    `text[-1] in ".!?"` nunca daba True y los fragmentos se cortaban a 120
+    chars en mitad de palabra (tartamudeo del TTS). Ahora se ignora el
+    espacio final.
     """
-    import asyncio as _asyncio
-
-    task = _asyncio.ensure_future(_run_orchestrator_background(text, chat_id))
-    session["_llm_task"] = task
-    try:
-        while not task.done():
-            if session.get("state") == "ended":
-                task.cancel()
-                return
-            await _asyncio.sleep(0.5)
-            yield ""
-        result = task.result()
-        if result:
-            words = result.split()
-            for i, word in enumerate(words):
-                yield word + (" " if i < len(words) - 1 else "")
-    finally:
-        session.pop("_llm_task", None)
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+    if stripped[-1] in _SENTENCE_ENDINGS:
+        return True
+    if len(stripped) >= _FRAGMENT_MAX_CHARS:
+        return True
+    return len(stripped) >= 60 and stripped[-1] in _CLAUSE_ENDINGS
 
 
-async def _run_orchestrator_background(text: str, chat_id: int) -> str:
-    """Run the orchestrator, handling exceptions gracefully."""
-    try:
-        from src.core import generate_response
+def _split_fragment(buffer: str) -> tuple[str, str]:
+    """Divide el buffer en (fragmento listo, resto) sin partir palabras.
 
-        return await generate_response(text, chat_id) or ""
-    except Exception:
-        logger.warning("VoiceStream LLM error", exc_info=True)
-        return "Lo siento, no pude procesar eso."
+    Corta en la primera frase terminada dentro del buffer (los tokens pueden
+    llegar en rafagas), en una clausula si ya hay texto suficiente, o en el
+    ultimo espacio antes del limite.
+    """
+    stripped = buffer.rstrip()
+    if not stripped:
+        return "", buffer
+
+    for idx, ch in enumerate(stripped):
+        if ch in _SENTENCE_ENDINGS and (idx + 1 >= len(stripped) or stripped[idx + 1] in " \n"):
+            fragment = stripped[: idx + 1]
+            return fragment, buffer[len(fragment) :].lstrip()
+
+    if len(stripped) >= 60 and stripped[-1] in _CLAUSE_ENDINGS:
+        return stripped, buffer[len(stripped) :].lstrip()
+
+    if len(stripped) >= _FRAGMENT_MAX_CHARS:
+        cut = stripped.rfind(" ", 0, _FRAGMENT_MAX_CHARS + 1)
+        if cut <= 0:
+            cut = stripped.find(" ")
+        if cut <= 0:
+            return "", buffer
+        return stripped[:cut], buffer[cut + 1 :]
+
+    return "", buffer
 
 
 async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) -> str | None:
@@ -519,16 +622,15 @@ def _compute_rms(audio_bytes: bytes) -> float:
 
 
 async def _synthesize_speech_bytes(text: str) -> bytes | None:
-    try:
-        from src.utils.tts_manager import convert_to_ogg, text_to_speech
+    """WAV en memoria: sin ffmpeg/OGG (el navegador decodifica WAV).
 
-        wav_path = await text_to_speech(text)
-        if wav_path is None:
-            return None
-        ogg_path = await convert_to_ogg(wav_path)
-        if ogg_path and ogg_path.exists():
-            return ogg_path.read_bytes()
-        return None
+    Bug 2026-09-27: convertir a OGG lanzaba un ffmpeg por fragmento (latencia)
+    y el modelo Piper se recargaba en cada sintesis (tartamudeo).
+    """
+    try:
+        from src.utils.tts_manager import synthesize_wav_bytes
+
+        return await synthesize_wav_bytes(text)
     except Exception as e:
         logger.warning("VoiceStream TTS error: %s", e)
         return None
@@ -536,6 +638,21 @@ async def _synthesize_speech_bytes(text: str) -> bytes | None:
 
 async def start_voice_stream_server(host: str = "0.0.0.0", port: int = 8001):
     import uvicorn
+
+    # Precalentado (2026-09-27): antes la primera llamada pagaba la carga de
+    # Whisper y de Piper.
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _get_whisper)
+    except Exception as e:
+        logger.warning("VoiceStream: no se pudo precalentar Whisper: %s", e)
+    try:
+        from src.utils.tts_manager import prewarm_tts
+
+        if await prewarm_tts():
+            logger.info("VoiceStream: Piper precalentado")
+    except Exception as e:
+        logger.warning("VoiceStream: no se pudo precalentar Piper: %s", e)
 
     config_obj = uvicorn.Config(
         app,

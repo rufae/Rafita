@@ -146,16 +146,21 @@ class OpenAICompatClient:
         messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
     ):
         if not self._client:
             raise RuntimeError("AI provider not initialized. Call initialize() first.")
+        extra_body = self._extra_body() or {}
+        if repeat_penalty is not None:
+            options = extra_body.setdefault("options", {})
+            options["repeat_penalty"] = repeat_penalty
         stream = await self._client.chat.completions.create(
             model=self.model,
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature if temperature is not None else self.temperature,
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
             stream=True,
-            extra_body=self._extra_body(),
+            extra_body=extra_body,
         )
         async for chunk in stream:  # type: ignore[union-attr]
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
