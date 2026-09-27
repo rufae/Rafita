@@ -3289,3 +3289,93 @@ colgar y la sensación de barge-in por voz en una llamada real. El código está
 desplegado; se le pide probarlo y reportar.
 
 **Estado:** completado (2026-09-27) salvo la validación manual anterior.
+
+---
+
+# Seguimiento 12 (2026-09-27): contactos en llamada, Fase 5 gratis y n8n
+
+Origen: en llamada, «el número de mi madre» y «Aa Mama» no se encontraban (el
+correo sí funcionaba); y petición del propietario de ejecutar la Fase 5 con
+todo 100 % gratis más planificar la integración con n8n y extensiones.
+
+## 12.1 Contactos en modo voz — causa raíz y arreglo
+
+Diagnóstico con logs reales de producción (19:48): el STT transcribió
+«A A espacio, mamá», el modelo **sí** llamó a `find_contact('A A mamá')` y la
+comparación literal no matcheaba «Aa Mama» → vacío → «no lo encuentro». Con
+«mi madre» el modelo eligió `search_knowledge` y tampoco. Arreglos:
+
+1. **Matching difuso**: comparación compacta sin espacios/puntuación/acentos
+   (`'A A mamá'` → `aamama` casa con `Aa Mama`) + tokens + variantes de
+   parentesco por fases (literal primero; si vacío, «mama»/«madre»).
+2. **Relevancia**: por palabras de la consulta («Mama Raulito» gana a «Aa
+   Mama» para «mama raulito») y, en empate, nombre más corto.
+3. **Alias aprendidos**: `remember_fact` («mi madre es Aa Mama») resuelve el
+   parentesco por nombre exacto (solo para expresiones con posesivo); alias
+   sembrado de la declaración del propio usuario en llamada (19:48).
+4. **CONTACT_RULE reforzada** (nunca `search_knowledge` para teléfonos;
+   guardar relaciones) y mensaje guía cuando no hay coincidencias.
+5. **Filtro de alucinación del STT** («la vida, la vida, la vida…» sobre ruido
+   → se descarta como no-habla).
+6. **Guarda de mensaje de usuario** en `_prepare_tool_phase` (si el historial
+   no incluye la pregunta actual, se añade; evita respuestas de saludo).
+
+**Evidencia [2026-09-27] [commit pendiente, base `66be0d1`]:**
+
+Logs reales que reproducen el bug (código anterior):
+```
+VoiceStream: STT done [0.9s] text=Si, el nombre de mi madre en los contactos es A A espacio, mamá.
+[ORCHESTRATOR] Tool call: chat_id=0 tool=find_contact args={'query': 'A A mamá'}
+```
+(find_contact devolvía vacío con 'A A mamá' y el bot respondía «no lo
+encuentro» aunque el contacto literal es 'Aa Mama'.)
+
+Verificación real en el contenedor (con alias sembrado `madre → Aa Mama`):
+```
+$ python /tmp/verify_dispatch_madre.py
+find_contact: alias 'madre' -> 'Aa Mama'
+Q: el numero de mi madre
+  -> 👤 Contactos encontrados: | • Aa Mama — sin correo — 655-225-607
+Q: dame el numero de mama
+  -> 👤 Contactos encontrados (varios coinciden...): | • Aa Mama — 655-225-607 | • Mama Raulito ...
+Q: cual es el telefono de Aa Mama
+  -> 👤 Contactos encontrados (...): | • Aa Mama — 655-225-607 | ...
+```
+Variantes STT que antes fallaban, todas con Aa Mama primero:
+```
+$ python /tmp/verify_contacts_voice.py
+  'A A mamá'   -> [('Aa Mama', '655-225-607'), ...]
+  'a a mama'   -> [('Aa Mama', '655-225-607'), ...]
+  'A.A. Mama'  -> [('Aa Mama', '655-225-607'), ...]
+  'mi madre'   -> [('Aa Mama', '655-225-607'), ...]
+  'mamá'       -> [('Aa Mama', '655-225-607'), ...]
+```
+Tests: 7 nuevos (variantes STT, parentesco, relevancia, alias de despacho,
+guía de error, alucinación STT, guarda de mensaje).
+
+## 12.2 Fase 5 — quick wins 100 % gratis
+
+- **5.5.6/5.1.2 mínimo**: whitelist por `ADMIN_IDS` (el bot es privado: sin
+  autorización → negación explícita) + rate limiting por usuario (20
+  mensajes/min, ventana deslizante) en chat y notas de voz.
+  Módulo `agent/src/utils/access_control.py` + tests.
+- **5.4.1 (parcial)**: candado de cobertura en CI (`--cov-fail-under=38`);
+  cobertura real medida: **39%** (el objetivo ≥70% es trabajo incremental).
+- **Dependabot** (`.github/dependabot.yml`): pip, github-actions y docker,
+  semanal, con grupos.
+- **Quick win 6**: `call_rafita.html` → `web/call_rafita.html` (el servidor
+  sirve ambas rutas por compatibilidad).
+
+## 12.3 n8n y extensiones (propuesta)
+
+`docs/n8n-y-extensiones.md`: integración con n8n en 4 bloques (n8n→Rafita,
+Rafita→n8n con tool `trigger_n8n`, n8n como hub → segundo cerebro, briefing
+matutino) + **menú de 11 extensiones** con coste (todo 0 € salvo el número SIP
+del contestador). Pendiente de que el propietario elija qué implementar.
+
+**Tests finales:** 300 passed, 26 skipped; ruff/formato/mypy limpios; batería
+y suite sin cambios funcionales de tools (se re-ejecutan en el cierre).
+
+**Pendiente de validación del propietario:** preguntar en llamada real
+«el número de mi madre» con su voz (el STT de mi voz sintética degrada la
+frase; con su voz real el STT la transcribe bien, como consta en los logs).

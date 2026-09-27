@@ -848,6 +848,105 @@ class GoogleServicesManager:
         decomposed = unicodedata.normalize("NFKD", (text or "").lower())
         return "".join(c for c in decomposed if not unicodedata.combining(c))
 
+    @classmethod
+    def _compact_match(cls, text: str) -> str:
+        """Sin espacios, puntuacion ni acentos ('A A mamá' -> 'aamama').
+
+        Bug 2026-09-27: el STT de una llamada transcribio 'Aa Mama' como
+        'A A mamá' y find_contact no lo encontraba pese a ser el contacto
+        literal. La comparacion compacta hace que variantes de dictado,
+        iniciales separadas y acentos casen con el contacto real.
+        """
+        import unicodedata
+
+        decomposed = unicodedata.normalize("NFKD", (text or "").lower())
+        return "".join(c for c in decomposed if c.isalnum() and not unicodedata.combining(c))
+
+    @staticmethod
+    def _matches(needle: str, haystack: str, needle_compact: str, haystack_compact: str) -> bool:
+        if not needle:
+            return True
+        if needle in haystack:
+            return True
+        if needle_compact and needle_compact in haystack_compact:
+            return True
+        # Tokens solo si hay dos o mas: con uno suelto ('mama') todo el mundo
+        # casaria con 'Mama Raulito' y compania.
+        tokens = [t for t in needle.split() if len(t) >= 3]
+        return len(tokens) >= 2 and all(t in haystack for t in tokens)
+
+    # Palabras de parentesco -> variantes con las que suelen guardarse los
+    # contactos ('mi madre' -> 'Aa Mama'). Los contactos de Google del usuario
+    # no tienen el campo 'relations', asi que se resuelve por variantes y por
+    # alias aprendidos (remember_fact / personal_knowledge).
+    _KINSHIP_VARIANTS = {
+        "madre": ("mama", "madre"),
+        "mama": ("mama", "madre"),
+        "mamá": ("mama", "madre"),
+        "padre": ("papa", "padre"),
+        "papa": ("papa", "padre"),
+        "papá": ("papa", "padre"),
+    }
+
+    # Verbos/ruidos de las frases naturales: no son nombres de contacto.
+    _QUERY_STOPWORDS = {
+        "dame",
+        "dime",
+        "diga",
+        "cual",
+        "cuales",
+        "telefono",
+        "numero",
+        "movil",
+        "correo",
+        "email",
+        "busca",
+        "buscar",
+        "favor",
+        "quiero",
+        "necesito",
+        "puedes",
+        "puede",
+        "contacto",
+        "contactos",
+        "llama",
+        "llamar",
+        "envia",
+        "enviar",
+        "manda",
+        "mandar",
+        "informacion",
+        "datos",
+        "donde",
+        "esta",
+        "quien",
+        "sabes",
+        "sabe",
+    }
+
+    @classmethod
+    def _query_variants(cls, query: str) -> list[str]:
+        """Consultas alternativas: la frase literal + palabras nombre + parentesco.
+
+        'dame el numero de mama' -> ['dame el numero de mama', 'mama', 'madre']
+        """
+        variants = [query]
+        normalized = cls._normalize_match((query or "").strip())
+        extra: set[str] = set()
+        for word in normalized.split():
+            if len(word) < 3 or word in cls._QUERY_STOPWORDS:
+                continue
+            extra.add(word)
+            if word in cls._KINSHIP_VARIANTS:
+                extra.update(cls._KINSHIP_VARIANTS[word])
+        seen = {normalized}
+        for variant in sorted(extra):
+            variant_norm = cls._normalize_match(variant)
+            if variant_norm and variant_norm not in seen:
+                seen.add(variant_norm)
+                variants.append(variant)
+        return variants
+
     @staticmethod
     def _person_to_contact(person: dict[str, Any]) -> dict[str, str]:
         names = person.get("names", [{}])
@@ -918,30 +1017,61 @@ class GoogleServicesManager:
     async def find_contact(self, query: str, max_results: int = 5) -> dict[str, Any]:
         """Busca contactos por nombre, correo o telefono (People API).
 
-        Comparacion sin acentos ni mayusculas y paginacion completa
-        (bugs 2026-09-27: 'mama' no encontraba 'Aa Mama', que estaba en la
-        pagina 2 de contactos).
+        Comparacion sin acentos, sin espacios ni puntuacion y con variantes de
+        parentesco (bugs 2026-09-27): 'A A mamá' (STT de 'Aa Mama') no
+        encontraba nada; 'mi madre' ahora casa con 'Aa Mama' via la variante
+        'mama'. Paginacion completa y orden por relevancia.
         """
         connections = await self._fetch_all_connections()
-        needle = self._normalize_match((query or "").strip())
-        found = []
-        for person in connections:
-            contact = self._person_to_contact(person)
-            haystack = self._normalize_match(
-                "%s %s %s" % (contact["name"], contact["email"], contact["phone"])
-            )
-            if not needle or needle in haystack:
-                found.append(contact)
-        # Relevancia: los nombres mas parecidos al termino busado primero
-        # (con 'mama', 'Aa Mama' antes que 'Mama Raulito').
-        found.sort(key=lambda c: (len(self._normalize_match(c["name"])), c["name"]))
+
+        def _search(needle_list: list[str]) -> list[dict[str, str]]:
+            compacts = [self._compact_match(n) for n in needle_list]
+            matches: list[dict[str, str]] = []
+            seen: set[str] = set()
+            for person in connections:
+                contact = self._person_to_contact(person)
+                haystack = self._normalize_match(
+                    "%s %s %s" % (contact["name"], contact["email"], contact["phone"])
+                )
+                haystack_compact = self._compact_match(haystack)
+                for needle, needle_compact in zip(needle_list, compacts):
+                    if self._matches(needle, haystack, needle_compact, haystack_compact):
+                        key = "%s|%s" % (contact["name"], contact["phone"])
+                        if key not in seen:
+                            seen.add(key)
+                            matches.append(contact)
+                        break
+            return matches
+
+        # Fase 1: consulta literal. Fase 2: variantes de parentesco SOLO si la
+        # literal no encontro nada ('mi madre' -> 'mama'; pero 'Aa Mama' no
+        # arrastra a los contactos 'Madre X' de otros).
+        plain = [self._normalize_match((query or "").strip())]
+        plain = [n for n in plain if n]
+        found = _search(plain or [""])
+        if not found and (query or "").strip():
+            variant_list = [self._normalize_match(v) for v in self._query_variants(query)]
+            variant_list = [n for n in variant_list if n]
+            found = _search(variant_list)
+        # Relevancia: primero cuantas palabras de la consulta aparecen en el
+        # nombre ('Mama Raulito' gana a 'Aa Mama' para 'mama raulito') y, en
+        # empate, el nombre mas corto ('Aa Mama' antes que 'Mama Raulito').
+        query_words = [w for w in self._normalize_match(query or "").split() if len(w) >= 3]
+
+        def _relevance(contact: dict[str, str]) -> tuple[int, int, str]:
+            name = self._normalize_match(contact["name"])
+            score = sum(1 for w in query_words if w in name)
+            return (-score, len(name), name)
+
+        found.sort(key=_relevance)
         found = found[: max(1, int(max_results))]
-        if not found and needle:
+        if not found and (query or "").strip():
             # Fallback: "Otros contactos" (personas de correos, no guardadas)
             try:
                 extra = await self._run(
                     lambda: self.people.otherContacts().search(
-                        query=needle, readMask="names,emailAddresses,phoneNumbers"
+                        query=(query or "").strip(),
+                        readMask="names,emailAddresses,phoneNumbers",
                     ),
                     "buscar otros contactos",
                 )

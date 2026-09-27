@@ -90,6 +90,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = message.text.strip()
     if not text:
         return
+    # Asistente privado (Fase 5, 5.5.6): whitelist por ADMIN_IDS + rate limit.
+    from src.utils.access_control import chat_limiter, is_allowed_user
+
+    if not is_allowed_user(user.id):
+        logger.info("Acceso denegado a usuario no autorizado: %s", user.id)
+        await message.reply_text("Este asistente es privado y no está autorizado para ti.")
+        return
+    if not chat_limiter.allow(str(user.id)):
+        logger.info("Rate limit alcanzado para chat %s", user.id)
+        await message.reply_text("Vas muy rápido 🐢. Espera un momento y vuelve a intentarlo.")
+        return
     new_correlation_id()
     await _process_ai_message(update, text, context)
 
@@ -733,6 +744,55 @@ async def _reply_formatted(message, text: str) -> None:
         chunks.append(current)
     for chunk in chunks:
         await message.reply_text(chunk, parse_mode=mode)
+
+
+_KINSHIP_KEYS = (
+    "madre",
+    "mama",
+    "mamá",
+    "padre",
+    "papa",
+    "papá",
+    "hermano",
+    "hermana",
+    "abuela",
+    "abuelo",
+    "pareja",
+    "mujer",
+    "marido",
+)
+
+
+async def _resolve_contact_alias(chat_id: int, query: str) -> str:
+    """Resuelve parentescos ('mi madre') con alias aprendidos (remember_fact).
+
+    Si el usuario dijo 'mi madre es Aa Mama', quedo guardado en
+    personal_knowledge ('madre' -> 'Aa Mama') y aqui se usa para buscar el
+    contacto real.
+    """
+    from src.database import db
+
+    normalized = (query or "").lower()
+    # 'mama'/'mamá' se guardan como 'madre' y viceversa: buscamos ambas claves.
+    canon = {"mama": "madre", "mamá": "madre", "papa": "padre", "papá": "padre"}
+    keys_to_try: list[str] = []
+    for key in _KINSHIP_KEYS:
+        if key in normalized:
+            keys_to_try.append(key)
+            if key in canon:
+                keys_to_try.append(canon[key])
+    for key in dict.fromkeys(keys_to_try):
+        for scope in (chat_id, 0):
+            try:
+                rows = await db.search_personal_knowledge(scope, key)
+            except Exception:
+                return ""
+            for row in rows:
+                value = str(row.get("value") or "").strip()
+                if value:
+                    logger.info("find_contact: alias '%s' -> '%s'", key, value)
+                    return value
+    return ""
 
 
 async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -1425,11 +1485,42 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             }
 
         elif func_name == "find_contact":
-            result = await google_services.find_contact(args.get("query", ""))
+            query = args.get("query", "")
+            # Alias aprendidos (2026-09-27): 'mi madre' -> 'Aa Mama' (guardado
+            # con remember_fact) resuelve sin ambiguedades. Solo se aplica a
+            # expresiones con posesivo ('mi madre'), no a 'Mama Raulito'.
+            import re as _re
+
+            is_kinship_expr = bool(
+                _re.search(
+                    r"\b(mi|tu|su)\s+(madre|mama|mam\u00e1|padre|papa|pap\u00e1"
+                    r"|hermano|hermana|abuela|abuelo|pareja|mujer|marido)\b",
+                    query.lower(),
+                )
+            )
+            alias = await _resolve_contact_alias(chat_id, query) if is_kinship_expr else ""
+            result = await google_services.find_contact(alias or query)
             contacts = result.get("contacts", [])
             if not contacts:
-                return {"success": True, "message": "No encontré ese contacto."}
-            lines = ["👤 Contactos encontrados:"]
+                alias = alias or await _resolve_contact_alias(chat_id, query)
+                if alias:
+                    result = await google_services.find_contact(alias)
+                    contacts = result.get("contacts", [])
+            if not contacts:
+                return {
+                    "success": True,
+                    "message": (
+                        "No encontré '%s' en tus contactos de Google. Si es una "
+                        "persona ('mi madre', 'un amigo'), dime el nombre exacto "
+                        "con el que la tienes guardada y pruebo otra vez. Si me "
+                        "dices 'mi madre es X', lo recuerdo para siempre." % query
+                    ),
+                }
+            if len(contacts) > 1:
+                hint = " (varios coinciden: si no es el primero, dime cuál)"
+            else:
+                hint = ""
+            lines = ["👤 Contactos encontrados%s:" % hint]
             for contact in contacts:
                 lines.append(
                     "  • %s — %s — %s"

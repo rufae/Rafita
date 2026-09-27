@@ -47,6 +47,15 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not message or not message.voice or not user:
         return
 
+    from src.utils.access_control import chat_limiter, is_allowed_user
+
+    if not is_allowed_user(user.id):
+        logger.info("Acceso de voz denegado a usuario no autorizado: %s", user.id)
+        return
+    if not chat_limiter.allow(str(user.id)):
+        await message.reply_text("Vas muy rápido 🐢. Espera un momento y vuelve a intentarlo.")
+        return
+
     voice = message.voice
     chat_id = user.id
 

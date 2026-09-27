@@ -27,6 +27,16 @@ class _FakeWS:
 # ---------- 11.1 corte de frases ----------
 
 
+def test_clean_stt_rejects_loop_hallucination():
+    from src.utils.voice_text import clean_stt_transcript
+
+    hallucination = "En el momento de la vida, " + "la vida, " * 20 + "la vida"
+    assert clean_stt_transcript(hallucination) is None
+    assert clean_stt_transcript("Hola, buenos días") == "Hola, buenos días"
+    assert clean_stt_transcript("si si si") == "si"
+    assert clean_stt_transcript("") is None
+
+
 def test_sentence_boundary_ignores_trailing_space():
     assert _is_sentence_boundary("Hola, ¿cómo estás? ") is True
     assert _is_sentence_boundary("Hola ") is False
