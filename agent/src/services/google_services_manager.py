@@ -710,6 +710,107 @@ class GoogleServicesManager:
             "messages": data.get("messagesTotal"),
         }
 
+    async def search_gmail(self, query: str, max_results: int = 5) -> dict[str, Any]:
+        """Busca correos (solo metadatos: asunto, remitente, fecha, extracto)."""
+        limit = max(1, min(int(max_results), 10))
+        data = await self._run(
+            lambda: (
+                self.gmail.users()
+                .messages()
+                .list(userId="me", q=(query or "").strip(), maxResults=limit)
+            ),
+            "buscar correos",
+        )
+        messages = []
+        for ref in data.get("messages", []):
+            meta = await self._run(
+                lambda mid=ref["id"]: (
+                    self.gmail.users()
+                    .messages()
+                    .get(
+                        userId="me",
+                        id=mid,
+                        format="metadata",
+                        metadataHeaders=["Subject", "From", "Date"],
+                    )
+                ),
+                "leer correo",
+            )
+            headers = {
+                h.get("name", "").lower(): h.get("value", "")
+                for h in meta.get("payload", {}).get("headers", [])
+            }
+            messages.append(
+                {
+                    "subject": headers.get("subject", "(sin asunto)"),
+                    "from": headers.get("from", ""),
+                    "date": headers.get("date", ""),
+                    "snippet": (meta.get("snippet") or "")[:200],
+                }
+            )
+        return {"success": True, "messages": messages, "count": len(messages)}
+
+    async def list_tasks(
+        self, show_completed: bool = False, max_results: int = 20
+    ) -> dict[str, Any]:
+        data = await self._run(
+            lambda: self.tasks.tasks().list(
+                tasklist="@default",
+                showCompleted=show_completed,
+                maxResults=max(1, min(int(max_results), 50)),
+            ),
+            "listar tareas",
+        )
+        tasks = [
+            {
+                "id": item.get("id"),
+                "title": item.get("title", ""),
+                "due": item.get("due", ""),
+                "status": item.get("status", ""),
+            }
+            for item in data.get("items", [])
+        ]
+        return {"success": True, "tasks": tasks}
+
+    async def complete_task(self, task_id: str, tasklist: str = "@default") -> dict[str, Any]:
+        await self._run(
+            lambda: self.tasks.tasks().patch(
+                tasklist=tasklist, task=task_id, body={"status": "completed"}
+            ),
+            "completar tarea",
+        )
+        return {"success": True, "message": "Tarea completada"}
+
+    async def find_contact(self, query: str, max_results: int = 5) -> dict[str, Any]:
+        """Busca contactos por nombre, correo o teléfono (People API)."""
+        data = await self._run(
+            lambda: (
+                self.people.people()
+                .connections()
+                .list(
+                    resourceName="people/me",
+                    pageSize=100,
+                    personFields="names,emailAddresses,phoneNumbers",
+                )
+            ),
+            "buscar contactos",
+        )
+        needle = (query or "").strip().lower()
+        found = []
+        for person in data.get("connections", []):
+            names = person.get("names", [{}])
+            name = names[0].get("displayName", "") if names else ""
+            emails = person.get("emailAddresses", [{}])
+            email = emails[0].get("value", "") if emails else ""
+            phones = person.get("phoneNumbers", [{}])
+            phone = phones[0].get("value", "") if phones else ""
+            haystack = ("%s %s %s" % (name, email, phone)).lower()
+            if not needle or needle in haystack:
+                found.append({"name": name, "email": email, "phone": phone})
+            if len(found) >= max(1, int(max_results)):
+                break
+        return {"success": True, "contacts": found}
+
     async def list_contacts(self, page_size: int = 10) -> dict[str, Any]:
         data = await self._run(
             lambda: (
