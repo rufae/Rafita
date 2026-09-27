@@ -42,6 +42,17 @@ SERVICE_ACCOUNT_FILE = CRED_DIR / "service_account.json"
 OAUTH_CREDENTIALS_FILE = CRED_DIR / "credentials.json"
 OAUTH_TOKEN_FILE = CRED_DIR / "token.json"
 
+
+def service_account_email() -> str:
+    """Email de la cuenta de servicio, leido del JSON (nunca hardcodeado)."""
+    try:
+        data = json.loads(SERVICE_ACCOUNT_FILE.read_text(encoding="utf-8"))
+        email = str(data.get("client_email", "")).strip()
+        return email or "la cuenta de servicio"
+    except Exception:
+        return "la cuenta de servicio (credentials/service_account.json)"
+
+
 # Mínimo privilegio. `drive.file` permite crear/borrar SOLO lo creado por la
 # app (limpieza de pruebas y documentos propios); `drive.readonly` da lectura
 # de lo compartido. Tasks/Gmail solo funcionan con OAuth (no se pueden
@@ -837,14 +848,19 @@ class GoogleServicesManager:
         decomposed = unicodedata.normalize("NFKD", (text or "").lower())
         return "".join(c for c in decomposed if not unicodedata.combining(c))
 
-    async def find_contact(self, query: str, max_results: int = 5) -> dict[str, Any]:
-        """Busca contactos por nombre, correo o telefono (People API).
+    @staticmethod
+    def _person_to_contact(person: dict[str, Any]) -> dict[str, str]:
+        names = person.get("names", [{}])
+        name = names[0].get("displayName", "") if names else ""
+        emails = person.get("emailAddresses", [{}])
+        email = emails[0].get("value", "") if emails else ""
+        phones = person.get("phoneNumbers", [{}])
+        phone = phones[0].get("value", "") if phones else ""
+        return {"name": name, "email": email, "phone": phone}
 
-        Comparacion sin acentos ni mayusculas (bug 2026-09-27: 'mama' no
-        encontraba el contacto 'Aa Mama').
-        """
-        # Paginacion completa (bug 2026-09-27: con mas de 200 contactos, los
-        # que estaban en paginas siguientes no se encontraban).
+    async def _fetch_all_connections(self) -> list[dict[str, Any]]:
+        """Todas las paginas de contactos (bug 2026-09-27: solo se leia la
+        primera pagina de 200 y los contactos siguientes no se encontraban)."""
         connections: list[dict[str, Any]] = []
         page_token: str | None = None
         for _ in range(10):
@@ -863,20 +879,63 @@ class GoogleServicesManager:
             page_token = data.get("nextPageToken")
             if not page_token:
                 break
+        return connections
+
+    async def list_all_contacts(self, max_results: int = 2000) -> dict[str, Any]:
+        """Todos los contactos (para la copia local del segundo cerebro)."""
+        connections = await self._fetch_all_connections()
+        contacts = [self._person_to_contact(p) for p in connections]
+        return {"success": True, "contacts": contacts[: max(1, int(max_results))]}
+
+    async def list_calendar_events(self, days: int = 90, max_results: int = 100) -> dict[str, Any]:
+        """Eventos de los proximos `days` dias (para la copia local)."""
+        tz = ZoneInfo(settings.timezone)
+        now = datetime.now(tz)
+        time_min = now.isoformat()
+        time_max = (now + timedelta(days=days)).isoformat()
+        data = await self._run(
+            lambda: self.calendar.events().list(
+                calendarId=self.calendar_id,
+                timeMin=time_min,
+                timeMax=time_max,
+                maxResults=max(1, min(int(max_results), 250)),
+                singleEvents=True,
+                orderBy="startTime",
+            ),
+            "listar eventos",
+        )
+        events = [
+            {
+                "title": e.get("summary", "Sin titulo"),
+                "start": e["start"].get("dateTime", e["start"].get("date")),
+                "end": e["end"].get("dateTime", e["end"].get("date")),
+                "description": e.get("description", ""),
+            }
+            for e in data.get("items", [])
+        ]
+        return {"success": True, "events": events}
+
+    async def find_contact(self, query: str, max_results: int = 5) -> dict[str, Any]:
+        """Busca contactos por nombre, correo o telefono (People API).
+
+        Comparacion sin acentos ni mayusculas y paginacion completa
+        (bugs 2026-09-27: 'mama' no encontraba 'Aa Mama', que estaba en la
+        pagina 2 de contactos).
+        """
+        connections = await self._fetch_all_connections()
         needle = self._normalize_match((query or "").strip())
         found = []
         for person in connections:
-            names = person.get("names", [{}])
-            name = names[0].get("displayName", "") if names else ""
-            emails = person.get("emailAddresses", [{}])
-            email = emails[0].get("value", "") if emails else ""
-            phones = person.get("phoneNumbers", [{}])
-            phone = phones[0].get("value", "") if phones else ""
-            haystack = self._normalize_match("%s %s %s" % (name, email, phone))
+            contact = self._person_to_contact(person)
+            haystack = self._normalize_match(
+                "%s %s %s" % (contact["name"], contact["email"], contact["phone"])
+            )
             if not needle or needle in haystack:
-                found.append({"name": name, "email": email, "phone": phone})
-            if len(found) >= max(1, int(max_results)):
-                break
+                found.append(contact)
+        # Relevancia: los nombres mas parecidos al termino busado primero
+        # (con 'mama', 'Aa Mama' antes que 'Mama Raulito').
+        found.sort(key=lambda c: (len(self._normalize_match(c["name"])), c["name"]))
+        found = found[: max(1, int(max_results))]
         if not found and needle:
             # Fallback: "Otros contactos" (personas de correos, no guardadas)
             try:

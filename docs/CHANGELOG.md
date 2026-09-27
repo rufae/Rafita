@@ -71,6 +71,18 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Saneamiento de datos sensibles (2026-09-27): email de cuenta de servicio
+  leído del JSON; IPs a variables de entorno; unidades de backup renombradas
+  (`mnt-backup.*`) con UUID fuera del repo (`install.sh` lo sustituye) y
+  valores por instalación en `/etc/rafita-backup.env`; docs/plan con
+  placeholders. Sin secretos en git.
+- Contactos (2026-09-27): regla de prompt para usar `find_contact` siempre y
+  orden por relevancia; verificado «mama» → «Aa Mama».
+- Segundo cerebro (2026-09-27): `/sync_google` copia contactos, calendario
+  (90 días) y Drive a notas locales; el bot lo ofrece tras `/setup_google`.
+- Contestador de llamadas (2026-09-27): `POST /call` con HMAC, conversación
+  por turnos y resumen al Telegram del propietario; informe de viabilidad
+  gratis en `docs/llamadas-whatsapp-gratis.md`.
 - Segunda ronda de correcciones Google (2026-09-27): contactos con paginación
   completa (encuentra contactos de páginas siguientes); calendario unificado
   (el gestor de acciones usaba la cuenta de servicio y por eso los borrados
@@ -170,7 +182,7 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   ciclo completo. Medido en real: upgrade 4,7 s y rollback 5,1 s hasta
   `/ready` 200, con rollback ejecutado de verdad y prueba de nodos
   independientes (Dell actualizado con el agente vivo).
-- Backup diario de todo el homelab al USB RAFAEL (tarea 3.6): restic cifrado
+- Backup diario de todo el homelab al USB de backup (tarea 3.6): restic cifrado
   e incremental con retención 7d/4s/6m, solo si el USB está presente; cubre
   Rafita, BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y la
   configuración, más snapshot diario de config del Dell. Aviso por Telegram y

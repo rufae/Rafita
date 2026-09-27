@@ -101,6 +101,85 @@ async def test_find_contact_paginates_all_connections():
     assert result["contacts"][0]["phone"] == "600999888"
 
 
+async def test_find_contact_orders_closest_name_first():
+    manager = _manager()
+
+    class _Connections:
+        def list(self, **_kwargs):
+            return _Req(
+                {
+                    "connections": [
+                        {
+                            "names": [{"displayName": "Mama Raulito"}],
+                            "phoneNumbers": [{"value": "600000002"}],
+                        },
+                        {
+                            "names": [{"displayName": "Aa Mama"}],
+                            "phoneNumbers": [{"value": "600000001"}],
+                        },
+                    ]
+                }
+            )
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    result = await manager.find_contact("mama")
+    assert result["contacts"][0]["name"] == "Aa Mama"
+
+
+async def test_list_all_contacts_paginates():
+    manager = _manager()
+    pages = {
+        None: {
+            "connections": [
+                {"names": [{"displayName": "Ana"}], "phoneNumbers": [{"value": "600000001"}]}
+            ],
+            "nextPageToken": "p2",
+        },
+        "p2": {
+            "connections": [
+                {"names": [{"displayName": "Mama"}], "phoneNumbers": [{"value": "600111222"}]}
+            ]
+        },
+    }
+
+    class _Connections:
+        def list(self, **kwargs):
+            return _Req(pages[kwargs.get("pageToken")])
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    result = await manager.list_all_contacts()
+    assert [c["name"] for c in result["contacts"]] == ["Ana", "Mama"]
+
+
+async def test_list_calendar_events_maps_fields():
+    manager = _manager()
+    captured = {}
+
+    class _Events:
+        def list(self, **kwargs):
+            captured.update(kwargs)
+            return _Req(
+                {
+                    "items": [
+                        {
+                            "summary": "Cita",
+                            "start": {"dateTime": "2026-10-01T10:00:00+02:00"},
+                            "end": {"dateTime": "2026-10-01T11:00:00+02:00"},
+                        }
+                    ]
+                }
+            )
+
+    manager._calendar = SimpleNamespace(events=lambda: _Events())
+    result = await manager.list_calendar_events()
+    assert result["events"][0]["title"] == "Cita"
+    assert captured["calendarId"] == manager.calendar_id
+
+
 async def test_list_drive_lists_folder_contents():
     manager = _manager()
     queries = []
