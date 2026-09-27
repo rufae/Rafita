@@ -270,6 +270,144 @@ async def get_ha_state(request: Request):
     return result
 
 
+# --- Contestador automatico de llamadas (2026-09-27) ---------------------
+# Endpoint agnostico de proveedor: cualquier centralita/SIP/IVR que pueda
+# enviar el texto del llamante (STT propio o del proveedor) y recibir la
+# respuesta para TTS puede usarlo. Auth: la misma firma HMAC del gateway.
+# El resumen final se manda al Telegram del propietario.
+
+_call_sessions: dict[str, dict[str, Any]] = {}
+_CALL_SESSION_TTL = 3600
+
+
+def _call_system_prompt() -> str:
+    from src.config import settings
+
+    return (
+        "Eres %s, el asistente virtual de tu propietario. Estas atendiendo una "
+        "llamada telefonica porque el no puede responder ahora mismo. Habla en "
+        "espanol, con frases cortas y naturales (tu respuesta se convierte a voz). "
+        "Pregunta con educacion quien llama y el motivo de la llamada; si quiere "
+        "dejar un recado o agendar una reunion, apunta: nombre, motivo, urgencia "
+        "y un numero o medio de contacto. No prometas acciones concretas: di que "
+        "le haras llegar el mensaje a tu propietario cuanto antes. Maximo dos "
+        "frases por turno." % settings.assistant_name
+    )
+
+
+async def _call_summary(caller: str, turns: list[dict[str, str]]) -> str:
+    """Resumen de la llamada (LLM con respaldo literal si falla)."""
+    transcript = "\n".join(
+        "%s: %s" % ("Llamante" if t["role"] == "caller" else "Rafita", t["text"]) for t in turns
+    )
+    fallback = "Llamada de %s:\n%s" % (caller or "desconocido", transcript)
+    try:
+        from src.ollama_client import llm
+
+        summary = await asyncio.wait_for(
+            llm.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Resume esta llamada en 4-6 lineas con este formato:\n"
+                            "Quien llama: ...\nMotivo: ...\nUrgencia: ...\n"
+                            "Contacto: ...\nAccion sugerida: ...\n"
+                            "Si falta un dato, escribe 'no indicado'. No inventes."
+                        ),
+                    },
+                    {"role": "user", "content": transcript},
+                ],
+                max_tokens=220,
+            ),
+            timeout=120.0,
+        )
+        return summary.strip() or fallback
+    except Exception as e:
+        logger.warning("Resumen de llamada con LLM fallo: %s", e)
+        return fallback
+
+
+async def _notify_call_summary(caller: str, summary: str) -> None:
+    from src.config import settings
+
+    targets = list(settings.admin_ids or [])
+    if not targets or _bot_ref is None:
+        logger.warning("Contestador: sin ADMIN_IDS o bot; resumen no enviado")
+        return
+    text = "📞 *Llamada atendida por Rafita*\nDe: %s\n\n%s" % (caller or "desconocido", summary)
+    for admin_id in targets:
+        try:
+            await _bot_ref.send_proactive_message(admin_id, text)
+            await db.save_chat_message(admin_id, MessageRole.user.value, "[Llamada] %s" % summary)
+        except Exception as e:
+            logger.error("Contestador: fallo avisando a %s: %s", admin_id, e)
+
+
+@app.post("/call")
+async def call_answering_machine(request: Request):
+    """Turno de conversacion del contestador automatico.
+
+    Body JSON: {call_id, caller, text, end?}. Devuelve {reply, end, summary?}.
+    """
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    call_id = str(payload.get("call_id", "")).strip()
+    caller = str(payload.get("caller", "")).strip()
+    text = str(payload.get("text", "")).strip()
+    if not call_id or not text:
+        raise HTTPException(status_code=400, detail="call_id and text required")
+
+    now = time.time()
+    for stale in [k for k, s in _call_sessions.items() if now - s["updated"] > _CALL_SESSION_TTL]:
+        _call_sessions.pop(stale, None)
+
+    session = _call_sessions.get(call_id) or {"turns": [], "updated": now}
+    session["turns"].append({"role": "caller", "text": text})
+    session["updated"] = now
+
+    from src.ollama_client import llm
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": _call_system_prompt()}]
+    for turn in session["turns"][-12:]:
+        messages.append(
+            {
+                "role": "user" if turn["role"] == "caller" else "assistant",
+                "content": turn["text"],
+            }
+        )
+    try:
+        reply = (
+            await asyncio.wait_for(llm.chat(messages=messages, max_tokens=160), timeout=120.0)
+        ).strip()
+    except Exception as e:
+        logger.error("Contestador: fallo generando respuesta: %s", e)
+        reply = "Disculpa, no te he entendido bien. ¿Puedes repetirlo, por favor?"
+    if not reply:
+        reply = "¿Sigues ahi? Dime quien eres y en que puedo ayudarte."
+
+    session["turns"].append({"role": "rafita", "text": reply})
+    _call_sessions[call_id] = session
+
+    if payload.get("end"):
+        summary = await _call_summary(caller, session["turns"])
+        _call_sessions.pop(call_id, None)
+        await _notify_call_summary(caller, summary)
+        logger.info(
+            "Contestador: llamada %s finalizada (%d turnos)", call_id, len(session["turns"])
+        )
+        return {"reply": reply, "end": True, "summary": summary}
+
+    return {"reply": reply, "end": False}
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

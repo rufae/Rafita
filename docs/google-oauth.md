@@ -5,22 +5,22 @@ Drive, pero no puede crear archivos (sin cuota), ni acceder a Tasks, Gmail,
 Contactos o Fitness. Con **OAuth** el bot actúa como tu propio usuario y todo
 eso funciona.
 
-## 1. Habilitar las APIs en tu proyecto (`552699919273`)
+## 1. Habilitar las APIs en tu proyecto (`000000000000`)
 
 | API | Enlace |
 |---|---|
-| Calendar (ya) | https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=552699919273 |
-| Drive (ya) | https://console.cloud.google.com/apis/library/drive.googleapis.com?project=552699919273 |
-| Sheets (ya) | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=552699919273 |
-| Docs (ya) | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=552699919273 |
-| **Tasks** | https://console.cloud.google.com/apis/library/tasks.googleapis.com?project=552699919273 |
-| **Gmail** | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=552699919273 |
-| **People** | https://console.cloud.google.com/apis/library/people.googleapis.com?project=552699919273 |
-| **Fitness** | https://console.cloud.google.com/apis/library/fitness.googleapis.com?project=552699919273 |
+| Calendar (ya) | https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=000000000000 |
+| Drive (ya) | https://console.cloud.google.com/apis/library/drive.googleapis.com?project=000000000000 |
+| Sheets (ya) | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=000000000000 |
+| Docs (ya) | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=000000000000 |
+| **Tasks** | https://console.cloud.google.com/apis/library/tasks.googleapis.com?project=000000000000 |
+| **Gmail** | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=000000000000 |
+| **People** | https://console.cloud.google.com/apis/library/people.googleapis.com?project=000000000000 |
+| **Fitness** | https://console.cloud.google.com/apis/library/fitness.googleapis.com?project=000000000000 |
 
 ## 2. Crear el cliente OAuth
 
-1. Ve a **Credenciales**: https://console.cloud.google.com/apis/credentials?project=552699919273
+1. Ve a **Credenciales**: https://console.cloud.google.com/apis/credentials?project=000000000000
 2. **Crear credenciales → ID de cliente de OAuth**.
 3. Tipo de aplicación: **Aplicación de escritorio**.
 4. Nombre: `Rafita Desktop`.
@@ -75,5 +75,5 @@ Para revocar el acceso: https://myaccount.google.com/permissions
 - Verificado con el E2E: Calendar, Drive completo, Sheets, Docs, Tasks,
   Gmail (lectura) y Fitness → **OK**.
 - **Pendiente**: habilitar la **People API** (Contactos) con este enlace:
-  https://console.cloud.google.com/apis/library/people.googleapis.com?project=552699919273
+  https://console.cloud.google.com/apis/library/people.googleapis.com?project=000000000000
   Después, el E2E probará también los contactos.

@@ -1,7 +1,7 @@
 # Guía de configuración de Google (cuenta de servicio)
 
-**Fecha:** 2026-09-26 · Proyecto GCP: `rafita-500317` (id `552699919273`)
-**Cuenta de servicio:** `rafita@rafita-500317.iam.gserviceaccount.com`
+**Fecha:** 2026-09-26 · Proyecto GCP: `tu-proyecto` (id `000000000000`)
+**Cuenta de servicio:** `cuenta-servicio@tu-proyecto.iam.gserviceaccount.com`
 
 La integración usa una **cuenta de servicio**: solo accede a lo que se le
 comparte explícitamente. No necesita tu contraseña ni acceso al resto de tu
@@ -13,10 +13,10 @@ cuenta.
 |---|---|---|
 | Calendar API | ✅ habilitada | — |
 | Drive API | ✅ habilitada | — |
-| **Sheets API** | ✅ habilitada | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=552699919273 |
-| **Docs API** | ✅ habilitada | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=552699919273 |
-| Tasks API | opcional (OAuth) | https://console.cloud.google.com/apis/library/tasks.googleapis.com?project=552699919273 |
-| Gmail API | opcional (OAuth) | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=552699919273 |
+| **Sheets API** | ✅ habilitada | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=000000000000 |
+| **Docs API** | ✅ habilitada | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=000000000000 |
+| Tasks API | opcional (OAuth) | https://console.cloud.google.com/apis/library/tasks.googleapis.com?project=000000000000 |
+| Gmail API | opcional (OAuth) | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=000000000000 |
 
 Tras habilitar Sheets y Docs, vuelve a ejecutar el test E2E (sección 4) para
 confirmar.
@@ -25,7 +25,7 @@ confirmar.
 
 | Recurso | Cómo | Estado |
 |---|---|---|
-| **Calendario** | Google Calendar → tu calendario → «Compartir con determinadas personas» → `rafita@rafita-500317.iam.gserviceaccount.com` con «Hacer cambios en los eventos» | ✅ hecho |
+| **Calendario** | Google Calendar → tu calendario → «Compartir con determinadas personas» → `cuenta-servicio@tu-proyecto.iam.gserviceaccount.com` con «Hacer cambios en los eventos» | ✅ hecho |
 | **Drive** | Compartir la unidad, carpeta o ficheros concretos con el mismo email | ✅ hecho |
 | **Carpeta destino (opcional)** | Si quieres que los documentos/hojas que cree Rafita aparezcan en TU Drive: crea una carpeta, compártela con el email y define `GOOGLE_DRIVE_FOLDER_ID` en el `.env`. Si no, se crean en el Drive de la cuenta de servicio (el test E2E los borra). | — |
 
@@ -78,7 +78,7 @@ personales: crear una hoja/documento sin carpeta destino devuelve
 
 1. **Carpeta compartida (con la cuenta de servicio actual)**: crea una carpeta
    en tu Drive (p. ej. «Rafita»), compártela con
-   `rafita@rafita-500317.iam.gserviceaccount.com` como **Editor** y define
+   `cuenta-servicio@tu-proyecto.iam.gserviceaccount.com` como **Editor** y define
    `GOOGLE_DRIVE_FOLDER_ID=<id de la carpeta>` en el `.env`. Los archivos que
    cree Rafita irán ahí (el almacenamiento se descuenta de tu cuota).
 2. **OAuth (recomendado si quieres todo)**: con OAuth los archivos se crean
