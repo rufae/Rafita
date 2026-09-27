@@ -287,10 +287,12 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         result = await google_service.generate_auth_url()
         if result.get("success"):
             await message.reply_text(
-                "Para conectar tu Google Calendar:\n\n"
-                "1. Abre este enlace en tu navegador y autoriza la aplicación:\n"
+                "Para conectar tu cuenta de Google:\n\n"
+                "1. Abre este enlace y autoriza la aplicación:\n"
                 "%s\n\n"
-                "2. Google te dará un código. Envíamelo así:\n"
+                "2. El navegador acabará en una página que no carga "
+                "(localhost:8080). Copia el valor de 'code=' de la barra de "
+                "direcciones y envíamelo así:\n"
                 "/setup_google <codigo>\n\n"
                 "(El código caduca pronto; si falla, repite /setup_google para "
                 "obtener un enlace nuevo.)" % result["auth_url"]

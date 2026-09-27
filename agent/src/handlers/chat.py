@@ -8,9 +8,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from src.config import settings
-from src.core.orchestrator import build_system_prompt
+from src.core.orchestrator import build_system_prompt, date_context_line
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS, WRITE_TOOLS, get_tools_for_llm
+from src.handlers.chat_tools import (
+    TOOLS_DEFINITIONS,
+    WRITE_TOOLS,
+    get_tools_with_date_context,
+)
 from src.i18n import currency_symbol, language_name, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
@@ -343,6 +347,14 @@ async def _process_ai_message(
                 "content": msg["content"],
             }
         )
+    # Refuerzo de fecha en el último mensaje del usuario (auditoría 2026-09-27)
+    for index in range(len(messages_for_llm) - 1, -1, -1):
+        if messages_for_llm[index]["role"] == "user":
+            messages_for_llm[index]["content"] = "%s %s" % (
+                date_context_line(),
+                messages_for_llm[index]["content"],
+            )
+            break
 
     await message.reply_chat_action("typing")
 
@@ -367,7 +379,7 @@ async def _process_ai_message(
             content, tool_calls = await asyncio.wait_for(
                 llm.chat_with_tools(
                     messages=messages_for_llm,
-                    tools=get_tools_for_llm(),
+                    tools=get_tools_with_date_context(),
                     max_tokens=512,
                 ),
                 timeout=600.0,
@@ -985,6 +997,13 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             if action == "create":
                 title = args.get("title", "").strip()
                 dt_str = args.get("datetime_str", "").strip()
+                when = args.get("when", "").strip()
+                if when and not dt_str:
+                    from src.services.google_services_manager import parse_relative_datetime
+
+                    parsed = parse_relative_datetime(when)
+                    if parsed:
+                        dt_str = parsed.isoformat()
                 description = args.get("description", "").strip()
                 if not title or not dt_str:
                     return {
@@ -1093,6 +1112,13 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
         elif func_name == "create_google_calendar_event":
             title = args.get("title", "").strip()
             start_dt = args.get("start_datetime", "").strip()
+            when = args.get("when", "").strip()
+            if when and not start_dt:
+                from src.services.google_services_manager import parse_relative_datetime
+
+                parsed = parse_relative_datetime(when)
+                if parsed:
+                    start_dt = parsed.isoformat()
             end_dt = args.get("end_datetime", "").strip() or None
             description = args.get("description", "").strip() or None
             if not title or not start_dt:

@@ -48,13 +48,82 @@ OAUTH_TOKEN_FILE = CRED_DIR / "token.json"
 # compartir con una cuenta de servicio).
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/fitness.activity.read",
 ]
+
+WEEKDAYS = {
+    "lunes": 0,
+    "martes": 1,
+    "miercoles": 2,
+    "miércoles": 2,
+    "jueves": 3,
+    "viernes": 4,
+    "sabado": 5,
+    "sábado": 5,
+    "domingo": 6,
+}
+
+
+def parse_relative_datetime(text: str, tz: ZoneInfo | None = None) -> datetime | None:
+    """Interpreta fechas relativas en español (determinista, sin el modelo).
+
+    Soporta: hoy, mañana, pasado mañana, días de la semana ("el lunes"),
+    "en N días" y horas ("a las 10", "10:30"). Hora por defecto: 09:00.
+    Devuelve None si no reconoce ninguna fecha.
+    """
+    if not text:
+        return None
+    t = text.lower().strip()
+    if tz is None:
+        try:
+            tz = ZoneInfo(settings.timezone)
+        except Exception:
+            tz = ZoneInfo("UTC")
+    now = datetime.now(tz)
+    target = None
+    if "pasado mañana" in t or "pasado manana" in t:
+        target = now.date() + timedelta(days=2)
+    elif "mañana" in t or "manana" in t:
+        target = now.date() + timedelta(days=1)
+    elif "hoy" in t:
+        target = now.date()
+    else:
+        import re
+
+        match = re.search(r"en (\d+) d[ií]as?", t)
+        if match:
+            target = now.date() + timedelta(days=int(match.group(1)))
+        else:
+            for name, index in WEEKDAYS.items():
+                if re.search(r"\b%s\b" % name, t):
+                    delta = (index - now.weekday()) % 7
+                    if delta == 0:
+                        delta = 7
+                    target = now.date() + timedelta(days=delta)
+                    break
+    if target is None:
+        return None
+    import re
+
+    match = re.search(r"(\d{1,2})[:.](\d{2})", t)
+    if match:
+        hour, minute = int(match.group(1)), int(match.group(2))
+    else:
+        match = re.search(r"a las (\d{1,2})", t)
+        if match:
+            hour, minute = int(match.group(1)), 0
+        else:
+            hour, minute = 9, 0
+    if hour > 23 or minute > 59:
+        hour, minute = 9, 0
+    return datetime(target.year, target.month, target.day, hour, minute, tzinfo=tz)
+
 
 SERVICE_NAMES = {
     "calendar": "Calendar API",
@@ -246,6 +315,8 @@ class GoogleServicesManager:
             "docs": ("docs", "v1"),
             "tasks": ("tasks", "v1"),
             "gmail": ("gmail", "v1"),
+            "people": ("people", "v1"),
+            "fitness": ("fitness", "v1"),
         }
         if service not in versions:
             raise GoogleServiceError("Servicio desconocido: %s" % service)
@@ -276,6 +347,14 @@ class GoogleServicesManager:
     @property
     def gmail(self) -> Any:
         return self._ensure("gmail")
+
+    @property
+    def people(self) -> Any:
+        return self._ensure("people")
+
+    @property
+    def fitness(self) -> Any:
+        return self._ensure("fitness")
 
     @property
     def is_ready(self) -> bool:
@@ -609,6 +688,56 @@ class GoogleServicesManager:
             "email": data.get("emailAddress"),
             "messages": data.get("messagesTotal"),
         }
+
+    async def list_contacts(self, page_size: int = 10) -> dict[str, Any]:
+        data = await self._run(
+            lambda: (
+                self.people.people()
+                .connections()
+                .list(
+                    resourceName="people/me",
+                    pageSize=max(1, min(int(page_size), 50)),
+                    personFields="names,emailAddresses,phoneNumbers",
+                )
+            ),
+            "listar contactos",
+        )
+        contacts = []
+        for person in data.get("connections", []):
+            names = person.get("names", [{}])
+            emails = person.get("emailAddresses", [{}])
+            phones = person.get("phoneNumbers", [{}])
+            contacts.append(
+                {
+                    "name": names[0].get("displayName", "") if names else "",
+                    "email": emails[0].get("value", "") if emails else "",
+                    "phone": phones[0].get("value", "") if phones else "",
+                }
+            )
+        return {"success": True, "contacts": contacts}
+
+    async def fitness_daily_steps(self) -> dict[str, Any]:
+        """Pasos de hoy (Fitness API, requiere OAuth)."""
+        tz = ZoneInfo(settings.timezone)
+        now = datetime.now(tz)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        body = {
+            "aggregateBy": [{"dataTypeName": "com.google.step_count.delta"}],
+            "bucketByTime": {"durationMillis": 86400000},
+            "startTimeMillis": int(start.timestamp() * 1000),
+            "endTimeMillis": int(now.timestamp() * 1000),
+        }
+        data = await self._run(
+            lambda: self.fitness.users().dataset().aggregate(userId="me", body=body),
+            "leer pasos",
+        )
+        steps = 0
+        for bucket in data.get("bucket", []):
+            for dataset in bucket.get("dataset", []):
+                for point in dataset.get("point", []):
+                    for value in point.get("value", []):
+                        steps += int(value.get("intVal", 0))
+        return {"success": True, "date": start.date().isoformat(), "steps": steps}
 
     # --------------------------------------------------------------- estado
     async def status(self) -> dict[str, Any]:

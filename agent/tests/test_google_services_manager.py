@@ -11,6 +11,7 @@ from src.services.google_services_manager import (
     GoogleServicesManager,
     _humanize_http_error,
     event_start_error,
+    parse_relative_datetime,
 )
 
 
@@ -68,6 +69,53 @@ def test_execute_gives_actionable_error_after_retries(monkeypatch):
         raise AssertionError("debería haber lanzado GoogleServiceError")
     except GoogleServiceError as exc:
         assert "403" in str(exc) or "comparte" in str(exc).lower()
+
+
+def test_parse_relative_manana_con_hora(monkeypatch):
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    parsed = parse_relative_datetime("mañana a las 10")
+    today = gsm.datetime.now(gsm.ZoneInfo("Europe/Madrid")).date()
+    assert parsed is not None
+    assert parsed.date() == today + gsm.timedelta(days=1)
+    assert (parsed.hour, parsed.minute) == (10, 0)
+
+
+def test_parse_relative_pasado_manana_y_hora_con_minutos(monkeypatch):
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    parsed = parse_relative_datetime("pasado mañana 17:30")
+    today = gsm.datetime.now(gsm.ZoneInfo("Europe/Madrid")).date()
+    assert parsed is not None
+    assert parsed.date() == today + gsm.timedelta(days=2)
+    assert (parsed.hour, parsed.minute) == (17, 30)
+
+
+def test_parse_relative_dia_de_la_semana(monkeypatch):
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    parsed = parse_relative_datetime("el viernes")
+    now = gsm.datetime.now(gsm.ZoneInfo("Europe/Madrid"))
+    assert parsed is not None
+    delta = (parsed.date() - now.date()).days
+    assert 1 <= delta <= 7
+    assert parsed.weekday() == 4
+    assert parsed.hour == 9
+
+
+def test_parse_relative_sin_fecha_devuelve_none():
+    assert parse_relative_datetime("pon música") is None
+
+
+def test_tools_with_date_context_incluye_hoy(monkeypatch):
+    from src.handlers.chat_tools import get_tools_with_date_context
+
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    tools = get_tools_with_date_context()
+    calendar_tools = [
+        t
+        for t in tools
+        if t["function"]["name"] in ("create_google_calendar_event", "manage_google_calendar")
+    ]
+    assert calendar_tools
+    assert all("[HOY es " in t["function"]["description"] for t in calendar_tools)
 
 
 def test_event_start_error_rejects_past_dates(monkeypatch):
