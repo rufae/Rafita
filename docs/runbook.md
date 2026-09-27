@@ -347,3 +347,18 @@ recortan el texto a ~8.000 caracteres.
 - **Tasks y Gmail**: requieren OAuth (no funcionan con cuenta de servicio).
 - Test E2E de todo: `agent/scripts/test_google_services.py` (comando listo en
   `docs/google-setup.md`, sección 4); crea y borra sus propios recursos.
+
+### Funciones de Google en chat y llamada (2026-09-27)
+
+Disponibles (se ofrecen al modelo solo cuando el mensaje las menciona):
+
+| Pregunta ejemplo | Herramienta |
+|---|---|
+| «resúmeme los correos de hoy», «busca el correo de…» | `search_gmail` |
+| «añádeme una tarea…», «¿qué tareas tengo?» | `manage_google_tasks` |
+| «dame el teléfono/correo de…» | `find_contact` |
+| «¿cuántos pasos llevo hoy?» | `fitness_daily_steps` |
+| «busca en mi Drive…», «léeme el documento…» | `search_google_drive` / `read_google_drive_file` |
+
+Fiabilidad: el núcleo de 21 herramientas va siempre; las de Google se añaden
+solo con palabras clave (evita que el modelo se disperse; suite 46/46).

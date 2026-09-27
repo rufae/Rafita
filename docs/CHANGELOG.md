@@ -71,6 +71,13 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Herramientas nuevas en chat y llamada (2026-09-27): `search_gmail`,
+  `manage_google_tasks`, `find_contact` y `fitness_daily_steps`. Para no
+  degradar la fiabilidad (la suite bajó de 46/46 a 18/46 al ofrecer las 27
+  siempre), se aplica **selección dinámica por palabras clave**: el núcleo de
+  21 herramientas va siempre y las de Google se ofrecen solo cuando el mensaje
+  las menciona. Suite de tool-calling de nuevo **46/46**; E2E con OAuth sin
+  fallos (People incluido).
 - OAuth completado y verificado con la cuenta real (2026-09-27): Calendar,
   Drive completo, Sheets y Docs (crear/leer/borrar sin la limitación de cuota
   de la cuenta de servicio), Tasks, Gmail (lectura) y Fitness. El bot acepta

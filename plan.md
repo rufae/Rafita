@@ -2594,6 +2594,26 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     - Pendiente del usuario: habilitar **People API** (enlace en
       `docs/google-oauth.md` §1) para contactos.
     - Tests: **237 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 5 (2026-09-27, funciones nuevas en chat y llamada)**:
+    - Implementadas 4 herramientas nuevas: **`search_gmail`** (correos, solo
+      lectura), **`manage_google_tasks`** (listar/crear/completar/borrar),
+      **`find_contact`** (contactos) y **`fitness_daily_steps`** (pasos de hoy).
+      Funcionan en Telegram y en la llamada (mismo orquestador y herramientas).
+    - **Regresión encontrada y corregida con la propia suite**: ofrecer las 27
+      herramientas siempre bajó el tool-calling de **46/46 a 18/46**. Causas
+      aisladas con experimentos A/B: (a) el sello `[HOY es ...]` que se añadía
+      a las descripciones de las herramientas de calendario, y (b) las
+      herramientas nuevas y su mención en el prompt del sistema. Solución:
+      **selección dinámica por palabras clave** (`get_tools_for_message`): el
+      núcleo de 21 va siempre; las 6 de Google (Drive, Gmail, Tasks,
+      Contactos, Fitness) solo se ofrecen cuando el mensaje las menciona; se
+      retiró el sello de las descripciones y la línea del prompt.
+    - Verificación: suite completa de tool-calling de nuevo **46/46 (100%)**;
+      las 4 nuevas se eligen correctamente (22 herramientas ofrecidas); una
+      pregunta de notas usa 21 (sin extras) y elige `search_second_brain`.
+    - E2E con OAuth: **0 fallos** (Calendar, Drive, Sheets, Docs, Tasks,
+      Gmail, People con 5 contactos y Fitness).
+    - Tests: **246 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS, get_tools_with_date_context
+from src.handlers.chat_tools import TOOLS_DEFINITIONS, get_tools_for_message
 from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
@@ -152,7 +152,7 @@ async def generate_response(text: str, chat_id: int) -> str:
         content, tool_calls = await asyncio.wait_for(
             llm.chat_with_tools(
                 messages=messages_for_llm,
-                tools=get_tools_with_date_context(),
+                tools=get_tools_for_message(text),
                 max_tokens=512,
             ),
             timeout=600.0,
@@ -218,7 +218,7 @@ async def generate_response(text: str, chat_id: int) -> str:
                 content, _ = await asyncio.wait_for(
                     llm.chat_with_tools(
                         messages=messages_for_llm,
-                        tools=get_tools_with_date_context(),
+                        tools=get_tools_for_message(text),
                         max_tokens=512,
                     ),
                     timeout=600.0,
