@@ -15,7 +15,9 @@ from src.logger import (
 # Valores deliberadamente falsos, ensamblados en tiempo de ejecucion para que
 # el escaner de secretos de GitHub no los confunda con credenciales reales
 # (los patrones de redaccion se prueban igual).
-TELEGRAM_TOKEN = ":".join(("123456789", "AA" + "Fake" + "Token" + "For" + "Tests" + "_0123456789abcd"))
+TELEGRAM_TOKEN = ":".join(
+    ("123456789", "AA" + "Fake" + "Token" + "For" + "Tests" + "_0123456789abcd")
+)
 OPENAI_KEY = "sk" + "-" + "abcdefghijklmnopqrstuvwxyz012345"
 
 
