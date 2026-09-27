@@ -71,6 +71,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Homelab (2026-09-27): n8n desplegado en el HP (`deploy/hp/
+  docker-compose.n8n.yml`, proyecto independiente, secretos en `.env`),
+  Glances en el Dell sin root (venv + `@reboot`), guía en `docs/n8n-hp.md` y
+  análisis crítico honesto con métricas reales en `docs/analisis-critico.md`
+  (personal 72/100, «mis manos» 60/100, producto 40/100).
 - Contactos en llamada (2026-09-27): matching difuso («A A mamá» del STT ya
   encuentra «Aa Mama»), variantes de parentesco («mi madre»), alias
   aprendidos con `remember_fact`, relevancia por palabras y filtro de
