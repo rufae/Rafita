@@ -362,3 +362,14 @@ Disponibles (se ofrecen al modelo solo cuando el mensaje las menciona):
 
 Fiabilidad: el núcleo de 21 herramientas va siempre; las de Google se añaden
 solo con palabras clave (evita que el modelo se disperse; suite 46/46).
+
+### Selección de herramientas y tablas (2026-09-27)
+
+- **Sin filtros por palabras**: `select_tools_semantic(text, k=10)` embebe el
+  mensaje y las descripciones (bge-m3) y ofrece las 10 más afines; el modelo
+  decide. Si el embedding falla, se ofrecen todas.
+- **Tablas**: el prompt pide tablas Markdown para estadísticas; tras ejecutar
+  herramientas, una segunda llamada redacta la respuesta final y
+  `format_telegram_response` envuelve las tablas en `<pre>` (monoespaciado).
+- **Pruebas**: `agent/scripts/tool_phrasing_battery.py` (25 frases variadas) y
+  `agent/scripts/tool_calling_eval.py` (suite completa).

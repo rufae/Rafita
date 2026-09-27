@@ -2631,6 +2631,25 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       (`find_contact`, `search_gmail`, `fitness_daily_steps`,
       `manage_google_tasks`, edición de notas) y `/ready` sigue en GPU.
     - Tests: **250 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 7 (2026-09-27, sin filtros por palabras + tablas)**:
+    - **Se elimina el filtrado por palabras clave** (frágil: el usuario pide
+      lo mismo de mil formas). En su lugar, **router semántico**: se embeben
+      el mensaje y las descripciones de las 27 herramientas (bge-m3) y se
+      ofrecen las 10 más similares; **el modelo decide** cuál usar. Si el
+      embedding falla, se ofrecen todas. Descripciones afinadas para
+      desambiguar (Drive vs notas, evento local vs Google, alerta vs tarea,
+      datos personales, ingest_file vs Drive).
+    - **Batería de frases variadas** (`agent/scripts/tool_phrasing_battery.py`,
+      25 casos sin palabras clave compartidas): **25/25** correctas tras los
+      ajustes; suite completa de tool-calling: **46/46 (100%)**.
+    - **Respuestas profesionales con tablas**: en Telegram los resultados de
+      herramientas se enviaban en crudo; ahora hay una **segunda llamada al
+      modelo** que redacta la respuesta final (los resultados van como mensaje
+      de usuario; el rol `tool` sin herramientas devolvía vacío). Regla
+      `FORMAT_RULE` en el prompt: tablas Markdown para estadísticas; y
+      `format_telegram_response` las envuelve en `<pre>` (HTML) para que se
+      vean alineadas. Verificado con datos reales.
+    - Tests: **251 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
