@@ -51,9 +51,10 @@ Conclusión honesta: el **contestador con IA funcionando de verdad** cuesta
 - Tras el aviso, el propietario puede responder en Telegram "agenda una
   reunión con Ana el jueves" y el bot la crea en Google Calendar.
 
-## 4. Decisión pendiente
+## 4. Decisión (2026-09-27)
 
-1. WhatsApp: Evolution autoalojada (gratis, riesgo) / Cloud API oficial
-   (gratis con límites) / CallMeBot (solo avisos).
-2. Llamadas: aceptar ~1,50 €/mes por un DID SIP, o quedarnos en "recado por
-   WhatsApp/Telegram + resumen" sin número.
+1. WhatsApp: **aplazado**; guía lista en `docs/whatsapp-upgrade.md` para
+   implementarlo cuando se decida (recomendado: Evolution API autoalojada).
+2. Llamadas: **seguir investigando** alternativas gratuitas; el endpoint
+   `/call` queda implementado y probado, listo para conectar cuando exista una
+   vía sin coste (o si se acepta el DID de ~1,50 €/mes).
