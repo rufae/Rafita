@@ -104,18 +104,13 @@ def test_parse_relative_sin_fecha_devuelve_none():
     assert parse_relative_datetime("pon música") is None
 
 
-def test_tools_with_date_context_incluye_hoy(monkeypatch):
+def test_tools_without_date_stamp_in_descriptions():
+    """El sello de fecha en descripciones degradaba la seleccion (27/09)."""
     from src.handlers.chat_tools import get_tools_with_date_context
 
-    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
     tools = get_tools_with_date_context()
-    calendar_tools = [
-        t
-        for t in tools
-        if t["function"]["name"] in ("create_google_calendar_event", "manage_google_calendar")
-    ]
-    assert calendar_tools
-    assert all("[HOY es " in t["function"]["description"] for t in calendar_tools)
+    assert all("[HOY es " not in t["function"]["description"] for t in tools)
+    assert any(t["function"]["name"] == "create_google_calendar_event" for t in tools)
 
 
 def test_event_start_error_rejects_past_dates(monkeypatch):

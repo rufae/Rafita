@@ -618,6 +618,85 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "search_gmail",
+            "description": "Busca correos en Gmail del usuario (solo lectura) y devuelve asunto, "
+            "remitente, fecha y un extracto. Usalo para 'resumeme los correos de hoy', "
+            "'busca el correo de...', 'que me ha mandado...'. Admite consultas Gmail: "
+            "'is:unread', 'from:banco', 'newer_than:1d', 'subject:factura'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Consulta Gmail (is:unread, from:, newer_than:1d, subject:...)",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximo de correos (1-10, por defecto 5)",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_google_tasks",
+            "description": "Gestiona las tareas de Google Tasks del usuario: list (listar), "
+            "create (crear con titulo), complete (marcar hecha por task_id), delete "
+            "(borrar por task_id). Usalo para 'anademe una tarea', 'que tareas tengo', "
+            "'marca como hecha la tarea...'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "create", "complete", "delete"],
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Titulo de la tarea (para create)",
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "ID de la tarea (para complete/delete)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_contact",
+            "description": "Busca un contacto en Google Contacts por nombre, correo o telefono. "
+            "Usalo para 'dame el telefono de...', 'cual es el correo de...'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Nombre, correo o telefono a buscar",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fitness_daily_steps",
+            "description": "Devuelve los pasos que el usuario lleva hoy (Google Fit). "
+            "Usalo para 'cuantos pasos llevo hoy', 'como voy de actividad'.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "ingest_file",
             "description": "Registra la existencia de un archivo en el segundo cerebro "
             "creando una nota companion con metadatos. Usalo despues de "
@@ -664,28 +743,59 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
-def get_tools_with_date_context() -> list[dict[str, Any]]:
-    """Herramientas con la fecha de HOY inyectada (auditoría 2026-09-27).
+# Herramientas de Google que solo se ofrecen cuando el mensaje las menciona
+# (selección dinámica): con las 27 siempre, el modelo se dispersa y baja la
+# fiabilidad del resto (medido: 46/46 -> 18/46 el 2026-09-27).
+GOOGLE_EXTRA_TOOLS = {
+    "search_google_drive",
+    "read_google_drive_file",
+    "search_gmail",
+    "manage_google_tasks",
+    "find_contact",
+    "fitness_daily_steps",
+}
 
-    Los modelos pequeños ignoran la fecha del prompt; ponerla también en la
-    descripción de la herramienta de calendario reduce los errores de fecha.
+_GOOGLE_TOOL_KEYWORDS = {
+    "search_google_drive": r"\bdrive\b|google drive",
+    "read_google_drive_file": r"\bdrive\b|google drive",
+    "search_gmail": r"gmail|correo|email|bandeja de entrada",
+    "manage_google_tasks": (
+        r"google tasks|tareas? de google|mis tareas|lista de tareas|"
+        r"a[nñ][aá]deme una tarea|a[nñ]adir( una)? tarea|crea(me)? una tarea"
+    ),
+    "find_contact": r"contacto|tel[eé]fono",
+    "fitness_daily_steps": r"\bpasos\b|fitness|actividad f[ií]sica",
+}
+
+
+def get_tools_for_message(text: str) -> list[dict[str, Any]]:
+    """Herramientas para un mensaje concreto (núcleo + extras relevantes)."""
+    import re
+
+    tools = get_tools_with_date_context()
+    lowered = (text or "").lower()
+    selected = {
+        name for name, pattern in _GOOGLE_TOOL_KEYWORDS.items() if re.search(pattern, lowered)
+    }
+    return [
+        tool
+        for tool in tools
+        if tool["function"]["name"] not in GOOGLE_EXTRA_TOOLS
+        or tool["function"]["name"] in selected
+    ]
+
+
+def get_tools_with_date_context() -> list[dict[str, Any]]:
+    """Copia de las herramientas (sin sello de fecha en descripciones).
+
+    Nota (2026-09-27): se probó a inyectar "[HOY es ...]" en la descripción de
+    las herramientas de calendario y **degradaba** la selección del modelo
+    (medido: 46/46 -> 22/46). La fecha va en el prompt del sistema, en el
+    último mensaje del usuario y en el parámetro `when` + parser determinista.
     """
     import copy
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
 
-    from src.config import settings as _settings
-
-    tools = copy.deepcopy(get_tools_for_llm())
-    try:
-        now = datetime.now(ZoneInfo(_settings.timezone))
-    except Exception:
-        now = datetime.now()
-    stamp = "[HOY es %s (%s)] " % (now.strftime("%A %d/%m/%Y %H:%M"), _settings.timezone)
-    for tool in tools:
-        if tool["function"]["name"] in ("create_google_calendar_event", "manage_google_calendar"):
-            tool["function"]["description"] = stamp + tool["function"]["description"]
-    return tools
+    return copy.deepcopy(get_tools_for_llm())
 
 
 def get_tools_for_llm() -> list[dict[str, Any]]:
