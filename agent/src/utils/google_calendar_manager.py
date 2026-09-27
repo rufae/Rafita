@@ -3,11 +3,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2 import service_account
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from src.config import settings
@@ -55,12 +50,25 @@ class GoogleCalendarManager:
         return configured or "primary"
 
     async def initialize(self) -> bool:
-        loop = asyncio.get_running_loop()
+        """Autenticacion unificada: delega en GoogleServicesManager.
+
+        Bug 2026-09-27: este modulo autenticaba por su cuenta y **preferia la
+        cuenta de servicio** (calendario propio, vacio) mientras las lecturas
+        del bot iban por OAuth -> los borrados/altas caian en otro calendario.
+        """
+        from src.services.google_services_manager import google_services
+
         try:
-            result = await loop.run_in_executor(None, self._authenticate)
-            self._ready = result
+            self._ready = await google_services.initialize()
             if self._ready:
-                logger.info("Google Calendar authenticated via %s", self._auth_method)
+                self._service = google_services.calendar
+                self._calendar_id = google_services.calendar_id
+                self._auth_method = google_services.auth_method
+                logger.info(
+                    "Google Calendar: usando GoogleServicesManager (auth=%s, calendario=%s)",
+                    self._auth_method,
+                    self._calendar_id,
+                )
             else:
                 logger.warning(
                     "Google Calendar not configured. "
@@ -72,43 +80,6 @@ class GoogleCalendarManager:
             logger.warning("Google Calendar init failed: %s", e)
             self._ready = False
             return False
-
-    def _authenticate(self) -> bool:
-        if SERVICE_ACCOUNT_FILE.exists():
-            try:
-                creds = service_account.Credentials.from_service_account_file(
-                    str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
-                )
-                self._service = build("calendar", "v3", credentials=creds)
-                self._calendar_id = self._resolve_calendar_id(sa_email=creds.service_account_email)
-                self._auth_method = "service_account"
-                return True
-            except Exception as e:
-                logger.warning("Service account auth failed: %s", e)
-
-        if OAUTH_CREDENTIALS_FILE.exists():
-            try:
-                creds = None
-                if OAUTH_TOKEN_FILE.exists():
-                    with open(OAUTH_TOKEN_FILE) as f:
-                        creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_FILE), SCOPES)
-                if not creds or not creds.valid:
-                    if creds and creds.expired and creds.refresh_token:
-                        creds.refresh(Request())
-                    else:
-                        flow = InstalledAppFlow.from_client_secrets_file(
-                            str(OAUTH_CREDENTIALS_FILE), SCOPES
-                        )
-                        creds = flow.run_local_server(port=0)
-                    with open(OAUTH_TOKEN_FILE, "w") as f:
-                        f.write(creds.to_json())
-                self._service = build("calendar", "v3", credentials=creds)
-                self._auth_method = "oauth"
-                return True
-            except Exception as e:
-                logger.warning("OAuth auth failed: %s", e)
-
-        return False
 
     async def add_event(
         self,

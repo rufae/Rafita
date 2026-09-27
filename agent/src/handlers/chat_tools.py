@@ -405,7 +405,7 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "manage_google_calendar",
             "description": "Gestiona eventos en Google Calendar real del usuario. "
             "Acciones: create (crea evento nuevo), list (lista "
-            "proximos eventos), delete (elimina por ID). "
+            "proximos eventos), delete (elimina por ID o por titulo). "
             "Usalo cuando el usuario pida anadir un evento a "
             "su calendario, agendar una cita, reunion, "
             "o consultar su agenda de Google Calendar.",
@@ -419,7 +419,7 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "title": {
                         "type": "string",
-                        "description": "Titulo del evento (requerido para create)",
+                        "description": "Titulo del evento (create; o delete si no tienes event_id)",
                     },
                     "datetime_str": {
                         "type": "string",
@@ -655,6 +655,30 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "send_gmail",
+            "description": "Envia un correo electronico desde la cuenta de Gmail del usuario. "
+            "Usalo SIEMPRE que pida mandar/enviar un correo o email a alguien "
+            "('manda un correo a mama diciendole que la quiero', 'enviale un "
+            "email a juan', 'escribe a... diciendo...'): el destinatario puede "
+            "ser un correo o solo un nombre (se busca solo en tus contactos). "
+            "No uses find_contact para esto: send_gmail ya resuelve el nombre.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Correo del destinatario o su nombre (se resuelve solo)",
+                    },
+                    "subject": {"type": "string", "description": "Asunto del correo"},
+                    "body": {"type": "string", "description": "Cuerpo del correo"},
+                },
+                "required": ["to", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_google_tasks",
             "description": "Gestiona las tareas de Google Tasks del usuario: list (listar), "
             "create (crear con titulo), complete (marcar hecha por task_id), delete "
@@ -711,10 +735,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_google_drive",
-            "description": "Lista el contenido de Google Drive: carpetas, archivos o todo. "
-            "Usalo cuando el usuario pregunte 'que tengo en mi drive', 'que "
-            "carpetas tengo', 'ensename mis archivos de drive'. NO mezcles: si "
-            "pide carpetas, kind=folders; si pide archivos, kind=files.",
+            "description": "Lista Google Drive: carpetas, archivos o todo; o el contenido de "
+            "una carpeta concreta con folder (nombre o id). Usalo cuando el "
+            "usuario pregunte 'que tengo en mi drive', 'que carpetas tengo', "
+            "'que hay dentro de la carpeta X', 'ensename mis archivos de drive'. "
+            "NO mezcles: si pide carpetas, kind=folders; si pide archivos, "
+            "kind=files.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -722,6 +748,10 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                         "type": "string",
                         "enum": ["all", "folders", "files"],
                         "description": "Que listar: all (todo), folders o files",
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Carpeta cuyo contenido listar (nombre o id)",
                     },
                     "max_results": {
                         "type": "integer",
