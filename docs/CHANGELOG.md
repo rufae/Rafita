@@ -71,6 +71,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Corregido (2026-09-27): el flujo de Telegram usaba un prompt propio sin la
+  fecha actual ni el estado de Google (creaba eventos en 2025 y decía no estar
+  conectado); ahora usa `build_system_prompt()` y hay una guardia que rechaza
+  fechas pasadas con la fecha real en el mensaje. Limpiados los eventos
+  erróneos de 2025. La GPU de la torre vuelve a arrancar con el sistema
+  (`restart always`); latencia medida: 0,8 s por llamada de herramienta.
 - Integración de Google refactorizada en un **módulo centralizado**
   (`GoogleServicesManager`): autenticación única (cuenta de servicio u OAuth),
   servicios Calendar/Drive/Sheets/Docs (Tasks/Gmail solo vía OAuth), scopes de

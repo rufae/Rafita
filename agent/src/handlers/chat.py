@@ -8,9 +8,10 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from src.config import settings
+from src.core.orchestrator import build_system_prompt
 from src.database import db
 from src.handlers.chat_tools import TOOLS_DEFINITIONS, WRITE_TOOLS, get_tools_for_llm
-from src.i18n import currency_symbol, language_name, language_rule, reply_instruction
+from src.i18n import currency_symbol, language_name, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
 from src.ollama_client import OllamaClientError, llm
@@ -244,7 +245,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    f"{language_rule()}"
+                    f"{build_system_prompt()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "
@@ -317,7 +318,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    f"{language_rule()}"
+                    f"{build_system_prompt()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "

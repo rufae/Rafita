@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 from src.config import settings
 from src.database import db
 from src.logger import logger
-from src.services.google_services_manager import google_services
+from src.services.google_services_manager import event_start_error, google_services
 from src.utils.security_manager import encrypt_value
 
 SCOPES = [
@@ -239,6 +239,9 @@ class GoogleService:
                 "message": "No autenticado. Usa generate_google_auth_link para conectar.",
                 "needs_auth": True,
             }
+        start_error = event_start_error(start_datetime)
+        if start_error:
+            return {"success": False, "message": start_error}
         if not end_datetime:
             try:
                 from datetime import datetime, timedelta
