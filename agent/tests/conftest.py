@@ -11,7 +11,7 @@ _src_dir = Path(__file__).resolve().parent.parent / "src"
 if str(_src_dir) not in sys.path:
     sys.path.insert(0, str(_src_dir))
 
-import pytest
+import pytest  # noqa: E402
 
 
 def _ollama_available() -> bool:
@@ -37,9 +37,7 @@ def pytest_collection_modifyitems(config, items):
         "TestVectorManager",
     }
     for item in items:
-        if item.parent and item.parent.name in ollama_classes:
-            item.add_marker(skip_marker)
-        elif "ollama" in item.nodeid.lower():
+        if item.parent and item.parent.name in ollama_classes or "ollama" in item.nodeid.lower():
             item.add_marker(skip_marker)
 
 

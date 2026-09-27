@@ -2672,6 +2672,36 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       (antes devolvia todo mezclado); verificado: 14 carpetas / 20 archivos.
     - Bateria ampliada a **29/29** y suite completa **46/46**; tests
       **258 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 9 (2026-09-27, segunda ronda de correcciones)**:
+    - **Contactos**: faltaba **paginar** `connections` (Google devuelve 200 por
+      pagina); los contactos a partir de la pagina 2 no se encontraban. Ahora
+      se recorren todas las paginas. Verificado: **'Aa Mama' -> 655-225-607**
+      (estaba en la pagina 2; el usuario tenia razon, si estaba en contactos).
+    - **Calendario (raiz del fallo de borrado)**: `GoogleCalendarManager`
+      autenticaba por su cuenta y **preferia la cuenta de servicio** (su
+      calendario 'primary' propio, vacio) mientras el resto del bot iba por
+      OAuth -> los borrados/altas caian en otro calendario y 'borra ese
+      evento' no borraba nada. Ahora `gcal` **delega en GoogleServicesManager**
+      (misma auth y mismo calendario: OAuth + calendario del usuario).
+    - **Borrado por titulo**: si el modelo no tiene `event_id`, se resuelve el
+      evento por titulo contra los proximos eventos reales. Verificado E2E:
+      creado 'prueba borrado rafita' -> borrado por titulo -> desaparece; y
+      borrado el evento real 'lunes triste' que el usuario pidio (el listado
+      posterior ya no lo muestra).
+    - **Contenido de carpetas de Drive**: `list_google_drive` acepta `folder`
+      (nombre o id) y lista sus hijos. Verificado: 'Titulaciones' ->
+      CV, Curriculum vitae, certificados... (el bot antes respondia que no
+      encontraba nada).
+    - **Enviar correos**: nueva herramienta **`send_gmail`** (scope
+      `gmail.send`; el usuario debe reautorizar con `/setup_google`). Si el
+      destinatario es un nombre ('manda un correo a mama'), resuelve el correo
+      desde los contactos automaticamente.
+    - **Contexto**: memoria de conversacion ampliada (10 mensajes y 800
+      caracteres por mensaje; antes 6/500) para que no se pierda el hilo.
+    - **Honestidad**: la redaccion final recibe orden explicita de no afirmar
+      que una accion se hizo si la herramienta devolvio error.
+    - Bateria **33/33** y suite **46/46** con el codigo nuevo; tests
+      **267 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
