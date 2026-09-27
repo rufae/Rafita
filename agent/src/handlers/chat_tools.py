@@ -414,8 +414,15 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "datetime_str": {
                         "type": "string",
-                        "description": "Fecha y hora ISO8601 (ej: 2026-06-15T09:00:00). "
-                        "Requerido para create.",
+                        "description": "Fecha y hora ISO8601 SOLO si el usuario la dio en "
+                        "absoluto (ej: 2026-06-15T09:00:00). Si dio una fecha relativa "
+                        "('mañana a las 10', 'el viernes'), deja esto vacio y usa 'when'.",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": "Frase temporal tal cual la dijo el usuario (ej: "
+                        "'mañana a las 10', 'el viernes', 'en 3 dias'). El servidor la "
+                        "convierte a fecha real. Usalo siempre que sea una fecha relativa.",
                     },
                     "description": {
                         "type": "string",
@@ -540,7 +547,15 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "start_datetime": {
                         "type": "string",
-                        "description": "Fecha y hora ISO8601 (ej: 2026-06-25T17:00:00)",
+                        "description": "Fecha y hora ISO8601 SOLO si el usuario la dio en "
+                        "absoluto. Si dio una fecha relativa ('mañana a las 10', 'el "
+                        "viernes'), deja esto vacio y usa 'when'.",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": "Frase temporal tal cual la dijo el usuario (ej: "
+                        "'mañana a las 10', 'el viernes', 'en 3 dias'). El servidor la "
+                        "convierte a la fecha real de hoy. Usalo siempre que sea relativa.",
                     },
                     "end_datetime": {
                         "type": "string",
@@ -551,7 +566,7 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                         "description": "Descripcion opcional del evento",
                     },
                 },
-                "required": ["title", "start_datetime"],
+                "required": ["title"],
             },
         },
     },
@@ -647,6 +662,30 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+def get_tools_with_date_context() -> list[dict[str, Any]]:
+    """Herramientas con la fecha de HOY inyectada (auditoría 2026-09-27).
+
+    Los modelos pequeños ignoran la fecha del prompt; ponerla también en la
+    descripción de la herramienta de calendario reduce los errores de fecha.
+    """
+    import copy
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from src.config import settings as _settings
+
+    tools = copy.deepcopy(get_tools_for_llm())
+    try:
+        now = datetime.now(ZoneInfo(_settings.timezone))
+    except Exception:
+        now = datetime.now()
+    stamp = "[HOY es %s (%s)] " % (now.strftime("%A %d/%m/%Y %H:%M"), _settings.timezone)
+    for tool in tools:
+        if tool["function"]["name"] in ("create_google_calendar_event", "manage_google_calendar"):
+            tool["function"]["description"] = stamp + tool["function"]["description"]
+    return tools
 
 
 def get_tools_for_llm() -> list[dict[str, Any]]:
