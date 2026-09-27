@@ -71,6 +71,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Corregido (2026-09-27, 2ª ronda): fechas relativas resueltas en el servidor
+  (parser español + parámetro `when` en las herramientas + fecha en el mensaje
+  y en la descripción de la herramienta); `docker compose up -d` para aplicar
+  el `.env` (la zona horaria seguía en Mexico_City por usar `restart`); guía
+  OAuth completa (`docs/google-oauth.md`) con Drive completo, Gmail, Tasks,
+  People y Fitness.
 - Corregido (2026-09-27): el flujo de Telegram usaba un prompt propio sin la
   fecha actual ni el estado de Google (creaba eventos en 2025 y decía no estar
   conectado); ahora usa `build_system_prompt()` y hay una guardia que rechaza
