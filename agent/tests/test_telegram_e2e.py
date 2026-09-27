@@ -6,7 +6,19 @@ import pytest
 from telegram import Bot, Chat, Message, Update, User
 from telegram.ext import CallbackContext
 
+from src.config import settings
 from src.handlers.chat import handle_message
+from src.utils.access_control import SlidingWindowLimiter
+
+
+@pytest.fixture(autouse=True)
+def _open_access(monkeypatch):
+    """Los tests entran como usuario autorizado sin rate limit (Fase 5)."""
+    monkeypatch.setattr(settings, "admin_ids", [12345])
+    monkeypatch.setattr(
+        "src.utils.access_control.chat_limiter",
+        SlidingWindowLimiter(max_events=1000, window_seconds=60.0),
+    )
 
 
 @pytest.fixture
