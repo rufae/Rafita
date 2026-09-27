@@ -21,7 +21,7 @@ import json
 import os
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -68,6 +68,33 @@ SERVICE_NAMES = {
 
 class GoogleServiceError(RuntimeError):
     """Error legible de un servicio de Google (con pista de acción)."""
+
+
+def event_start_error(start_datetime: str) -> str | None:
+    """Rechaza fechas en el pasado (evita fechas inventadas por el modelo).
+
+    Devuelve un mensaje accionable con la fecha actual, o None si la fecha es
+    válida o no se puede interpretar.
+    """
+    try:
+        start = datetime.fromisoformat(start_datetime)
+    except (ValueError, TypeError):
+        return None
+    try:
+        tz = ZoneInfo(settings.timezone)
+    except Exception:
+        tz = UTC
+    now = datetime.now(tz)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=tz)
+    if start < now - timedelta(minutes=5):
+        return (
+            "La fecha '%s' está en el pasado y HOY es %s (%s). Vuelve a calcular la "
+            "fecha relativa ('mañana', 'el viernes'...) desde hoy y llama de nuevo a "
+            "la herramienta."
+            % (start_datetime, now.strftime("%A %d/%m/%Y %H:%M"), settings.timezone)
+        )
+    return None
 
 
 def _humanize_http_error(exc: HttpError, action: str, sa_email: str = "") -> str:
@@ -357,9 +384,10 @@ class GoogleServicesManager:
         end_datetime: str | None = None,
         description: str | None = None,
     ) -> dict[str, Any]:
+        start_error = event_start_error(start_datetime)
+        if start_error:
+            return {"success": False, "message": start_error}
         if not end_datetime:
-            from datetime import datetime, timedelta
-
             try:
                 end_datetime = (
                     datetime.fromisoformat(start_datetime) + timedelta(hours=1)

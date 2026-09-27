@@ -10,6 +10,7 @@ from src.services.google_services_manager import (
     GoogleServiceError,
     GoogleServicesManager,
     _humanize_http_error,
+    event_start_error,
 )
 
 
@@ -67,6 +68,24 @@ def test_execute_gives_actionable_error_after_retries(monkeypatch):
         raise AssertionError("debería haber lanzado GoogleServiceError")
     except GoogleServiceError as exc:
         assert "403" in str(exc) or "comparte" in str(exc).lower()
+
+
+def test_event_start_error_rejects_past_dates(monkeypatch):
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    message = event_start_error("2025-05-19T00:00:00")
+    assert message is not None
+    assert "pasado" in message
+    assert "HOY" in message
+
+
+def test_event_start_error_accepts_future(monkeypatch):
+    monkeypatch.setattr(gsm.settings, "timezone", "Europe/Madrid")
+    future = (gsm.datetime.now(gsm.ZoneInfo("Europe/Madrid")) + gsm.timedelta(days=1)).isoformat()
+    assert event_start_error(future) is None
+
+
+def test_event_start_error_ignores_unparseable(monkeypatch):
+    assert event_start_error("mañana por la tarde") is None
 
 
 def test_normalize_time_adds_local_timezone(monkeypatch):

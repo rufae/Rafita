@@ -68,3 +68,24 @@ No funcionan con cuenta de servicio: **Google Tasks no permite compartir
 listas** y una cuenta de servicio **no tiene buzón de Gmail**. Para esos dos
 servicios hace falta la vía OAuth (crear un cliente «Aplicación de
 escritorio» en el proyecto, subir su JSON y completar `/setup_google`).
+
+
+## 6. Crear archivos (Sheets/Docs) con cuenta de servicio — limitación real
+
+Las cuentas de servicio **no tienen cuota de almacenamiento** en cuentas
+personales: crear una hoja/documento sin carpeta destino devuelve
+`403 The caller does not have permission`. Opciones:
+
+1. **Carpeta compartida (con la cuenta de servicio actual)**: crea una carpeta
+   en tu Drive (p. ej. «Rafita»), compártela con
+   `rafita@rafita-500317.iam.gserviceaccount.com` como **Editor** y define
+   `GOOGLE_DRIVE_FOLDER_ID=<id de la carpeta>` en el `.env`. Los archivos que
+   cree Rafita irán ahí (el almacenamiento se descuenta de tu cuota).
+2. **OAuth (recomendado si quieres todo)**: con OAuth los archivos se crean
+   como tu usuario y además funcionan **Tasks y Gmail**. Requiere crear un
+   cliente «Aplicación de escritorio» en el proyecto y completar
+   `/setup_google` (enlace + código).
+
+Estado del test E2E (2026-09-27): Calendar ✅, Drive ✅ (lectura), Sheets/Docs
+API ✅ habilitadas, creación ❌ por la limitación de cuota (soluciones arriba),
+Tasks/Gmail requieren OAuth.
