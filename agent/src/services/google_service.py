@@ -171,6 +171,8 @@ class GoogleService:
             if stored_cal:
                 self._calendar_id = stored_cal
             self._ready = True
+            # Cambiar el manager a OAuth de inmediato (acceso completo)
+            await google_services.initialize(force=True)
             logger.info("Google Service: autenticacion completada y token almacenado")
             return {
                 "success": True,

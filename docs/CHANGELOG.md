@@ -71,6 +71,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Corregido (2026-09-27, 3ª ronda): `credentials.json` de OAuth tiene
+  prioridad sobre la cuenta de servicio en `/setup_google` (antes se ignoraba
+  el OAuth subido); nuevo `GOOGLE_AUTH_MODE` (auto/servicio/oauth) y el
+  diagnóstico marca Tasks/Gmail/People/Fitness como `requires_oauth` con
+  cuenta de servicio.
 - Corregido (2026-09-27, 2ª ronda): fechas relativas resueltas en el servidor
   (parser español + parámetro `when` en las herramientas + fecha en el mensaje
   y en la descripción de la herramienta); `docker compose up -d` para aplicar
