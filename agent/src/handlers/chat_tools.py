@@ -197,17 +197,19 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "manage_obsidian_note",
             "description": "Gestiona notas en la bóveda local de Obsidian. "
             "Acciones: create (crea nota nueva), append (añade "
-            "contenido al final), read (lee contenido), delete "
-            "(elimina). Úsalo cuando el usuario diga cosas como "
-            "'apunta esto', 'guarda una nota', 'lee la nota de...', "
+            "contenido al final), overwrite (reemplaza todo el "
+            "contenido), read (lee contenido), delete (elimina). "
+            "Úsalo cuando el usuario diga cosas como 'apunta esto', "
+            "'guarda una nota', 'guarda este correo como nota', "
+            "'lee la nota de...', 'edita/reemplaza la nota...', "
             "'borra la nota...', 'crea una nota en la carpeta...'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["create", "append", "read", "delete"],
-                        "description": "Acción a realizar: create, append, read o delete",
+                        "enum": ["create", "append", "overwrite", "read", "delete"],
+                        "description": "Acción: create, append, overwrite, read o delete",
                     },
                     "title": {
                         "type": "string",
