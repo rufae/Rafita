@@ -13,8 +13,8 @@ cuenta.
 |---|---|---|
 | Calendar API | ✅ habilitada | — |
 | Drive API | ✅ habilitada | — |
-| **Sheets API** | ❌ falta | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=552699919273 |
-| **Docs API** | ❌ falta | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=552699919273 |
+| **Sheets API** | ✅ habilitada | https://console.cloud.google.com/apis/library/sheets.googleapis.com?project=552699919273 |
+| **Docs API** | ✅ habilitada | https://console.cloud.google.com/apis/library/docs.googleapis.com?project=552699919273 |
 | Tasks API | opcional (OAuth) | https://console.cloud.google.com/apis/library/tasks.googleapis.com?project=552699919273 |
 | Gmail API | opcional (OAuth) | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=552699919273 |
 
@@ -88,4 +88,9 @@ personales: crear una hoja/documento sin carpeta destino devuelve
 
 Estado del test E2E (2026-09-27): Calendar ✅, Drive ✅ (lectura), Sheets/Docs
 API ✅ habilitadas, creación ❌ por la limitación de cuota (soluciones arriba),
-Tasks/Gmail requieren OAuth.
+Tasks/Gmail/People/Fitness → `requires_oauth`.
+
+**Nota (27/09)**: si existe `credentials.json` de tipo OAuth (`installed`) se
+usa esa vía con prioridad sobre `service_account.json`; `GOOGLE_AUTH_MODE`
+(`auto`|`service_account`|`oauth`) permite forzar una u otra. Guía OAuth en
+`docs/google-oauth.md`.

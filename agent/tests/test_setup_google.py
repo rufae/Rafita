@@ -94,6 +94,54 @@ async def test_service_account_uploaded_as_oauth_is_renamed(monkeypatch, tmp_pat
     assert "Detectará tu calendario automáticamente" in reply
 
 
+async def test_oauth_credentials_take_precedence_over_service_account(monkeypatch, tmp_path):
+    """Con credentials.json OAuth y service_account.json, gana OAuth (bug 27/09)."""
+    monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
+    monkeypatch.setattr(admin_module.settings, "admin_ids", [1])
+    (tmp_path / "credentials.json").write_text(
+        '{"installed": {"client_id": "x", "client_secret": "y"}}', encoding="utf-8"
+    )
+    (tmp_path / "service_account.json").write_text(
+        '{"type": "service_account", "client_email": "sa@x"}', encoding="utf-8"
+    )
+
+    async def init_false():
+        return False
+
+    async def gen_url():
+        return {"success": True, "auth_url": "https://accounts.google.com/o/oauth2/auth?x=1"}
+
+    monkeypatch.setattr(admin_module.google_services, "initialize", init_false)
+    monkeypatch.setattr(admin_module.google_service, "generate_auth_url", gen_url)
+
+    update = _update()
+    await admin_module.setup_google_command(update, SimpleNamespace(args=[]))
+
+    reply = update.effective_message.replies[-1]
+    assert "accounts.google.com" in reply
+    assert "Cuenta de servicio detectada" not in reply
+
+
+async def test_oauth_already_connected_reports_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
+    monkeypatch.setattr(admin_module.settings, "admin_ids", [1])
+    (tmp_path / "credentials.json").write_text(
+        '{"installed": {"client_id": "x"}}', encoding="utf-8"
+    )
+
+    async def init_true():
+        return True
+
+    monkeypatch.setattr(admin_module.google_services, "initialize", init_true)
+    monkeypatch.setattr(
+        type(admin_module.google_services), "auth_method", property(lambda self: "oauth")
+    )
+
+    update = _update()
+    await admin_module.setup_google_command(update, SimpleNamespace(args=[]))
+    assert "OAuth" in update.effective_message.replies[-1]
+
+
 async def test_without_credentials_sends_instructions(monkeypatch, tmp_path):
     monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
     monkeypatch.setattr(admin_module.settings, "admin_ids", [1])

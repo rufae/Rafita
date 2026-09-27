@@ -254,11 +254,18 @@ class GoogleServicesManager:
         if self._ready and not force:
             return True
         loop = asyncio.get_running_loop()
-        loaded = await loop.run_in_executor(None, self._load_service_account_sync)
-        if not loaded:
+        mode = (settings.google_auth_mode or "auto").strip().lower()
+        loaded = False
+        if mode in ("auto", "oauth"):
+            # En auto, si ya hay token OAuth se prefiere (el usuario lo
+            # autorizo explicitamente y da acceso completo).
             loaded = await self._load_oauth_sync()
+            if loaded:
+                self._auth_method = "oauth"
+        if not loaded and mode in ("auto", "service_account"):
+            loaded = await loop.run_in_executor(None, self._load_service_account_sync)
         if not loaded:
-            logger.info("GoogleServices: sin credenciales válidas en %s", CRED_DIR)
+            logger.info("GoogleServices: sin credenciales válidas (modo=%s) en %s", mode, CRED_DIR)
             return False
         self._calendar = self._build("calendar", "v3")
         self._drive = self._build("drive", "v3")
@@ -773,6 +780,16 @@ class GoogleServicesManager:
             "gmail": ("perfil", lambda: self.gmail.users().getProfile(userId="me")),
         }
         for name, (action, probe) in probes.items():
+            if self._auth_method == "service_account" and name in (
+                "tasks",
+                "gmail",
+                "people",
+                "fitness",
+            ):
+                # Con cuenta de servicio estas APIs no aplican al usuario
+                # (Tasks no se comparte, Gmail no tiene buzon, etc.).
+                result["services"][name] = "requires_oauth"
+                continue
             try:
                 await self._run(probe, action)
                 result["services"][name] = "ok"

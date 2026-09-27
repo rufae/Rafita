@@ -44,6 +44,12 @@ class Settings(BaseSettings):
 
     log_format: str = Field("text", alias="LOG_FORMAT")
 
+    @field_validator("google_auth_mode", mode="before")
+    @classmethod
+    def normalize_google_auth_mode(cls, v: Any) -> str:
+        value = "" if v is None else str(v).strip().lower()
+        return value if value in ("auto", "service_account", "oauth") else "auto"
+
     @field_validator("log_format", mode="before")
     @classmethod
     def normalize_log_format(cls, v: Any) -> str:
@@ -85,6 +91,7 @@ class Settings(BaseSettings):
     openai_reasoning_effort: str = Field("", alias="OPENAI_REASONING_EFFORT")
     google_calendar_id: str = Field("primary", alias="GOOGLE_CALENDAR_ID")
     google_drive_folder_id: str = Field("", alias="GOOGLE_DRIVE_FOLDER_ID")
+    google_auth_mode: str = Field("auto", alias="GOOGLE_AUTH_MODE")
 
     @field_validator("ollama_reasoning_effort", "openai_reasoning_effort", mode="before")
     @classmethod

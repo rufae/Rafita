@@ -10,6 +10,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.services.google_service import google_service
+from src.services.google_services_manager import google_services
 
 
 async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -247,7 +248,19 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
             os.replace(cred_file, service_file)
             logger.info("setup_google: cuenta de servicio detectada y renombrada")
 
-    if service_file.exists():
+    # Prioridad OAuth: si hay un credentials.json de tipo OAuth (installed/web),
+    # se usa esa via aunque exista tambien una cuenta de servicio (el usuario
+    # lo subio a proposito para tener acceso completo).
+    oauth_file = None
+    if cred_file.exists():
+        try:
+            data = json.loads(cred_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        if "installed" in data or "web" in data:
+            oauth_file = cred_file
+
+    if oauth_file is None and service_file.exists():
         sa_email = ""
         try:
             sa_email = json.loads(service_file.read_text(encoding="utf-8")).get("client_email", "")
@@ -264,6 +277,35 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
             "Detectará tu calendario automáticamente (no hace falta que me "
             "des tu correo). Si no lo detecta, avisará en los logs." % (sa_email or "(no legible)")
         )
+        return
+
+    if oauth_file is not None and not args:
+        # Con OAuth: si ya hay token, conectado; si no, enlace de autorizacion.
+        if await google_services.initialize():
+            if google_services.auth_method == "oauth":
+                await message.reply_text(
+                    "✅ Google ya está conectado con OAuth (acceso completo). "
+                    "Usa /status para ver el panel."
+                )
+                return
+        result = await google_service.generate_auth_url()
+        if result.get("success"):
+            await message.reply_text(
+                "Para conectar tu cuenta de Google (acceso completo):\n\n"
+                "1. Abre este enlace y autoriza la aplicación:\n"
+                "%s\n\n"
+                "2. El navegador acabará en una página que no carga "
+                "(localhost:8080). Copia el valor de 'code=' de la barra de "
+                "direcciones y envíamelo así:\n"
+                "/setup_google <codigo>\n\n"
+                "(El código caduca pronto; si falla, repite /setup_google.)" % result["auth_url"]
+            )
+        else:
+            await message.reply_text(
+                "No se pudo generar el enlace de autorización: %s"
+                % result.get("message", "error desconocido")
+            )
+        logger.info("setup_google: flujo OAuth iniciado para user %d", user.id)
         return
 
     if cred_file.exists():
