@@ -161,6 +161,30 @@ TOOL_INTENT_KEYWORDS = [
     "conectar google",
     "autorizar google",
     "sincroniza el calendario",
+    # Google: correo, contactos, tareas, drive y fitness (2026-09-27)
+    "correo",
+    "gmail",
+    "email",
+    "bandeja",
+    "telefono",
+    "teléfono",
+    "contacto",
+    "tarea",
+    "google tasks",
+    "drive",
+    "google drive",
+    "hoja de calculo",
+    "hoja de cálculo",
+    "pasos",
+    "fitness",
+    # Edicion de la boveda
+    "edita la nota",
+    "editar la nota",
+    "reemplaza la nota",
+    "modifica la nota",
+    "actualiza la nota",
+    "guarda este correo",
+    "guarda el correo",
     "cada día",
     "cada semana",
     "cada hora",
@@ -602,7 +626,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
     if not settings.persist_to_brain:
         action = str(args.get("action", "")).lower()
         if func_name == "manage_obsidian_note":
-            is_write = action in {"create", "append", "delete"}
+            is_write = action in {"create", "append", "overwrite", "delete"}
         else:
             is_write = func_name in WRITE_TOOLS
         if is_write:
@@ -797,10 +821,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                         "success": False,
                         "message": "El contenido es obligatorio para crear o añadir una nota.",
                     }
-                if action == "create":
-                    result = await ob.create_or_append_note(title, content, folder)
-                else:
-                    result = await ob.create_or_append_note(title, content, folder)
+                result = await ob.create_or_append_note(title, content, folder)
+            elif action == "overwrite":
+                if not content:
+                    return {
+                        "success": False,
+                        "message": "El contenido es obligatorio para reemplazar una nota.",
+                    }
+                result = await ob.overwrite_note(title, content, folder)
             elif action == "read":
                 result = await ob.read_note(title, folder)
             elif action == "delete":
