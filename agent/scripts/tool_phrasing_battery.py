@@ -66,6 +66,10 @@ CASES = [
     ("que archivos hay en mi nube de google", {"list_google_drive", "search_google_drive"}),
     ("cual es el ultimo correo de mi bandeja de entrada", {"search_gmail"}),
     ("dame el numero de Aa Mama", {"find_contact"}),
+    ("manda un correo a mama diciendole que la quiero", {"send_gmail"}),
+    ("envíale un email a juan@example.com con el asunto cena", {"send_gmail"}),
+    ("que hay dentro de la carpeta Titulaciones de drive", {"list_google_drive"}),
+    ("borra el evento de mañana que se llama lunes triste", {"manage_google_calendar"}),
     ("cuéntame un chiste", set()),
 ]
 

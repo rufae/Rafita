@@ -53,6 +53,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/contacts.readonly",
     "https://www.googleapis.com/auth/contacts.other.readonly",
     "https://www.googleapis.com/auth/fitness.activity.read",
@@ -758,6 +759,45 @@ class GoogleServicesManager:
             )
         return {"success": True, "messages": messages, "count": len(messages)}
 
+    async def send_email(self, to: str, subject: str, body: str) -> dict[str, Any]:
+        """Envia un correo desde la cuenta del usuario (scope gmail.send)."""
+        import base64
+        from email.message import EmailMessage
+
+        to = (to or "").strip()
+        if to and "@" not in to:
+            # El usuario suele dar solo el nombre ("manda un correo a mama"):
+            # resolvemos su direccion desde los contactos.
+            try:
+                contact = await self.find_contact(to)
+            except Exception:
+                contact = {}
+            email = next(
+                (c.get("email") for c in contact.get("contacts", []) if c.get("email")), ""
+            )
+            if not email:
+                return {
+                    "success": False,
+                    "message": "No encontre el correo de '%s' en tus contactos." % to,
+                }
+            to = email
+        if not to:
+            return {"success": False, "message": "Necesito una direccion de correo valida."}
+        message = EmailMessage()
+        message["To"] = to
+        message["Subject"] = (subject or "").strip() or "(sin asunto)"
+        message.set_content(body or "")
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        data = await self._run(
+            lambda: self.gmail.users().messages().send(userId="me", body={"raw": raw}),
+            "enviar correo",
+        )
+        return {
+            "success": True,
+            "message": "Correo enviado a %s (asunto: '%s')." % (to, message["Subject"]),
+            "id": data.get("id"),
+        }
+
     async def list_tasks(
         self, show_completed: bool = False, max_results: int = 20
     ) -> dict[str, Any]:
@@ -803,21 +843,29 @@ class GoogleServicesManager:
         Comparacion sin acentos ni mayusculas (bug 2026-09-27: 'mama' no
         encontraba el contacto 'Aa Mama').
         """
-        data = await self._run(
-            lambda: (
-                self.people.people()
-                .connections()
-                .list(
-                    resourceName="people/me",
-                    pageSize=200,
-                    personFields="names,emailAddresses,phoneNumbers",
-                )
-            ),
-            "buscar contactos",
-        )
+        # Paginacion completa (bug 2026-09-27: con mas de 200 contactos, los
+        # que estaban en paginas siguientes no se encontraban).
+        connections: list[dict[str, Any]] = []
+        page_token: str | None = None
+        for _ in range(10):
+            params: dict[str, Any] = {
+                "resourceName": "people/me",
+                "pageSize": 200,
+                "personFields": "names,emailAddresses,phoneNumbers",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            data = await self._run(
+                lambda p=params: self.people.people().connections().list(**p),
+                "buscar contactos",
+            )
+            connections.extend(data.get("connections", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
         needle = self._normalize_match((query or "").strip())
         found = []
-        for person in data.get("connections", []):
+        for person in connections:
             names = person.get("names", [{}])
             name = names[0].get("displayName", "") if names else ""
             emails = person.get("emailAddresses", [{}])
@@ -852,19 +900,47 @@ class GoogleServicesManager:
                 logger.info("GoogleServices: otros contactos no disponibles (%s)", str(e)[:120])
         return {"success": True, "contacts": found}
 
+    async def _resolve_drive_folder(self, folder: str) -> str | None:
+        """Convierte un nombre de carpeta en su id (o acepta un id directo)."""
+        candidate = (folder or "").strip()
+        if not candidate:
+            return None
+        if " " not in candidate and len(candidate) > 20:
+            return candidate  # parece un id
+        escaped = candidate.replace("'", "\\'")
+        data = await self._run(
+            lambda: self.drive.files().list(
+                q="mimeType = 'application/vnd.google-apps.folder' and name = '%s'" % escaped,
+                pageSize=5,
+                fields="files(id,name)",
+            ),
+            "buscar carpeta en Drive",
+        )
+        files = data.get("files", [])
+        return files[0]["id"] if files else None
+
     async def list_drive(
-        self, kind: str = "all", max_results: int = 20, folder_id: str | None = None
+        self,
+        kind: str = "all",
+        max_results: int = 20,
+        folder_id: str | None = None,
+        folder: str | None = None,
     ) -> dict[str, Any]:
         """Lista ficheros y/o carpetas del Drive (bug 2026-09-27: al pedir
-        carpetas devolvia todo mezclado)."""
+        carpetas devolvia todo mezclado; y no se podia listar el contenido de
+        una carpeta concreta)."""
         clauses = []
         if kind == "folders":
             clauses.append("mimeType = 'application/vnd.google-apps.folder'")
         elif kind == "files":
             clauses.append("mimeType != 'application/vnd.google-apps.folder'")
-        folder = folder_id or self.drive_folder_id
+        resolved = folder_id or self.drive_folder_id
         if folder:
-            clauses.append("'%s' in parents" % folder)
+            resolved = await self._resolve_drive_folder(folder)
+            if not resolved:
+                return {"success": False, "message": "No encontre la carpeta '%s'." % folder}
+        if resolved:
+            clauses.append("'%s' in parents" % resolved)
         params: dict[str, Any] = {
             "pageSize": max(1, min(int(max_results), 50)),
             "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)",

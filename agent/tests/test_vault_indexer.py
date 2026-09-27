@@ -3,9 +3,9 @@
 import pytest
 
 from src.utils.vault_indexer import (
-    parse_frontmatter,
-    chunk_by_headings,
     build_obsidian_uri,
+    chunk_by_headings,
+    parse_frontmatter,
 )
 
 
@@ -114,7 +114,7 @@ class TestBuildObsidianUri:
 
         if os.environ.get("CI"):
             pytest.skip("Vault path not available in CI")
-        from src.utils.vault_indexer import VAULT_PATH, build_obsidian_uri
+        from src.utils.vault_indexer import VAULT_PATH
 
         note = VAULT_PATH / "test.md"
         note.touch()

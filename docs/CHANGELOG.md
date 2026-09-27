@@ -71,6 +71,14 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Segunda ronda de correcciones Google (2026-09-27): contactos con paginación
+  completa (encuentra contactos de páginas siguientes); calendario unificado
+  (el gestor de acciones usaba la cuenta de servicio y por eso los borrados
+  no aplicaban — ahora todo va por OAuth con el calendario del usuario);
+  borrado de eventos por título; `list_google_drive` lista el contenido de
+  una carpeta (`folder`); nueva herramienta `send_gmail` (envío de correos,
+  resuelve nombres desde contactos); más memoria de conversación (10×800) y
+  orden de honestidad al redactar.
 - Correcciones de integración Google (2026-09-27): Gmail se limita a la
   bandeja principal por defecto (`in:inbox category:primary`); contactos sin
   acentos + búsqueda en «Otros contactos»; `create_event` crea en Google

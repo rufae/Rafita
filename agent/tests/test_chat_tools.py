@@ -3,10 +3,6 @@
 These tests run BEFORE splitting chat.py to catch regressions.
 """
 
-import asyncio
-import tempfile
-import shutil
-
 import pytest
 
 
@@ -77,7 +73,7 @@ class TestSecondBrainToolHandler:
 class TestToolRegistry:
     def test_all_known_tools_have_handler(self):
         """Every defined tool must have a handler in _execute_tool."""
-        from src.handlers.chat import TOOLS_DEFINITIONS, _execute_tool
+        from src.handlers.chat import TOOLS_DEFINITIONS
 
         # Known tool name patterns - verify they're handled
         tool_names = [t["function"]["name"] for t in TOOLS_DEFINITIONS]

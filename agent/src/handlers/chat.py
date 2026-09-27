@@ -256,10 +256,11 @@ async def _process_ai_message(
     # herramientas disponibles (todas).
     needs_tools = True
 
-    history_limit = 6 if needs_tools else 4
+    # Mas memoria de conversacion (bug 2026-09-27: "se pierde en el contexto").
+    history_limit = 10 if needs_tools else 6
     history = await db.get_chat_history(chat_id, history_limit)
 
-    MAX_CONTENT_LEN = 500
+    MAX_CONTENT_LEN = 800
     trimmed_history = []
     for h in history:
         c = h.get("content", "")
@@ -548,7 +549,11 @@ async def _process_ai_message(
                         "Resultados de las herramientas:\n%s\n\nRedacta ahora la "
                         "respuesta final al usuario usando estos datos. Si pidio una "
                         "tabla, estadisticas o una comparativa, responde con una "
-                        "tabla Markdown real (| columna | columna |)." % "\n".join(summary_lines)
+                        "tabla Markdown real (| columna | columna |). HONESTIDAD: si "
+                        "algun resultado empieza por Error o success=false, di "
+                        "claramente que la accion NO se pudo completar y por que; "
+                        "jamas afirmes que algo se hizo si la herramienta fallo."
+                        % "\n".join(summary_lines)
                     ),
                 }
             )
@@ -1181,8 +1186,25 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 return {"success": True, "message": "\n".join(lines)}
             elif action == "delete":
                 event_id = args.get("event_id", "").strip()
+                title = args.get("title", "").strip()
+                if not event_id and title:
+                    # Bug 2026-09-27: el modelo borraba sin id o con un id
+                    # inventado y decia que habia borrado. Resolvemos por titulo
+                    # contra los proximos eventos reales de Google.
+                    events = await gcal.list_upcoming_events(max_results=50)
+                    needle = title.lower()
+                    matches = [e for e in events if needle in (e.get("title") or "").lower()]
+                    if not matches:
+                        return {
+                            "success": False,
+                            "message": "No encontre ningun evento proximo llamado '%s'." % title,
+                        }
+                    event_id = matches[0].get("id", "")
                 if not event_id:
-                    return {"success": False, "message": "Se requiere el event_id para eliminar."}
+                    return {
+                        "success": False,
+                        "message": "Necesito el event_id o el titulo del evento para eliminarlo.",
+                    }
                 result = await gcal.delete_event(event_id)
                 return result
             else:
@@ -1314,6 +1336,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             result = await google_services.list_drive(
                 kind=args.get("kind", "all"),
                 max_results=int(args.get("max_results", 20) or 20),
+                folder=args.get("folder") or None,
             )
             if not result.get("success"):
                 return result
@@ -1360,6 +1383,15 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     % (mail["subject"], mail["from"], mail["date"], mail["snippet"])
                 )
             return {"success": True, "message": "\n".join(lines)}
+
+        elif func_name == "send_gmail":
+            to = args.get("to", "").strip()
+            subject = args.get("subject", "").strip()
+            body = args.get("body", "").strip()
+            if not to or not body:
+                return {"success": False, "message": "Necesito destinatario y cuerpo del correo."}
+            result = await google_services.send_email(to=to, subject=subject, body=body)
+            return result
 
         elif func_name == "manage_google_tasks":
             action = args.get("action", "").strip().lower()
