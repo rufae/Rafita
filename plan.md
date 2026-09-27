@@ -2916,3 +2916,198 @@ lo que se hizo. El criterio de éxito no es "todos los checkboxes en `[x]`"; es 
 una auditoría externa, repitiendo el mismo proceso, llegue a números de
 cumplimiento y generificación sustancialmente distintos a los de partida
 (prototipo personal / 15% de generificación) con evidencia que lo sostenga.
+
+---
+
+# Fase 5 (propuesta, 2026-09-27): de proyecto personal a producto sólido
+
+Revisión completa del repo con la mirada puesta en que Rafita AVP sea **serio,
+profesional, escalable y autogestionado**. Esta sección es una **propuesta por
+plantear**: nada de aquí está implementado salvo lo indicado; no modifica ni
+sustituye el contenido anterior.
+
+## Punto de partida honesto
+
+**Fortalezas actuales (mantener):** CI con lint/tests/escaneo (`ci.yml`),
+4 ADRs (vector store, colas, modelo, dos nodos), evals medibles (suite 46/46,
+batería 36/36), 275 tests, backups restic cifrados con aviso a Telegram,
+`/ready` y `/metrics`, redactado de logs, auth HMAC en webhooks, docs extensas
+(runbook, SECURITY, guías Google), AGPL-3.0 y despliegue reproducible en dos
+nodos con GPU opcional y fallback.
+
+**Huecos para un producto:** no hay multiusuario con control de acceso (cualquier
+chat que encuentre el bot es atendido), ni empaquetado de un solo comando, ni
+autoactualización, ni observabilidad de producto (tokens/coste/latencia por
+usuario), ni RAG de nivel producto (sin reranking/híbrido), ni automatización de
+backup verificado, ni gestión de secretos fuera de `.env`, ni web/PWA, ni
+sistema de plugins, ni release automation.
+
+**Prioridades:** P0 = imprescindible antes de abrirlo a terceros; P1 = producto
+sólido; P2 = crecimiento; P3 = futuro. **Esfuerzo:** S (días), M (1-2 semanas),
+L (semanas).
+
+## 5.1 Producto y experiencia de usuario
+
+- **5.1.1 Onboarding guiado** (P1, M): `/start` como asistente paso a paso
+  (idioma, nombre del asistente, Google, `/sync_google`, vault, preferencias),
+  reanudable y con validación en cada paso. Hoy hay comandos sueltos.
+- **5.1.2 Multiusuario con roles** (P0, M): whitelist de usuarios, roles
+  owner/admin/usuario, alta por código de invitación y datos aislados por
+  `chat_id`. Hoy no hay comprobación de autorización en el flujo de chat.
+- **5.1.3 Cliente web/PWA** (P2, L): evolucionar `call_rafita.html` (prototipo de
+  llamada por navegador) a una PWA de chat+voz que hable con el gateway, sin
+  exponer el bot de Telegram. Incluye autenticación por usuario.
+- **5.1.4 Personalidad configurable** (P2, S): persona/tono/estilo por usuario
+  (hoy fijo en el prompt del sistema), con presets y validación.
+- **5.1.5 i18n completo** (P3, M): existe base es/en (`i18n.py`); faltan idiomas,
+  traducción de comandos/respuestas fijas y detección automática.
+
+## 5.2 Arquitectura y escalabilidad
+
+- **5.2.1 Abstracción de canales** (P1, M): interfaz `Channel` (Telegram, web,
+  voz, WhatsApp) con el mismo núcleo de conversación; hoy Telegram y el gateway
+  comparten lógica a mano.
+- **5.2.2 Sistema de plugins de herramientas** (P1, L): descubrimiento de tools
+  por paquete, permisos por rol y sandbox; hoy las herramientas están
+  hardcodeadas en `chat_tools.py`/`chat.py`.
+- **5.2.3 Gateway sin estado** (P2, M): sacar sesiones y estado de proceso
+  (Redis/SQLite con locks); hoy `_call_sessions` y similares viven en memoria.
+  Conectar con ADR-002 (cola de tareas).
+- **5.2.4 Router de modelos por coste/capacidad** (P2, M): elegir local vs API
+  por tarea, presupuesto y latencia, con degradación controlada (la detección
+  GPU/CPU ya es la base).
+- **5.2.5 Multi-tenant de datos** (P1, L, con 5.1.2): vault y vector store por
+  usuario (hoy rutas globales), con cuotas y borrado por usuario.
+- **5.2.6 Empaquetado de un comando** (P1, M): imagen publicada + `docker
+  compose up` sin clonar; perfiles `minimal` (solo Telegram+LLM remoto) y
+  `full`; documentar RAM/CPU mínimos.
+
+## 5.3 Autogestión
+
+- **5.3.1 Autoactualización con rollback** (P0, M): releases firmadas, migración
+  de BD, health gate tras actualizar y vuelta atrás automática (los scripts
+  manuales de upgrade/rollback de la Fase 3 son la base).
+- **5.3.2 Watchdog y self-healing** (P1, M): healthchecks de todos los
+  servicios, reinicio y aviso a Telegram; vigilancia del nodo GPU con conmutado
+  (ya hay fallback; falta el aviso y el registro histórico).
+- **5.3.3 Backups verificados automáticamente** (P0, S): `restic check` tras
+  cada backup, **prueba de restauración mensual automatizada** en directorio
+  temporal y alerta si falla (hoy solo se verifica que el snapshot existe).
+- **5.3.4 Mantenimiento del segundo cerebro** (P2, M): ampliar `BrainMaintainer`
+  (deduplicado, enlaces huérfanos, revisión semanal con informe).
+- **5.3.5 Rotación de secretos** (P1, M): política y recordatorios para token
+  OAuth de Google, contraseña de restic y clave Fernet; caducidad y aviso.
+
+## 5.4 Calidad y confiabilidad
+
+- **5.4.1 CI/CD de producto** (P0, M): umbral de cobertura (≥70 %), e2e con
+  contenedores en CI, build y publicación de imagen, release automática
+  (tag + changelog + notas) y artefactos.
+- **5.4.2 Evals continuas** (P1, S): ejecutar suite (46/46) y batería (36/36) en
+  CI con modelo pequeño o mock y guardar tendencia histórica; bloquear el merge
+  si empeoran.
+- **5.4.3 Contract tests de integraciones** (P1, M): Google/Telegram/Gmail con
+  fakes versionados (hoy hay buenos tests unitarios, pero los contratos reales
+  se prueban a mano).
+- **5.4.4 Carga y caos en CI** (P2, L): k6/locust sobre el gateway y caos
+  programado (nodo caído, disco lleno, latencia).
+- **5.4.5 Entorno de staging** (P2, M): perfil compose con datos sintéticos y
+  canal de pruebas, separado de producción.
+
+## 5.5 Seguridad y privacidad
+
+- **5.5.1 Threat model formal** (P1, M): STRIDE sobre los tres nodos, webhooks,
+  LLM y vault; revisión anual documentada en `docs/SECURITY.md`.
+- **5.5.2 Gestión de secretos** (P1, M): Docker secrets o sops/age en lugar de
+  `.env` plano (hoy 600 y fuera de git, pero en claro).
+- **5.5.3 RBAC de herramientas** (P0, S): acciones sensibles (enviar correo,
+  borrar eventos/notas, ejecutar comandos) solo owner/admin y con confirmación
+  explícita para lo irreversible.
+- **5.5.4 Auditoría de acciones** (P1, M): registro inmutable (quién, qué tool,
+  argumentos, resultado) consultable desde Telegram.
+- **5.5.5 Privacidad/RGPD** (P1, M): exportar y borrar todos los datos de un
+  usuario, política de retención y cifrado en reposo del vault/BD.
+- **5.5.6 Rate limiting y anti-abuso** (P1, S): límites por usuario y por IP en
+  el gateway y anti-flood en Telegram.
+
+## 5.6 Datos e inteligencia
+
+- **5.6.1 RAG de nivel producto** (P1, L): búsqueda híbrida (BM25 + vectorial),
+  **reranking** (bge-reranker), chunking por estructura y evaluación continua
+  de recall/MRR (ya hay métricas: recall@3=1.0, MRR 0.982; mantenerlas con
+  corpus reales).
+- **5.6.2 Memoria a largo plazo estructurada** (P1, M): hechos y preferencias
+  con caducidad, consolidación y conflicto resuelto (hoy `remember_fact` plano).
+- **5.6.3 Sincronización bidireccional con Google** (P2, L): además de
+  `/sync_google`, escribir de vuelta (notas→tareas, eventos→notas) con
+  resolución de conflictos.
+- **5.6.4 Grafo de conocimiento** (P3, L): enlaces tipados entre notas,
+  personas, proyectos y eventos; consultas tipo "¿quién participó en...?".
+- **5.6.5 Multimodal** (P3, M): OCR de facturas/documentos al vault, visión
+  para fotos y audio largo con resumen estructurado.
+
+## 5.7 Observabilidad
+
+- **5.7.1 Trazas OpenTelemetry** (P1, M): una petición = router→LLM→tools→
+  respuesta, con spans y atributos; exportable a Grafana/Tempo.
+- **5.7.2 Métricas de producto** (P1, M): tokens y coste por usuario, latencia
+  p50/p95, tasa de fallo de herramientas, uso por tool; panel (Grafana o HTML).
+- **5.7.3 Logs correlacionados** (P1, S): `request_id` en todo el flujo y logs
+  JSON estructurados (hoy texto con niveles y redacción de secretos).
+- **5.7.4 Alertas proactivas** (P1, S): nodo caído, backup fallido, disco>85 %,
+  presupuesto LLM superado, errores 5xx del gateway → Telegram.
+
+## 5.8 Integraciones y ecosistema
+
+- **5.8.1 WhatsApp** (P2, decisión): guía lista en `docs/whatsapp-upgrade.md`
+  (recomendado Evolution API autoalojada; alternativas oficiales documentadas).
+- **5.8.2 Contestador de llamadas** (P2, esperando vía gratuita): endpoint
+  `/call` ya implementado y probado; falta el número (no existe opción 100 %
+  gratis; alternativa: recados por WhatsApp/Telegram + resumen).
+- **5.8.3 Correo de nivel producto** (P2, M): triage (urgente/ruido), borradores,
+  etiquetas y resumen diario; hoy leer y enviar.
+- **5.8.4 Calendario bidireccional** (P2, M): editar/mover eventos, invitados,
+  recordatorios inteligentes y detección de conflictos; hoy crear/listar/borrar.
+- **5.8.5 Domótica** (P3, M): el conector Home Assistant existe; ampliar a
+  escenas, rutinas y voz.
+- **5.8.6 Dispositivo de voz dedicado** (P3, L): Raspberry Pi con wake word que
+  hable con el gateway (el pipeline de voz ya está).
+
+## 5.9 Documentación y comunidad
+
+- **5.9.1 README de producto** (P1, S): demo (gif/vídeo), quickstart de 5
+  minutos, capturas y tabla de comparación con alternativas.
+- **5.9.2 Contribución** (P2, S): plantillas de issue/PR, código de conducta y
+  guía de estilo (existe `CONTRIBUTING.md`; falta lo demás).
+- **5.9.3 Web de documentación** (P3, M): mkdocs con las guías actuales y demo
+  sandbox pública con datos falsos.
+- **5.9.4 Versionado y releases** (P1, S): semver + tag `v0.2.0` con notas de
+  versión generadas desde `CHANGELOG.md` (hoy solo `v0.1.0`).
+
+## 5.10 Sostenibilidad y negocio (opcional)
+
+- **5.10.1 Modo SaaS multi-tenant** (P3, L): una instancia para N usuarios con
+  planes y cuotas (depende de 5.1.2 y 5.2.5).
+- **5.10.2 Control de costes** (P2, M): presupuesto por usuario/mes para APIs
+  externas y aviso al superarlo (enlaza con 5.7.2).
+- **5.10.3 Ecosistema de plugins** (P3, L): catálogo comunitario de tools con
+  revisión de seguridad (depende de 5.2.2).
+
+## Roadmap sugerido
+
+| Orden | Bloques | Resultado |
+|---|---|---|
+| 1 (P0) | 5.1.2, 5.5.3, 5.3.3, 5.4.1, 5.3.1 | Se puede abrir a terceros sin sustos: acceso controlado, acciones sensibles protegidas, backups verificados, CI con cobertura y releases, actualización con rollback |
+| 2 (P1) | 5.1.1, 5.2.1, 5.2.2, 5.2.5, 5.2.6, 5.3.2, 5.3.5, 5.4.2, 5.4.3, 5.5.1, 5.5.2, 5.5.4, 5.5.5, 5.5.6, 5.6.1, 5.6.2, 5.7.1-5.7.4, 5.8.4, 5.9.1, 5.9.4 | Producto sólido y operable: onboarding, canales/plugins, multi-tenant, autogestión, observabilidad y RAG de nivel producto |
+| 3 (P2) | 5.1.3, 5.1.4, 5.2.3, 5.2.4, 5.3.4, 5.4.4, 5.4.5, 5.6.3, 5.8.1, 5.8.2, 5.8.3, 5.9.2, 5.10.2 | Crecimiento: web/PWA, WhatsApp/contestador si se acepta el coste mínimo, correo/calendario avanzados, costes controlados |
+| 4 (P3) | 5.1.5, 5.6.4, 5.6.5, 5.8.5, 5.8.6, 5.9.3, 5.10.1, 5.10.3 | Futuro: idiomas, grafo, multimodal, domótica, dispositivo de voz, SaaS y ecosistema |
+
+## Quick wins inmediatos (S, esta semana)
+
+1. Tag `v0.2.0` con notas del CHANGELOG (ya hay changelog mantenido).
+2. Umbral de cobertura en CI y subir los tests al job (hoy CI solo cubre
+   `agent/src` en lint; los tests corren, pero sin puerta de cobertura).
+3. `dependabot.yml` explícito (pip + github-actions + docker) con grupos.
+4. Rate limiting básico por chat en el handler de mensajes.
+5. README con quickstart real (5 minutos) y captura de Telegram.
+6. Mover `call_rafita.html` a `web/` y enlazarlo como prototipo (5.1.3).
