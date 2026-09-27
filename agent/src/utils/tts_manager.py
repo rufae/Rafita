@@ -1,5 +1,7 @@
 import asyncio
+import shutil
 import tempfile
+import threading
 from pathlib import Path
 
 from src.logger import logger
@@ -9,6 +11,12 @@ VOICE_URL_PREFIX = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 FALLBACK_LANG = "es"
 
 _tts_ready = False
+
+# Cache del modelo Piper (2026-09-27): antes se creaba InferenceSession y
+# PiperVoice en CADA fragmento, lo que anadia latencia y degradaba el audio
+# (tartamudeo). Ahora se carga una sola vez y se reutiliza.
+_piper_voice = None
+_piper_lock = threading.Lock()
 
 
 async def ensure_voice_model() -> Path | None:
@@ -75,23 +83,24 @@ async def text_to_speech(text: str) -> Path | None:
         return await _fallback_espeak(text, output_path)
 
 
-def _synthesize_piper(text: str, model_path: str, output_path: str):
-    try:
+def _load_piper_voice(model_path: str):
+    """Carga (una sola vez) el modelo Piper y lo deja cacheado."""
+    global _piper_voice
+    with _piper_lock:
+        if _piper_voice is not None:
+            return _piper_voice
+
         import json
-        import wave
 
         import onnxruntime
         from piper import PiperVoice
         from piper.config import PhonemeType, PiperConfig
 
         model_path = str(model_path)
-        base = model_path.rsplit(".", 1)[0]
-        config_path = base + ".onnx.json"
+        config_path = model_path.rsplit(".", 1)[0] + ".onnx.json"
 
         with open(config_path) as f:
             cfg = json.load(f)
-
-        phoneme_type = PhonemeType.ESPEAK
 
         config = PiperConfig(
             num_symbols=cfg["num_symbols"],
@@ -102,13 +111,35 @@ def _synthesize_piper(text: str, model_path: str, output_path: str):
             noise_scale=cfg.get("inference", {}).get("noise_scale", 0.667),
             noise_w=cfg.get("inference", {}).get("noise_w", 0.8),
             phoneme_id_map=cfg["phoneme_id_map"],
-            phoneme_type=phoneme_type,
+            phoneme_type=PhonemeType.ESPEAK,
         )
 
         session = onnxruntime.InferenceSession(model_path)
-        voice = PiperVoice(session, config)
+        _piper_voice = PiperVoice(session, config)
+        logger.info("Piper voice loaded and cached: %s", Path(model_path).name)
+        return _piper_voice
 
-        with wave.open(output_path, "w") as wav_file:
+
+async def prewarm_tts() -> bool:
+    """Precalienta Piper al arrancar (la primera llamada ya no paga la carga)."""
+    model_path = await ensure_voice_model()
+    if model_path is None:
+        return False
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _load_piper_voice, str(model_path))
+        return True
+    except Exception as e:
+        logger.warning("Piper preload failed: %s", e)
+        return False
+
+
+def _synthesize_piper(text: str, model_path: str, output_path: str):
+    try:
+        import wave
+
+        voice = _load_piper_voice(model_path)
+        with _piper_lock, wave.open(output_path, "w") as wav_file:
             voice.synthesize(text, wav_file)
 
         import soundfile as sf
@@ -151,6 +182,24 @@ async def _fallback_espeak(text: str, output_path: Path) -> Path | None:
     except Exception as e:
         logger.error("TTS fallback error: %s", e)
         return None
+
+
+async def synthesize_wav_bytes(text: str) -> bytes | None:
+    """Sintetiza y devuelve WAV en memoria (modo llamada: sin ffmpeg/OGG).
+
+    El navegador decodifica WAV nativamente con decodeAudioData, asi que la
+    conversion a OGG (un proceso ffmpeg por fragmento) era latencia pura.
+    """
+    wav_path = await text_to_speech(text)
+    if wav_path is None:
+        return None
+    try:
+        return wav_path.read_bytes()
+    except OSError as e:
+        logger.warning("No se pudo leer el WAV sintetizado: %s", e)
+        return None
+    finally:
+        shutil.rmtree(wav_path.parent, ignore_errors=True)
 
 
 async def convert_to_ogg(wav_path: Path) -> Path | None:
