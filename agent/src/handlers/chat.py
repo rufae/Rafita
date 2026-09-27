@@ -13,7 +13,7 @@ from src.database import db
 from src.handlers.chat_tools import (
     TOOLS_DEFINITIONS,
     WRITE_TOOLS,
-    get_tools_for_message,
+    select_tools_semantic,
 )
 from src.i18n import currency_symbol, language_name, reply_instruction
 from src.logger import logger
@@ -252,7 +252,9 @@ async def _process_ai_message(
 
     await db.save_chat_message(chat_id, MessageRole.user.value, user_text)
 
-    needs_tools = _detect_tool_intent(user_text)
+    # 2026-09-27: sin filtros por palabras; el modelo decide con las
+    # herramientas disponibles (todas).
+    needs_tools = True
 
     history_limit = 6 if needs_tools else 4
     history = await db.get_chat_history(chat_id, history_limit)
@@ -404,7 +406,7 @@ async def _process_ai_message(
             content, tool_calls = await asyncio.wait_for(
                 llm.chat_with_tools(
                     messages=messages_for_llm,
-                    tools=get_tools_for_message(user_text),
+                    tools=await select_tools_semantic(user_text),
                     max_tokens=512,
                 ),
                 timeout=600.0,
@@ -523,7 +525,43 @@ async def _process_ai_message(
             else:
                 confirmation_parts.append(f"Error: {r['message']}")
 
-        if content and content.strip():
+        # Segunda llamada al modelo para REDACTAR la respuesta final con los
+        # resultados (permite tablas Markdown y respuestas profesionales;
+        # 2026-09-27). Se pasan como mensaje de usuario: el rol `tool` sin
+        # herramientas hace que gemma4 responda vacio (probado).
+        final_text = ""
+        try:
+            summary_lines = []
+            for tool_call, tool_result in zip(tool_calls, results):
+                summary_lines.append(
+                    "- %s: %s"
+                    % (
+                        tool_call["function"]["name"],
+                        json.dumps(tool_result, ensure_ascii=False)[:3000],
+                    )
+                )
+            followup: list[dict[str, Any]] = list(messages_for_llm)
+            followup.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Resultados de las herramientas:\n%s\n\nRedacta ahora la "
+                        "respuesta final al usuario usando estos datos. Si pidio una "
+                        "tabla, estadisticas o una comparativa, responde con una "
+                        "tabla Markdown real (| columna | columna |)." % "\n".join(summary_lines)
+                    ),
+                }
+            )
+            final_text = await asyncio.wait_for(
+                llm.chat(messages=followup, max_tokens=512),
+                timeout=300.0,
+            )
+        except Exception as e:
+            logger.warning("No se pudo redactar la respuesta final con el modelo: %s", e)
+
+        if final_text and final_text.strip():
+            text_to_save = final_text.strip()
+        elif content and content.strip():
             text_to_save = f"{content}\n\n" + "\n".join(confirmation_parts)
         else:
             text_to_save = "\n".join(confirmation_parts)
@@ -615,9 +653,60 @@ async def _send_response_with_audio_interceptor(update, context, text: str) -> N
                     await message.reply_text(audio_text)
 
         if clean_text:
-            await message.reply_text(clean_text)
+            await _reply_formatted(message, clean_text)
     else:
-        await message.reply_text(text)
+        await _reply_formatted(message, text)
+
+
+def format_telegram_response(text: str) -> tuple[str, str | None]:
+    """Prepara la respuesta para Telegram (auditoria 2026-09-27).
+
+    Si contiene una tabla Markdown, la envia dentro de <pre> (monoespaciado,
+    se ve alineada) con el resto escapado y parse_mode HTML. Sin tabla, se
+    deja tal cual (texto plano, como hasta ahora).
+    """
+    import html
+    import re
+
+    lines = text.split("\n")
+    has_table = any(re.match(r"^\s*\|.*\|\s*$", line) for line in lines)
+    if not has_table:
+        return text, None
+    out: list[str] = []
+    in_table = False
+    for line in lines:
+        is_row = bool(re.match(r"^\s*\|.*\|\s*$", line))
+        if is_row and not in_table:
+            out.append("<pre>")
+            in_table = True
+        elif not is_row and in_table:
+            out.append("</pre>")
+            in_table = False
+        out.append(html.escape(line))
+    if in_table:
+        out.append("</pre>")
+    return "\n".join(out), "HTML"
+
+
+async def _reply_formatted(message, text: str) -> None:
+    """Envia la respuesta respetando tablas Markdown y el limite de Telegram."""
+    formatted, mode = format_telegram_response(text)
+    max_len = 4000
+    if len(formatted) <= max_len:
+        await message.reply_text(formatted, parse_mode=mode)
+        return
+    chunks: list[str] = []
+    current = ""
+    for line in formatted.split("\n"):
+        if current and len(current) + len(line) + 1 > max_len:
+            chunks.append(current)
+            current = line
+        else:
+            current = current + "\n" + line if current else line
+    if current:
+        chunks.append(current)
+    for chunk in chunks:
+        await message.reply_text(chunk, parse_mode=mode)
 
 
 async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> dict[str, Any]:

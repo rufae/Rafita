@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS, get_tools_for_message
+from src.handlers.chat_tools import TOOLS_DEFINITIONS, select_tools_semantic
 from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
@@ -100,6 +100,16 @@ def build_system_prompt() -> str:
         f"GOOGLE_RULE: Google está {google_state}. Las herramientas de Google "
         "(calendario y Drive) están disponibles: NO ofrezcas enlaces de "
         "autorización si ya está conectado; úsalas directamente.\n"
+        "ACTION_RULE: si la peticion del usuario esta cubierta por una "
+        "herramienta, invocala directamente sin pedir confirmacion ni "
+        "preguntar detalles que puedas asumir razonablemente.\n"
+        "FORMAT_RULE: cuando el usuario pida una tabla, estadisticas, "
+        "comparativas o un listado estructurado (finanzas, actividad, eventos, "
+        "contactos...), responde con una **tabla Markdown** real "
+        "(| columna | columna | y su fila de separacion |---|---|). Nunca "
+        "respondas con descripciones de imagenes ni remitas a graficos: texto "
+        "formateado en Markdown. Para datos del gimnasio/actividad usa "
+        "fitness_daily_steps y/o el segundo cerebro y presenta la tabla.\n"
     )
     return contexto + SYSTEM_PROMPT_VOICE
 
@@ -138,6 +148,8 @@ async def generate_response(text: str, chat_id: int) -> str:
             )
             break
 
+    tools_for_call = await select_tools_semantic(text)
+
     _t_start = _time.time()
     logger.info(
         "[ORCHESTRATOR] chat_id=%d cid=%s tools=%d history=%d chars=%d",
@@ -152,7 +164,7 @@ async def generate_response(text: str, chat_id: int) -> str:
         content, tool_calls = await asyncio.wait_for(
             llm.chat_with_tools(
                 messages=messages_for_llm,
-                tools=get_tools_for_message(text),
+                tools=tools_for_call,
                 max_tokens=512,
             ),
             timeout=600.0,
@@ -218,7 +230,7 @@ async def generate_response(text: str, chat_id: int) -> str:
                 content, _ = await asyncio.wait_for(
                     llm.chat_with_tools(
                         messages=messages_for_llm,
-                        tools=get_tools_for_message(text),
+                        tools=tools_for_call,
                         max_tokens=512,
                     ),
                     timeout=600.0,
