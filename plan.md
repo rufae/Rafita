@@ -2650,6 +2650,28 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       `format_telegram_response` las envuelve en `<pre>` (HTML) para que se
       vean alineadas. Verificado con datos reales.
     - Tests: **251 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 8 (2026-09-27, correcciones reportadas por el usuario)**:
+    - **Gmail**: la busqueda mezclaba Promociones/Social/Notificaciones/Foros;
+      ahora, si la consulta no indica ubicacion, se limita a la **bandeja
+      principal** (`in:inbox category:primary`). Verificado: el ultimo correo
+      de la bandeja principal es de Google Calendar (lo que esperaba el
+      usuario).
+    - **Formato Telegram**: las respuestas con Markdown se veian crudas
+      (`**`, `#`). Nuevo conversor Markdown→HTML (`_md_to_html`) para
+      negritas, titulos, viñetas, codigo y enlaces; las tablas siguen en
+      `<pre>`. Verificado con tests.
+    - **Contactos**: `find_contact` compara **sin acentos ni mayusculas**
+      ('mama' encuentra 'Mama Raulito') y, si no hay coincidencia, busca en
+      **«Otros contactos»** (requiere el scope nuevo
+      `contacts.other.readonly`; pendiente de reautorizacion del usuario).
+    - **Calendario**: `create_event` ahora crea el evento en **Google
+      Calendar** cuando esta conectado (antes quedaba en la agenda local y no
+      aparecia en Google); verificado crear/listar/borrar con datos reales.
+    - **Drive**: nueva herramienta **`list_google_drive`** (kind
+      all/folders/files) para 'que carpetas tengo' / 'que archivos hay'
+      (antes devolvia todo mezclado); verificado: 14 carpetas / 20 archivos.
+    - Bateria ampliada a **29/29** y suite completa **46/46**; tests
+      **258 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
