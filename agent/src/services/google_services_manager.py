@@ -54,6 +54,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
     "https://www.googleapis.com/auth/fitness.activity.read",
 ]
 
@@ -711,14 +712,21 @@ class GoogleServicesManager:
         }
 
     async def search_gmail(self, query: str, max_results: int = 5) -> dict[str, Any]:
-        """Busca correos (solo metadatos: asunto, remitente, fecha, extracto)."""
+        """Busca correos (solo metadatos: asunto, remitente, fecha, extracto).
+
+        Si la consulta no especifica ubicacion (`in:`, `label:`, `category:`),
+        se limita a la **bandeja principal** (`in:inbox category:primary`),
+        excluyendo Promociones/Social/Notificaciones/Foros (peticion del
+        usuario 2026-09-27).
+        """
+        import re
+
         limit = max(1, min(int(max_results), 10))
+        q = (query or "").strip()
+        if not re.search(r"\b(in|label|category):", q):
+            q = ("in:inbox category:primary " + q).strip()
         data = await self._run(
-            lambda: (
-                self.gmail.users()
-                .messages()
-                .list(userId="me", q=(query or "").strip(), maxResults=limit)
-            ),
+            lambda: self.gmail.users().messages().list(userId="me", q=q, maxResults=limit),
             "buscar correos",
         )
         messages = []
@@ -781,21 +789,33 @@ class GoogleServicesManager:
         )
         return {"success": True, "message": "Tarea completada"}
 
+    @staticmethod
+    def _normalize_match(text: str) -> str:
+        """Minusculas y sin acentos para comparar (mama == mamá)."""
+        import unicodedata
+
+        decomposed = unicodedata.normalize("NFKD", (text or "").lower())
+        return "".join(c for c in decomposed if not unicodedata.combining(c))
+
     async def find_contact(self, query: str, max_results: int = 5) -> dict[str, Any]:
-        """Busca contactos por nombre, correo o teléfono (People API)."""
+        """Busca contactos por nombre, correo o telefono (People API).
+
+        Comparacion sin acentos ni mayusculas (bug 2026-09-27: 'mama' no
+        encontraba el contacto 'Aa Mama').
+        """
         data = await self._run(
             lambda: (
                 self.people.people()
                 .connections()
                 .list(
                     resourceName="people/me",
-                    pageSize=100,
+                    pageSize=200,
                     personFields="names,emailAddresses,phoneNumbers",
                 )
             ),
             "buscar contactos",
         )
-        needle = (query or "").strip().lower()
+        needle = self._normalize_match((query or "").strip())
         found = []
         for person in data.get("connections", []):
             names = person.get("names", [{}])
@@ -804,12 +824,56 @@ class GoogleServicesManager:
             email = emails[0].get("value", "") if emails else ""
             phones = person.get("phoneNumbers", [{}])
             phone = phones[0].get("value", "") if phones else ""
-            haystack = ("%s %s %s" % (name, email, phone)).lower()
+            haystack = self._normalize_match("%s %s %s" % (name, email, phone))
             if not needle or needle in haystack:
                 found.append({"name": name, "email": email, "phone": phone})
             if len(found) >= max(1, int(max_results)):
                 break
+        if not found and needle:
+            # Fallback: "Otros contactos" (personas de correos, no guardadas)
+            try:
+                extra = await self._run(
+                    lambda: self.people.otherContacts().search(
+                        query=needle, readMask="names,emailAddresses,phoneNumbers"
+                    ),
+                    "buscar otros contactos",
+                )
+                for person in extra.get("results", []):
+                    names = person.get("names", [{}])
+                    name = names[0].get("displayName", "") if names else ""
+                    emails = person.get("emailAddresses", [{}])
+                    email = emails[0].get("value", "") if emails else ""
+                    phones = person.get("phoneNumbers", [{}])
+                    phone = phones[0].get("value", "") if phones else ""
+                    found.append({"name": name, "email": email, "phone": phone})
+                    if len(found) >= max(1, int(max_results)):
+                        break
+            except Exception as e:
+                logger.info("GoogleServices: otros contactos no disponibles (%s)", str(e)[:120])
         return {"success": True, "contacts": found}
+
+    async def list_drive(
+        self, kind: str = "all", max_results: int = 20, folder_id: str | None = None
+    ) -> dict[str, Any]:
+        """Lista ficheros y/o carpetas del Drive (bug 2026-09-27: al pedir
+        carpetas devolvia todo mezclado)."""
+        clauses = []
+        if kind == "folders":
+            clauses.append("mimeType = 'application/vnd.google-apps.folder'")
+        elif kind == "files":
+            clauses.append("mimeType != 'application/vnd.google-apps.folder'")
+        folder = folder_id or self.drive_folder_id
+        if folder:
+            clauses.append("'%s' in parents" % folder)
+        params: dict[str, Any] = {
+            "pageSize": max(1, min(int(max_results), 50)),
+            "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)",
+            "orderBy": "modifiedTime desc",
+        }
+        if clauses:
+            params["q"] = " and ".join(clauses)
+        data = await self._run(lambda: self.drive.files().list(**params), "listar Drive")
+        return {"success": True, "files": data.get("files", [])}
 
     async def list_contacts(self, page_size: int = 10) -> dict[str, Any]:
         data = await self._run(

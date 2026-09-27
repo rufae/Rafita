@@ -71,6 +71,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Correcciones de integración Google (2026-09-27): Gmail se limita a la
+  bandeja principal por defecto (`in:inbox category:primary`); contactos sin
+  acentos + búsqueda en «Otros contactos»; `create_event` crea en Google
+  Calendar cuando está conectado; nueva herramienta `list_google_drive`
+  (carpetas/archivos); respuestas con Markdown convertido a HTML en Telegram
+  (negritas, títulos, viñetas, código y tablas alineadas).
 - Selección de herramientas sin palabras clave (2026-09-27): router semántico
   con embeddings (bge-m3) que ofrece las 10 herramientas más afines al mensaje
   y deja decidir al modelo; batería de 25 frases variadas al 100% y suite de

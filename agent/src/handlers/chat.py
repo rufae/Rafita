@@ -658,20 +658,41 @@ async def _send_response_with_audio_interceptor(update, context, text: str) -> N
         await _reply_formatted(message, text)
 
 
+def _md_to_html(text: str) -> str:
+    """Convierte Markdown basico a HTML de Telegram (escapa primero)."""
+    import html
+    import re
+
+    out = html.escape(text)
+    out = re.sub(r"(?m)^\s{0,3}#{1,6}\s*(.+?)\s*$", r"<b>\1</b>", out)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
+    out = re.sub(r"__(.+?)__", r"<b>\1</b>", out)
+    out = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", out)
+    out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', out)
+    out = re.sub(r"(?m)^(\s*)[-*]\s+", r"\1• ", out)
+    out = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", out)
+    return out
+
+
 def format_telegram_response(text: str) -> tuple[str, str | None]:
     """Prepara la respuesta para Telegram (auditoria 2026-09-27).
 
-    Si contiene una tabla Markdown, la envia dentro de <pre> (monoespaciado,
-    se ve alineada) con el resto escapado y parse_mode HTML. Sin tabla, se
-    deja tal cual (texto plano, como hasta ahora).
+    - Tablas Markdown -> <pre> (monoespaciado, se ven alineadas).
+    - Markdown basico (negritas, cursivas, encabezados, codigo, enlaces y
+      vinietas) -> HTML de Telegram (antes se veian los `**` y `#` crudos).
+    - Si no hay nada que formatear, se envia texto plano como antes.
     """
-    import html
     import re
 
     lines = text.split("\n")
     has_table = any(re.match(r"^\s*\|.*\|\s*$", line) for line in lines)
-    if not has_table:
+    has_markdown = bool(
+        re.search(r"\*\*|^\s{0,3}#{1,6}\s|`|^\s*[-*]\s+|\]\(http", text, re.MULTILINE)
+    )
+    if not has_table and not has_markdown:
         return text, None
+    if not has_table:
+        return _md_to_html(text), "HTML"
     out: list[str] = []
     in_table = False
     for line in lines:
@@ -682,7 +703,7 @@ def format_telegram_response(text: str) -> tuple[str, str | None]:
         elif not is_row and in_table:
             out.append("</pre>")
             in_table = False
-        out.append(html.escape(line))
+        out.append(_md_to_html(line))
     if in_table:
         out.append("</pre>")
     return "\n".join(out), "HTML"
@@ -780,6 +801,23 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "success": False,
                     "message": "No se proporcionó una fecha válida para el evento.",
                 }
+            # Si Google Calendar esta conectado, el evento va alli (fuente de
+            # verdad del usuario; bug 2026-09-27: los eventos quedaban solo en
+            # la agenda local y no aparecian en Google).
+            if google_services.is_ready:
+                try:
+                    iso_start = datetime.strptime(event_datetime, "%Y-%m-%d %H:%M").isoformat()
+                except ValueError:
+                    iso_start = event_datetime
+                google_result = await google_services.create_event(
+                    title, iso_start, description=description
+                )
+                if google_result.get("success"):
+                    return google_result
+                logger.warning(
+                    "No se pudo crear el evento en Google (%s); se guarda en local",
+                    google_result.get("message"),
+                )
             event_id = await db.add_event(
                 chat_id=chat_id,
                 title=title,
@@ -1266,11 +1304,30 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return result
 
         elif func_name == "search_google_drive":
-            result = await google_service.search_drive(
+            result = await google_services.search_drive(
                 query=args.get("query", ""),
                 max_results=int(args.get("max_results", 10) or 10),
             )
             return result
+
+        elif func_name == "list_google_drive":
+            result = await google_services.list_drive(
+                kind=args.get("kind", "all"),
+                max_results=int(args.get("max_results", 20) or 20),
+            )
+            if not result.get("success"):
+                return result
+            files = result.get("files", [])
+            if not files:
+                return {"success": True, "message": "No hay elementos en tu Drive."}
+            lines = ["📂 Contenido de tu Google Drive:"]
+            for item in files:
+                is_folder = item.get("mimeType") == "application/vnd.google-apps.folder"
+                lines.append(
+                    "  • %s %s (id: %s)"
+                    % ("📁" if is_folder else "📄", item.get("name", "?"), item.get("id", "?"))
+                )
+            return {"success": True, "files": files, "message": "\n".join(lines)}
 
         elif func_name == "read_google_drive_file":
             result = await google_service.read_drive_file(file_id=args.get("file_id", ""))

@@ -586,10 +586,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "search_google_drive",
             "description": "Busca ficheros en Google Drive (la nube de Google) por nombre o "
             "texto contenido. Usalo SOLO si el usuario menciona Google Drive, 'mi "
-            "drive', 'la nube de Google' o un fichero que subio alli. NO lo uses "
-            "para notas personales, apuntes, diario o el vault: para eso usa "
-            "search_second_brain, ask_deep_knowledge_base o search_obsidian_vault. "
-            "Devuelve nombre e id; para leer el contenido usa read_google_drive_file.",
+            "drive', 'la nube de Google' o un fichero que subio alli. Para LISTAR "
+            "lo que tiene en Drive ('que carpetas tengo', 'que archivos hay') usa "
+            "list_google_drive. NO lo uses para notas personales, apuntes, diario "
+            "o el vault: para eso usa search_second_brain, ask_deep_knowledge_base "
+            "o search_obsidian_vault. Devuelve nombre e id; para leer el contenido "
+            "usa read_google_drive_file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -703,6 +705,31 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "description": "Devuelve los pasos que el usuario lleva hoy (Google Fit). "
             "Usalo para 'cuantos pasos llevo hoy', 'como voy de actividad'.",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_google_drive",
+            "description": "Lista el contenido de Google Drive: carpetas, archivos o todo. "
+            "Usalo cuando el usuario pregunte 'que tengo en mi drive', 'que "
+            "carpetas tengo', 'ensename mis archivos de drive'. NO mezcles: si "
+            "pide carpetas, kind=folders; si pide archivos, kind=files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["all", "folders", "files"],
+                        "description": "Que listar: all (todo), folders o files",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximo de elementos (1-50, por defecto 20)",
+                    },
+                },
+                "required": [],
+            },
         },
     },
     {

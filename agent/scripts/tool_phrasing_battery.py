@@ -62,6 +62,10 @@ CASES = [
     ("quiero apuntar en google tasks comprar pilas", {"manage_google_tasks"}),
     ("¿cuál es el número de mamá?", {"find_contact"}),
     ("cómo llevo la actividad de hoy", {"fitness_daily_steps"}),
+    ("que carpetas tengo en drive", {"list_google_drive"}),
+    ("que archivos hay en mi nube de google", {"list_google_drive", "search_google_drive"}),
+    ("cual es el ultimo correo de mi bandeja de entrada", {"search_gmail"}),
+    ("dame el numero de Aa Mama", {"find_contact"}),
     ("cuéntame un chiste", set()),
 ]
 
