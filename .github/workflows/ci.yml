@@ -48,7 +48,10 @@ jobs:
           pip install -r agent/requirements.txt
           pip install -r dev-requirements.txt
       - name: Run tests
-        run: pytest agent/tests -v --tb=short
+        run: >
+          pytest agent/tests -v --tb=short
+          --cov=agent/src --cov-report=term
+          --cov-fail-under=38
 
   security:
     name: Security Scan

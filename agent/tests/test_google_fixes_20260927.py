@@ -101,6 +101,132 @@ async def test_find_contact_paginates_all_connections():
     assert result["contacts"][0]["phone"] == "600999888"
 
 
+async def test_find_contact_matches_stt_variants():
+    """Bug 2026-09-27: el STT de llamada transcribe 'Aa Mama' como 'A A mamá'."""
+
+    manager = _manager()
+
+    class _Connections:
+        def list(self, **_kwargs):
+            return _Req(
+                {
+                    "connections": [
+                        {
+                            "names": [{"displayName": "Aa Mama"}],
+                            "phoneNumbers": [{"value": "655-225-607"}],
+                        }
+                    ]
+                }
+            )
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    for query in ("A A mamá", "a a mama", "A.A. Mama", "aa  mama", "Aa Mama"):
+        result = await manager.find_contact(query)
+        assert result["contacts"], "no encontrado con %r" % query
+        assert result["contacts"][0]["name"] == "Aa Mama"
+
+
+async def test_find_contact_resolves_kinship_variants():
+    manager = _manager()
+
+    class _Connections:
+        def list(self, **_kwargs):
+            return _Req(
+                {
+                    "connections": [
+                        {
+                            "names": [{"displayName": "Madre Ivi"}],
+                            "phoneNumbers": [{"value": "600000003"}],
+                        },
+                        {
+                            "names": [{"displayName": "Aa Mama"}],
+                            "phoneNumbers": [{"value": "655-225-607"}],
+                        },
+                    ]
+                }
+            )
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    result = await manager.find_contact("mi madre")
+    names = [c["name"] for c in result["contacts"]]
+    assert "Aa Mama" in names, "'mi madre' no resolvio a Aa Mama"
+    assert "Madre Ivi" in names
+
+
+async def test_find_contact_prefers_full_name_matches():
+    manager = _manager()
+
+    class _Connections:
+        def list(self, **_kwargs):
+            return _Req(
+                {
+                    "connections": [
+                        {
+                            "names": [{"displayName": "Aa Mama"}],
+                            "phoneNumbers": [{"value": "655-225-607"}],
+                        },
+                        {
+                            "names": [{"displayName": "Mama Raulito"}],
+                            "phoneNumbers": [{"value": "600000004"}],
+                        },
+                    ]
+                }
+            )
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    result = await manager.find_contact("mama raulito")
+    assert result["contacts"][0]["name"] == "Mama Raulito"
+
+
+async def test_find_contact_dispatch_uses_learned_alias(monkeypatch):
+    from src.handlers import chat as chat_mod
+
+    calls = []
+
+    async def fake_find(query, max_results=5):
+        calls.append(query)
+        if query == "Aa Mama":
+            return {
+                "success": True,
+                "contacts": [{"name": "Aa Mama", "email": "", "phone": "655-225-607"}],
+            }
+        return {"success": True, "contacts": []}
+
+    async def fake_knowledge(chat_id, query, limit=20):
+        return [{"key": "madre", "value": "Aa Mama", "category": "general"}]
+
+    monkeypatch.setattr(chat_mod.google_services, "find_contact", fake_find)
+    monkeypatch.setattr("src.database.db.search_personal_knowledge", fake_knowledge)
+
+    result = await chat_mod._execute_tool(1, "find_contact", {"query": "el numero de mi madre"})
+    assert result["success"]
+    assert "Aa Mama" in result["message"]
+    assert calls == ["Aa Mama"]
+
+
+async def test_find_contact_dispatch_guides_when_missing(monkeypatch):
+    from src.handlers import chat as chat_mod
+
+    async def fake_find(query, max_results=5):
+        return {"success": True, "contacts": []}
+
+    async def fake_knowledge(chat_id, query, limit=20):
+        return []
+
+    monkeypatch.setattr(chat_mod.google_services, "find_contact", fake_find)
+    monkeypatch.setattr("src.database.db.search_personal_knowledge", fake_knowledge)
+
+    result = await chat_mod._execute_tool(1, "find_contact", {"query": "zzz"})
+    assert result["success"]
+    assert "nombre exacto" in result["message"]
+
+
 async def test_find_contact_orders_closest_name_first():
     manager = _manager()
 
@@ -326,7 +452,7 @@ async def test_find_contact_falls_back_to_other_contacts():
 
     class _Other:
         def search(self, **kwargs):
-            assert kwargs["query"] == "aa mama"
+            assert kwargs["query"] == "Aa Mama"
             return _Req(
                 {
                     "results": [

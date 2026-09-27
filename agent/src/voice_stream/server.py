@@ -33,7 +33,8 @@ _active_sessions: dict[str, dict[str, Any]] = {}
 _whisper_model = None
 _tts_engine = None
 
-_HTML_FILE_PATH = Path("/workspace/call_rafita.html")
+_HTML_FILE_PATH = Path("/workspace/web/call_rafita.html")
+_LEGACY_HTML_PATH = Path("/workspace/call_rafita.html")
 
 TARGET_SAMPLE_RATE = 16000
 SILENCE_RMS_THRESHOLD = 150
@@ -68,8 +69,9 @@ def _get_whisper():
 
 @app.get("/")
 async def serve_call_page():
-    if _HTML_FILE_PATH.exists():
-        return FileResponse(str(_HTML_FILE_PATH), media_type="text/html")
+    for path in (_HTML_FILE_PATH, _LEGACY_HTML_PATH):
+        if path.exists():
+            return FileResponse(str(path), media_type="text/html")
     return JSONResponse(
         status_code=404,
         content={"error": "call_rafita.html not found at %s" % str(_HTML_FILE_PATH)},
@@ -366,6 +368,21 @@ async def _process_utterance(
         t_stt = time.time() - t0
 
         if not transcript or not transcript.strip():
+            await _safe_send_json(
+                websocket,
+                session,
+                {"type": "transcript", "text": "", "error": "no speech detected"},
+            )
+            return
+
+        from src.utils.voice_text import clean_stt_transcript
+
+        transcript = clean_stt_transcript(transcript)
+        if not transcript:
+            logger.info(
+                "VoiceStream: STT hallucination discarded (loop repetition) session=%s",
+                session_id,
+            )
             await _safe_send_json(
                 websocket,
                 session,
