@@ -82,7 +82,8 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   (90 días) y Drive a notas locales; el bot lo ofrece tras `/setup_google`.
 - Contestador de llamadas (2026-09-27): `POST /call` con HMAC, conversación
   por turnos y resumen al Telegram del propietario; informe de viabilidad
-  gratis en `docs/llamadas-whatsapp-gratis.md`.
+  gratis en `docs/llamadas-whatsapp-gratis.md` (decisión: seguir investigando
+  una vía gratuita; WhatsApp aplazado con guía en `docs/whatsapp-upgrade.md`).
 - Segunda ronda de correcciones Google (2026-09-27): contactos con paginación
   completa (encuentra contactos de páginas siguientes); calendario unificado
   (el gestor de acciones usaba la cuenta de servicio y por eso los borrados
