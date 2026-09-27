@@ -10,14 +10,14 @@ async def test_db():
 
     cid = 9999
 
-    await d.store_personal_knowledge(cid, "nombre_completo", "Rafael Test")
-    print("  STORE: nombre_completo = Rafael Test")
+    await d.store_personal_knowledge(cid, "nombre_completo", "Usuario Test")
+    print("  STORE: nombre_completo = Usuario Test")
 
     await d.store_personal_knowledge(cid, "ciudad", "CDMX")
     print("  STORE: ciudad = CDMX")
 
-    rows = await d.search_personal_knowledge(cid, "Rafael")
-    print("  SEARCH 'Rafael': %d resultados" % len(rows))
+    rows = await d.search_personal_knowledge(cid, "Usuario")
+    print("  SEARCH 'Usuario': %d resultados" % len(rows))
     for r in rows:
         print("    %s = %s (%s)" % (r["key"], r["value"], r["category"]))
 

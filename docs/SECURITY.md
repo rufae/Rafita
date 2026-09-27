@@ -109,7 +109,7 @@ desde la LAN (verificado con un `curl` desde el PC de desarrollo).
 
 **Nodo GPU opcional (torre, 2026-09-26)**: el contenedor `rafita-ollama-gpu`
 publica el puerto **11435 solo en la IP Tailscale** de la torre
-(`100.97.252.19`), por lo que la LAN no puede alcanzarlo; cualquier
+(`<TS_GPU>`), por lo que la LAN no puede alcanzarlo; cualquier
 dispositivo del tailnet sí (mismo modelo de acceso aceptado que el Dell).
 La torre conserva además su propio Ollama nativo (v0.21.2) escuchando en
 `0.0.0.0:11434` para otros usos: **revisar/limitar ese servicio si la torre

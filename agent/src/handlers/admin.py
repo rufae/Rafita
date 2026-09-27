@@ -10,7 +10,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.services.google_service import google_service
-from src.services.google_services_manager import google_services
+from src.services.google_services_manager import google_services, service_account_email
 
 
 async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -233,12 +233,28 @@ async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not args:
         await message.reply_text(
             "Calendario actual: %s\n\nPara fijarlo:\n/calendario tu-correo@gmail.com\n\n"
-            "Antes debes compartir ese calendario con "
-            "rafita@rafita-500317.iam.gserviceaccount.com (permiso «Hacer cambios en "
-            "los eventos»)." % google_service.calendar_id
+            "Antes debes compartir ese calendario con %s (permiso «Hacer cambios en "
+            "los eventos»)." % (google_service.calendar_id, service_account_email())
         )
         return
     result = await google_service.set_calendar_id(args[0])
+    await message.reply_text(result.get("message", "Resultado desconocido."))
+
+
+async def sync_google_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Copia contactos, calendario y Drive al segundo cerebro local."""
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    admin_ids = settings.admin_ids
+    if admin_ids and user.id not in admin_ids:
+        await message.reply_text("Solo los administradores pueden sincronizar Google.")
+        return
+    await message.reply_text("Copiando contactos, calendario y Drive al segundo cerebro...")
+    from src.utils.google_brain_sync import sync_google_to_vault
+
+    result = await sync_google_to_vault()
     await message.reply_text(result.get("message", "Resultado desconocido."))
 
 
@@ -342,14 +358,23 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
             # URL completa de redireccion: extraer el codigo real.
             code = extract_auth_code(" ".join(args))
             result = await google_service.exchange_code(code)
-            await message.reply_text(result.get("message", "Resultado desconocido."))
+            extra = ""
+            if result.get("success"):
+                extra = (
+                    "\n\n¿Quieres que copie tus contactos, calendario y Drive al "
+                    "segundo cerebro local (para consultarlos sin depender de la "
+                    "API)? Ejecuta /sync_google."
+                )
+            await message.reply_text(result.get("message", "Resultado desconocido.") + extra)
             logger.info("setup_google: codigo intercambiado para user %d", user.id)
             return
 
         if await google_service.initialize():
             await message.reply_text(
                 "✅ Google Calendar ya está conectado y funcionando.\n\n"
-                "Prueba a pedirme que cree un evento o usa /eventos."
+                "Prueba a pedirme que cree un evento o usa /eventos.\n"
+                "Para copiar contactos/calendario/Drive al segundo cerebro: "
+                "/sync_google."
             )
             return
 

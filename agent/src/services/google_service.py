@@ -10,7 +10,12 @@ from googleapiclient.errors import HttpError
 from src.config import settings
 from src.database import db
 from src.logger import logger
-from src.services.google_services_manager import SCOPES, event_start_error, google_services
+from src.services.google_services_manager import (
+    SCOPES,
+    event_start_error,
+    google_services,
+    service_account_email,
+)
 from src.utils.security_manager import encrypt_value
 
 # La lista de scopes vive en el modulo centralizado (bug 27/09: aqui habia
@@ -315,8 +320,8 @@ class GoogleService:
             return {
                 "success": False,
                 "message": "No puedo acceder a '%s': %s\n\n¿Compartiste ese calendario "
-                "con rafita@rafita-500317.iam.gserviceaccount.com con permiso "
-                "«Hacer cambios en los eventos»?" % (cid, str(e)[:160]),
+                "con %s con permiso «Hacer cambios en los eventos»?"
+                % (cid, str(e)[:160], service_account_email()),
             }
         await db.kv_set("google_calendar_id", cid)
         self._calendar_id = cid
