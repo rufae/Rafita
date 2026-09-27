@@ -68,3 +68,12 @@ Con OAuth el script prueba además **Tasks** (crear/listar/borrar), **Gmail**
 - Gmail **solo lectura**, Contactos **solo lectura**, Fitness (actividad).
 
 Para revocar el acceso: https://myaccount.google.com/permissions
+
+## Estado (27/09/2026)
+
+- OAuth **completado** con todos los permisos.
+- Verificado con el E2E: Calendar, Drive completo, Sheets, Docs, Tasks,
+  Gmail (lectura) y Fitness → **OK**.
+- **Pendiente**: habilitar la **People API** (Contactos) con este enlace:
+  https://console.cloud.google.com/apis/library/people.googleapis.com?project=552699919273
+  Después, el E2E probará también los contactos.
