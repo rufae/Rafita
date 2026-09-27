@@ -2534,6 +2534,29 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       con `GOOGLE_DRIVE_FOLDER_ID` u OAuth).
   - Tests tras el seguimiento: **228 passed**, 26 skipped; ruff/formato/mypy
     limpios.
+  - **Seguimiento 2 (2026-09-27, fallos de fecha persistían)**:
+    - **Causa raíz 1**: `docker compose restart` **no aplica cambios del
+      `.env`**; por eso la zona horaria seguía en `America/Mexico_City` pese a
+      haberla cambiado. Ahora se usa `up -d` (recrea) y se verificó dentro del
+      contenedor: `TIMEZONE: Europe/Madrid`.
+    - **Causa raíz 2**: el modelo ignora la fecha del prompt del sistema.
+      Solución determinista en tres capas: (a) **parser español** de fechas
+      relativas en el servidor (`parse_relative_datetime`: hoy, mañana, pasado
+      mañana, días de la semana, «en N días», horas); (b) la herramienta de
+      calendario acepta **`when`** («mañana a las 10») y el servidor la
+      resuelve; (c) la fecha va también **en el último mensaje del usuario** y
+      en la **descripción de la herramienta** (inyección dinámica).
+    - **Verificación real**: el modelo devuelve
+      `{"title":"lunes triste","when":"mañana a las 10"}`; la cadena completa
+      creó el evento en **2026-09-28T10:00:00+02:00**, lo listó con la fecha
+      correcta y lo borró. Además se limpiaron los eventos de 2025 restantes
+      («domingo feliz»).
+    - **OAuth**: guía completa en `docs/google-oauth.md` (cliente de
+      escritorio, APIs Tasks/Gmail/People/Fitness, autorización con copia del
+      `code` desde `localhost:8080`, verificación con el E2E). Scopes
+      actualizados: Drive completo, Gmail solo lectura, Contactos solo lectura,
+      Fitness actividad.
+    - Tests: **233 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

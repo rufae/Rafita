@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS, get_tools_for_llm
+from src.handlers.chat_tools import TOOLS_DEFINITIONS, get_tools_with_date_context
 from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
@@ -61,6 +61,18 @@ SYSTEM_PROMPT_VOICE = (
     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
     f"{reply_instruction()}"
 )
+
+
+def date_context_line() -> str:
+    """Línea de contexto con la fecha/hora real (se inyecta en el mensaje)."""
+    try:
+        now = datetime.now(ZoneInfo(settings.timezone))
+    except Exception:
+        now = datetime.now()
+    return "[Contexto: hoy es %s (%s)]" % (
+        now.strftime("%A %d/%m/%Y %H:%M"),
+        settings.timezone,
+    )
 
 
 def build_system_prompt() -> str:
@@ -116,6 +128,15 @@ async def generate_response(text: str, chat_id: int) -> str:
     messages_for_llm: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt()}]
     for msg in trimmed_history:
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
+    # Refuerzo de fecha en el último mensaje del usuario (los modelos pequeños
+    # atienden mejor al final de la conversación que al prompt del sistema).
+    for index in range(len(messages_for_llm) - 1, -1, -1):
+        if messages_for_llm[index]["role"] == "user":
+            messages_for_llm[index]["content"] = "%s %s" % (
+                date_context_line(),
+                messages_for_llm[index]["content"],
+            )
+            break
 
     _t_start = _time.time()
     logger.info(
@@ -131,7 +152,7 @@ async def generate_response(text: str, chat_id: int) -> str:
         content, tool_calls = await asyncio.wait_for(
             llm.chat_with_tools(
                 messages=messages_for_llm,
-                tools=get_tools_for_llm(),
+                tools=get_tools_with_date_context(),
                 max_tokens=512,
             ),
             timeout=600.0,
@@ -197,7 +218,7 @@ async def generate_response(text: str, chat_id: int) -> str:
                 content, _ = await asyncio.wait_for(
                     llm.chat_with_tools(
                         messages=messages_for_llm,
-                        tools=get_tools_for_llm(),
+                        tools=get_tools_with_date_context(),
                         max_tokens=512,
                     ),
                     timeout=600.0,

@@ -109,7 +109,10 @@ class GoogleService:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(OAUTH_CREDENTIALS_FILE), SCOPES
                 )
-                flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+                # OOB está obsoleto en Google; usamos redirección a localhost:
+                # tras autorizar, el navegador irá a http://localhost:8080/?code=...
+                # (la página no carga; hay que copiar el valor de 'code').
+                flow.redirect_uri = "http://localhost:8080/"
                 auth_url, state = flow.authorization_url(
                     access_type="offline",
                     prompt="consent",
@@ -122,7 +125,9 @@ class GoogleService:
             return {
                 "success": True,
                 "auth_url": auth_url,
-                "message": "Abre este enlace en tu navegador, autoriza la app y copia el codigo que te da Google.",
+                "message": "Abre el enlace, autoriza la app; el navegador acabara en una "
+                "pagina que no carga (localhost:8080). Copia el valor de 'code=' de la "
+                "barra de direcciones y envialo con /setup_google <codigo>.",
             }
         except Exception as e:
             logger.exception("Google Service: error generando auth URL")
@@ -143,7 +148,7 @@ class GoogleService:
                     flow = InstalledAppFlow.from_client_secrets_file(
                         str(OAUTH_CREDENTIALS_FILE), SCOPES
                     )
-                    flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+                    flow.redirect_uri = "http://localhost:8080/"
                     return flow
 
                 self._flow = await loop.run_in_executor(None, _recreate_flow)

@@ -184,6 +184,18 @@ async def main() -> int:
         except Exception as exc:
             failures += 1
             print(FAIL, "gmail:", exc)
+        try:
+            contacts = await google_services.list_contacts(page_size=5)
+            print(OK, "people: contactos visibles:", len(contacts.get("contacts", [])))
+        except Exception as exc:
+            failures += 1
+            print(FAIL, "people:", exc)
+        try:
+            steps = await google_services.fitness_daily_steps()
+            print(OK, "fitness: pasos hoy:", steps.get("steps"))
+        except Exception as exc:
+            failures += 1
+            print(FAIL, "fitness:", exc)
 
     print("\n=== RESUMEN ===")
     print("fallos:", failures)
