@@ -5,8 +5,8 @@
 puede reproducir los puntos críticos usando solo el repositorio y los dos
 nodos reales. Cada bloque incluye comandos exactos y el resultado esperado.
 
-> Contexto mínimo: el despliegue es LLM en el Dell (`100.83.40.103`, Ollama) y
-> agente en el HP (`100.121.77.29`, contenedor `rafita-agent-core`), unidos por
+> Contexto mínimo: el despliegue es LLM en el Dell (`<TS_DELL>`, Ollama) y
+> agente en el HP (`<TS_HP>`, contenedor `rafita-agent-core`), unidos por
 > Tailscale. El acceso estable entre nodos es la IP de Tailscale.
 
 ---
@@ -151,7 +151,7 @@ curl -s http://127.0.0.1:8010/ready
 curl -s http://127.0.0.1:8010/health
 
 # Backup (requiere USB montado y sudo en el HP)
-sudo bash -c 'export RESTIC_REPOSITORY=/mnt/rafael/Servidor/server-nodochicohp/restic \
+sudo bash -c 'export RESTIC_REPOSITORY=/mnt/backup/Servidor/server-<hostname>/restic \
   RESTIC_PASSWORD_FILE=/root/.restic-password; restic snapshots; restic check'
 ```
 

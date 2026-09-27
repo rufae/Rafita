@@ -160,18 +160,18 @@ docker compose logs rafita-agent-core | grep "TELEMETRY A"
 
 ## 5. Restauración desde backup
 
-### 5.1 Backup diario del homelab (USB RAFAEL, restic)
+### 5.1 Backup diario del homelab (USB de backup, restic)
 
 El backup diario cubre TODOS los servicios del HP (tarea 3.6): Rafita,
 BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y configuración.
-Repositorio: `/mnt/rafael/Servidor/server-nodochicohp/restic`.
+Repositorio: `/mnt/backup/Servidor/server-<hostname>/restic`.
 
 ```bash
 # Montar el USB si hace falta
-sudo systemctl start mnt-rafael.mount
+sudo systemctl start mnt-backup.mount
 
 # Listar snapshots (contrasena: /root/.restic-password o tu gestor)
-sudo bash -c 'export RESTIC_REPOSITORY=/mnt/rafael/Servidor/server-nodochicohp/restic \
+sudo bash -c 'export RESTIC_REPOSITORY=/mnt/backup/Servidor/server-<hostname>/restic \
   RESTIC_PASSWORD_FILE=/root/.restic-password; restic snapshots'
 
 # Verificación NO destructiva: restaurar a un directorio temporal
@@ -288,13 +288,13 @@ config (`deploy/dell/dell-config-snapshot.sh`) por si hay que reconstruir.
 
 ## 8. GPU de la torre (opcional, tarea 3.8)
 
-La torre (`rafael-server`, RTX 3060) puede servir el modelo cuando está
+La torre (`nodo-gpu`, RTX 3060) puede servir el modelo cuando está
 encendida; si está apagada, el agente usa el nodo Dell sin intervención.
 
 - **Torre**: contenedor `rafita-ollama-gpu` (Ollama con GPU, reinicio
-  automático) publicado solo en su IP Tailscale (`100.97.252.19:11435`).
+  automático) publicado solo en su IP Tailscale (`<TS_GPU>:11435`).
   Arrancarlo/pararlo: `docker start|stop rafita-ollama-gpu` en la torre.
-- **Agente (HP)**: `OLLAMA_GPU_HOST=http://100.97.252.19:11435` (vacío =
+- **Agente (HP)**: `OLLAMA_GPU_HOST=http://<TS_GPU>:11435` (vacío =
   desactivado) y `OLLAMA_GPU_PROBE_INTERVAL=60` (segundos entre sondas).
 - **Comprobar qué backend se usa**:
   ```bash
@@ -313,7 +313,7 @@ encendida; si está apagada, el agente usa el nodo Dell sin intervención.
 ## 9. Google: calendario y Drive (tareas 3.8/3.9)
 
 La integración usa una **cuenta de servicio** (privacidad: solo ve lo que se le
-comparte). El email es `rafita@rafita-500317.iam.gserviceaccount.com`.
+comparte). El email es `cuenta-servicio@tu-proyecto.iam.gserviceaccount.com`.
 
 **Calendario** (la cuenta de servicio no ve calendarios compartidos en su
 lista, hay que fijarlo una vez):

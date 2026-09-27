@@ -1,10 +1,12 @@
 [Unit]
-Description=Backup diario del homelab al USB RAFAEL (restic)
+Description=Backup diario del homelab al USB de backup (restic)
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Valores de la instalacion (DELL_HOST, USB_LABEL...), no versionados.
+EnvironmentFile=-/etc/rafita-backup.env
 ExecStart=/home/server/proyectos/rafita/deploy/hp/backup/backup.sh
 Nice=10
 IOSchedulingClass=idle

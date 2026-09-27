@@ -1807,17 +1807,17 @@ otra persona instale el proyecto con su propio vault y su propia IA sin tocar c�
 **Contexto de topología (importante — quien ha hecho el trabajo hasta la Fase 2
 no conocía esto; queda documentado aquí para que no se pierda):**
 
-- **Nodo Dell — motor de IA** (`192.168.1.201`; **cambió desde 192.168.1.121**
+- **Nodo Dell — motor de IA** (`192.168.1.201`; **cambió desde <IP_DELL>**
   tras un reinicio del nodo: la IP no estaba fijada estáticamente. Pendiente
   fijarla con netplan/reserva DHCP y/o usar el DNS de Tailscale para no
   depender de la IP LAN. Documentado 2026-09-25. **Resuelto 2026-09-26:**
-  reserva DHCP en el router (MAC `6c:2b:59:df:cc:a0`) → `.121`; ver registro
+  reserva DHCP en el router (MAC `<MAC_DEL>`) → `.121`; ver registro
   de decisiones): Dell OptiPlex 7060 Micro,
   Ubuntu Server 24.04.5 LTS, Intel Core i7-8700 (6c/12t @ 3.20GHz, **sin GPU
   discreta**, solo iGPU Intel UHD 630), 32GB DDR4, 1TB NVMe. Solo tiene el
   sistema operativo instalado; nada del stack de IA desplegado todavía. Rol:
   alojar en exclusiva la inferencia (chat, visión, embeddings).
-- **Nodo HP "rafa" — núcleo de red e infraestructura** (`192.168.1.129`):
+- **Nodo HP "rafa" — núcleo de red e infraestructura** (`<IP_HP>`):
   portátil reconvertido, Ubuntu 24.04 LTS, Intel i3-1005G1 (2c/4t), 8GB RAM,
   ~100GB SSD, ya corriendo 11 contenedores de producción: BuenaTierra
   (API .NET + PostgreSQL + Nginx + Collabora Online), Nextcloud + DB, Nginx
@@ -1866,7 +1866,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     para el webhook). Ahora, además, el tráfico entre nodos puede llevar datos
     personales del vault (financieros, de salud), que antes nunca salían de
     `localhost`. Decidir entre: firewall en el Dell que solo acepte conexiones
-    desde `192.168.1.129`, o enrutar la llamada por la Tailscale que ya corre
+    desde `<IP_HP>`, o enrutar la llamada por la Tailscale que ya corre
     en el nodo HP (da restricción de acceso Y cifrado en tránsito, un
     firewall a secas solo da lo primero). Recomendación: Tailscale.
   - **(d) Presupuesto de recursos en el nodo HP.** 8GB RAM ya repartidos entre
@@ -1887,9 +1887,9 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   load 0,01/0,07/0,08 | nproc 4 | disco / 58G libres
   docker stats (11 contenedores): ~1,2GiB RAM total, CPU <2%
   0.0.0.0:8000 OCUPADO por Portainer; 8001 libre
-  tailscale: 100.121.77.29 (peers: LAPTOP offline, S20 offline) -> Dell NO enrolado
+  tailscale: <TS_HP> (peers: LAPTOP offline, S20 offline) -> Dell NO enrolado
   # Dell
-  ping 192.168.1.121 desde PC y desde HP: FAIL (no respondía en el análisis)
+  ping <IP_DELL> desde PC y desde HP: FAIL (no respondía en el análisis)
 
   Recomendaciones del borrador:
   (a) Runtime: **Ollama** (adapter ya validado, 32GB sobran para
@@ -1931,20 +1931,20 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
      `OPENAI_REASONING_EFFORT` opcional; 5 tests nuevos. Gate: ruff/formato/mypy
      limpios, **156 passed, 20 skipped** (evidencia en el commit).
   4. **Red segura** (`02-network.sh`): Tailscale 1.102.4 en el Dell, enrolado
-     como `nodo-dell-1` = **100.83.40.103**; ufw activo:
+     como `nodo-dell` = **<TS_DELL>**; ufw activo:
      `22/tcp ALLOW 192.168.1.0/24`, `22/tcp on tailscale0 ALLOW`,
-     `11434/tcp on tailscale0 ALLOW 100.121.77.29`; Ollama rebind a
+     `11434/tcp on tailscale0 ALLOW <TS_HP>`; Ollama rebind a
      `0.0.0.0:11434` (el filtro real es ufw; documentado en ADR-004(c)).
      Verificado desde el PC de desarrollo: `curl` a `192.168.1.201:11434`
      **bloqueado** por ufw.
   5. **Conectividad verificada desde el HP por tailnet**:
      ```
-     $ curl http://100.83.40.103:11434/api/version   -> {"version":"0.34.4"}
+     $ curl http://<TS_DELL>:11434/api/version   -> {"version":"0.34.4"}
      $ curl .../api/tags -> bge-m3, gemma4:12b, llava:7b, qwen2.5:7b
-     $ tailscale ping -c 3 100.83.40.103 -> directo via 192.168.1.201:41641 en 7 ms
+     $ tailscale ping -c 3 <TS_DELL> -> directo via 192.168.1.201:41641 en 7 ms
      ```
   6. **Benchmark por red desde el HP** (`03-benchmark.sh`,
-     `HOST=http://100.83.40.103:11434 THINK=0`):
+     `HOST=http://<TS_DELL>:11434 THINK=0`):
      ```
      run=1 (con carga) total 32,71 s | load_s=15,91
      run=2 (caliente)  total 17,21 s | gen 3,85 tok/s | prompt 44,4 tok/s
@@ -1957,7 +1957,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
      confirmado que vuelve a pedir contraseña).
 
   Pendiente para 3.2 (heredado de 3.0(d)): overlay del HP sin `ollama-service`,
-  gateway en 8010, `OLLAMA_HOST=http://100.83.40.103:11434`, decidir modelo de
+  gateway en 8010, `OLLAMA_HOST=http://<TS_DELL>:11434`, decidir modelo de
   visión (`llava:7b` vs `gemma4:12b`, que también tiene visión) y repetir las
   métricas 1.3/1.7 contra el LLM remoto.
 
@@ -1997,7 +1997,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
 
   - **Overlay** `deploy/hp/docker-compose.hp.yml` (commit `d588760`): sin
     `ollama-service` (perfil inactivo), sin `depends_on`, gateway en 8010,
-    `OLLAMA_HOST=http://100.83.40.103:11434`, `WHISPER_CPU_THREADS=2`.
+    `OLLAMA_HOST=http://<TS_DELL>:11434`, `WHISPER_CPU_THREADS=2`.
     Validado con `docker compose config` (puertos 8010/8001, sin dependencia
     del Ollama local). `WHISPER_CPU_THREADS` es nuevo y configurable (antes
     `cpu_threads=4` fijo; 2 tests).
@@ -2118,18 +2118,18 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   11. **IP fija del Dell**: tras el corte de luz del 2026-09-26 el Dell pasó de
       `.201` a `.121` (DHCP). El usuario eligió **reserva DHCP en el router**
       (la opción más segura, sin conflictos de pool) para la MAC
-      `6c:2b:59:df:cc:a0` (interfaz `eno1`) → **192.168.1.121**; pasos
+      `<MAC_DEL>` (interfaz `eno1`) → **<IP_DELL>**; pasos
       indicados (sección DHCP → Reserva/Static Lease del router en
       `192.168.1.1`). Nota: `.201` está ocupada por otro dispositivo (se
       verificó antes de decidir; descartada). El sistema **no depende** de la
-      IP LAN: agente y scripts usan la IP Tailscale `100.83.40.103`, que no
+      IP LAN: agente y scripts usan la IP Tailscale `<TS_DELL>`, que no
       cambia. Comprobado tras el corte: ambos nodos volvieron solos (ollama y
       tailscaled `active`) y `/ready` OK con latencia 17 ms. El usuario aplicó
-      también la reserva DHCP del HP (MAC WiFi `5c:3a:45:85:13:df` →
-      `192.168.1.129`).
+      también la reserva DHCP del HP (MAC WiFi `<MAC_HP>` →
+      `<IP_HP>`).
   12. **Renombrado `rafa` → `server` en el HP (2026-09-26, tarea 3.6)**:
       aprobado por el usuario para unificar el usuario con el Dell
-      (`server@nodochicohp`). Ejecutado de forma desatendida y segura
+      (`server@nodo-hp`). Ejecutado de forma desatendida y segura
       (`deploy/hp/rename-user-rafa-to-server.sh`): se paró el contenedor del
       agente (corre con UID 1000, igual que el usuario), se terminó la sesión
       local de `tty1` y restos, `usermod -l server -d /home/server -m rafa` +
@@ -2157,7 +2157,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       `service_account.json` y ambos módulos de Google lo soportan. **El
       calendario se detecta solo** (`calendarList`): el usuario comparte su
       calendario con el email de la cuenta de servicio
-      (`rafita@rafita-500317.iam.gserviceaccount.com`, permiso de cambios) y el
+      (`cuenta-servicio@tu-proyecto.iam.gserviceaccount.com`, permiso de cambios) y el
       bot lo encuentra sin que el usuario tenga que revelar su correo;
       `GOOGLE_CALENDAR_ID` queda como override opcional. Drive y Tasks **no
       están implementados** (solo se pedía el permiso): si se quieren, hay que
@@ -2251,7 +2251,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     regla de ufw "solo desde la IP del HP" está sombreada (el `allow` de la
     LAN sí funciona porque el default incoming es `deny` y `ts-input` solo
     acepta tailscale0/loopback). Corte real con `iptables -I INPUT 1 -s
-    100.121.77.29 -p tcp --dport 11434 -j DROP` (por delante de `ts-input`):
+    <TS_HP> -p tcp --dport 11434 -j DROP` (por delante de `ts-input`):
     `/ready` → **503 en 10,00 s** (tope de 10 s del probe; con conexión
     rechazada eran 1,2 s), `ai: unhealthy`; al retirar la regla → `ready` con
     `model_loaded: true`. **Acción de seguridad pendiente**: restringir de
@@ -2346,7 +2346,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
 
   1. **Renombrado `rafa` → `server`** en el HP (mismo UID/GID, home movido y
      proyectos recreados con las rutas nuevas) para unificar con el Dell:
-     `server@nodochicohp`. Se hace **primero**, con procedimiento desatendido
+     `server@nodo-hp`. Se hace **primero**, con procedimiento desatendido
      que espera a que no haya sesiones de `rafa` (`deploy/hp/rename-user-rafa-to-server.sh`).
   2. **restic** (cifrado, incremental, dedup) como herramienta; contraseña
      root-only en `/root/.restic-password` y copia en el gestor del usuario.
@@ -2361,12 +2361,12 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   6. **Aviso por Telegram** al terminar (éxito/fallo) y **snapshot de
      configuración del Dell** incluido (sin pesos de modelos).
   7. **El contenido actual del USB no se toca**: solo se crea
-     `Servidor/server-nodochicohp/` y `Servidor/server-dell/`.
+     `Servidor/server-<hostname>/` y `Servidor/server-dell/`.
 
   Inventario de datos (2026-09-26): todo el estado de usuario vive en el HP
   (binds en `/home/server` y `/opt/homelab`, volúmenes Docker); el Dell solo
   tiene pesos de modelos (~19 GB, re-descargables) y configuración. Total a
-  respaldar ≈ 3-4 GB. USB: 117 GB vfat, label `RAFAEL`, UUID `1916-3621`.
+  respaldar ≈ 3-4 GB. USB: 117 GB vfat, label `BACKUP`, UUID `<UUID_USB>`.
   Clave SSH HP→Dell creada para traer el snapshot de configuración diario.
 
   Artefactos: `deploy/hp/backup/` (script, unidades systemd, excludes,
@@ -2376,11 +2376,11 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   **Evidencia [2026-09-26] [commits `3a4c47f`, `dc51099`, `b453a30`]:**
   - **Renombrado** `rafa`→`server`: ver punto 12 del registro de decisiones;
     `/home/rafa` ya no existe, los 12 contenedores arriba y `/ready` OK.
-  - **Instalación**: restic 0.18.1, unidades systemd (`mnt-rafael.mount` +
-    `.automount` por UUID `1916-3621`, `rafita-backup.service`, timer diario
+  - **Instalación**: restic 0.18.1, unidades systemd (`mnt-backup.mount` +
+    `.automount` por UUID `<UUID_USB>`, `rafita-backup.service`, timer diario
     03:30 con `Persistent=true`), `usb-eject`, repositorio restic inicializado
     en el USB. **Contenido previo del USB intacto** (RAFA, System Volume
-    Information, .Trash) + `Servidor/server-nodochicohp/{restic,logs}` y
+    Information, .Trash) + `Servidor/server-<hostname>/{restic,logs}` y
     `Servidor/server-dell`. Snapshot de config del Dell instalado con cron
     03:00 (`dell-config-20260926.tar.gz`).
   - **3 pasadas reales del backup** (12:31, 12:33 y 12:37): 2,183 GiB por
@@ -2443,7 +2443,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - **Torre**: contenedor `rafita-ollama-gpu` (Ollama 0.34.4, `--gpus all`,
     `restart unless-stopped`) con el volumen de modelos existente
     (`gemma4:12b` + `bge-m3`), publicado **solo en su IP Tailscale**
-    (`100.97.252.19:11435`) → no accesible desde la LAN. Se respetó el Ollama
+    (`<TS_GPU>:11435`) → no accesible desde la LAN. Se respetó el Ollama
     nativo de la torre (v0.21.2 en el 11434) sin tocarlo.
   - **Agente**: `OLLAMA_GPU_HOST` (torre, preferida) + `OLLAMA_GPU_PROBE_INTERVAL`
     (sonda cacheada, 60 s por defecto). `_pick_backend()` elige GPU si la torre
@@ -2459,7 +2459,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       una respuesta real del agente por el Dell ("¡Hola!", backend cpu);
       torre encendida → vuelve sola a `backend=gpu` (modelo cargado en 10,1 s).
   - Config: `OLLAMA_GPU_HOST`, `OLLAMA_GPU_PROBE_INTERVAL` en `.env.example`;
-    activado en el HP (`OLLAMA_GPU_HOST=http://100.97.252.19:11435`).
+    activado en el HP (`OLLAMA_GPU_HOST=http://<TS_GPU>:11435`).
   - Tests: +7 (selector, caché de sonda, fallback y config); gate
     **201 passed**, 26 skipped; ruff/formato/mypy limpios.
 
@@ -2509,7 +2509,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - **Evidencia E2E real** (2026-09-26, contenedor aislado): `calendar ok`,
     `drive ok`, evento de prueba creado/listado/borrado correctamente, 5
     ficheros de Drive visibles; `sheets` y `docs` → `api_disabled` (403, falta
-    habilitarlas en el proyecto `552699919273`); `tasks`/`gmail` → requieren
+    habilitarlas en el proyecto `000000000000`); `tasks`/`gmail` → requieren
     OAuth.
   - **Guía de acción** `docs/google-setup.md` con los enlaces exactos para
     habilitar Sheets/Docs, cómo compartir y el comando del test.
@@ -2580,7 +2580,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       URL-encoded).
     - **E2E con OAuth** (copia de la BD de producción, sin tocarla):
       ```
-      auth=oauth | calendario=rafaelcastanoblanca1805@gmail.com
+      auth=oauth | calendario=tu-correo@gmail.com
       calendar ok | drive ok | sheets ok | docs ok | tasks ok | gmail ok
       Calendar: crear/listar(25)/borrar OK
       Drive: 5 ficheros
@@ -2675,7 +2675,7 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
   - **Seguimiento 9 (2026-09-27, segunda ronda de correcciones)**:
     - **Contactos**: faltaba **paginar** `connections` (Google devuelve 200 por
       pagina); los contactos a partir de la pagina 2 no se encontraban. Ahora
-      se recorren todas las paginas. Verificado: **'Aa Mama' -> 655-225-607**
+      se recorren todas las paginas. Verificado: **'Aa Mama' -> 6XX-XXX-XXX**
       (estaba en la pagina 2; el usuario tenia razon, si estaba en contactos).
     - **Calendario (raiz del fallo de borrado)**: `GoogleCalendarManager`
       autenticaba por su cuenta y **preferia la cuenta de servicio** (su
@@ -2702,6 +2702,37 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       que una accion se hizo si la herramienta devolvio error.
     - Bateria **33/33** y suite **46/46** con el codigo nuevo; tests
       **267 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 10 (2026-09-27, datos sensibles, contactos, sync y contestador)**:
+    - **Auditoria de datos sensibles**: sin secretos ni tokens en git (solo
+      `.env.example`). Arreglado: email de la cuenta de servicio hardcodeado
+      (ahora se lee de `service_account.json`); IPs reales en
+      `docker-compose.hp.yml` y `deploy/hp/backup/backup.sh` (ahora variables
+      de entorno / `/etc/rafita-backup.env`); unidades `mnt-rafael.*` →
+      `mnt-backup.*` con UUID como placeholder sustituido por `install.sh`;
+      docs y `plan.md` saneados con placeholders (emails, MACs, UUID, IPs
+      Tailscale, telefonos, nombres). Los valores reales quedan en `.env` y
+      `/etc/rafita-backup.env` (no versionados).
+    - **Contactos**: nueva `CONTACT_RULE` en el prompt (telefonos/correos se
+      buscan SIEMPRE con `find_contact`, nunca en el segundo cerebro) y
+      orden por relevancia (nombre mas parecido primero). Verificado en real:
+      'mama' -> 'Aa Mama' primero; 'Ana' encuentra sus contactos. Bateria
+      ampliada con 3 casos de contactos (**36/36**).
+    - **Sincronizacion Google -> segundo cerebro**: comando `/sync_google`
+      (solo admin) que copia contactos, proximos eventos (90 dias) y Drive a
+      notas locales (`Google/Contactos Google.md`, `Calendario Google.md`,
+      `Drive Google.md`), indexadas por el watcher del vault. Tras conectar
+      Google (`/setup_google`) el bot pregunta si quieres ejecutarla.
+    - **Contestador automatico**: endpoint `POST /call` en el gateway (firma
+      HMAC, sesiones con caducidad, turnos con LLM, resumen final al Telegram
+      del propietario con quien llama/motivo/urgencia/contacto/accion
+      sugerida). Agnostico de proveedor (Asterisk, Twilio, etc.).
+    - **Viabilidad llamadas/WhatsApp gratis** (`docs/llamadas-whatsapp-gratis.md`):
+      WhatsApp si tiene vias gratuitas (Evolution API autoalojada; Cloud API
+      oficial con 1.000 mensajes de servicio gratis/mes desde 01/10/2026;
+      CallMeBot solo avisos a tu numero). Llamadas en vivo: **no existe nada
+      100 % gratis** (software libre + DID ~1,50 $/mes); alternativa gratis:
+      recado por WhatsApp/Telegram + resumen.
+    - Tests **275 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

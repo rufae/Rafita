@@ -1,0 +1,14 @@
+[Unit]
+Description=USB de backup (backups del homelab)
+Documentation=file:/home/server/proyectos/rafita/deploy/hp/backup/README.md
+
+[Mount]
+# install.sh sustituye __USB_UUID__ por el UUID real del USB (blkid).
+# El UUID no se versiona: es un dato de cada instalacion.
+What=UUID=__USB_UUID__
+Where=/mnt/backup
+Type=auto
+Options=nofail,umask=077
+
+[Install]
+WantedBy=multi-user.target

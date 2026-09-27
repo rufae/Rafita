@@ -3,10 +3,10 @@
 Topología real (ver `docs/adr/004-two-node-deployment.md`):
 
 ```
-[ HP nodochicohp (server) 192.168.1.129 ]                    [ Dell "nodo-dell-1" 192.168.1.121 ]
+[ nodo-hp (server) <IP_LAN_HP> ]                 [ nodo-dell <IP_LAN_DELL> ]
   agente Rafita + ChromaDB                       Ollama 0.34.4 (chat, embeddings,
   vault + BrainMaintainer                        visión; i7-8700, 32GB, sin GPU)
-  Tailscale 100.121.77.29  ────── WireGuard ────  Tailscale 100.83.40.103
+  Tailscale <TS_HP>   ────── WireGuard ────      Tailscale <TS_DELL>
                                                  (directo, ~7 ms; ufw filtra
                                                   11434 solo desde el HP)
 ```
@@ -19,20 +19,20 @@ fallback (chat y visión respectivamente).
 El LLM vive **solo** en el Dell. La app vive **solo** en el HP y llama al LLM
 por la tailnet. El nodo HP no arranca `ollama-service` (ver tarea 3.2).
 
-La dirección estable entre nodos es la **IP Tailscale `100.83.40.103`** (la IP
-LAN `.121` es una reserva DHCP para gestión/SSH desde la LAN; antes rotó por
-DHCP y no debe usarse en configuraciones).
+La dirección estable entre nodos es la **IP Tailscale del Dell** (la IP LAN es
+una reserva DHCP para gestión/SSH desde la LAN; antes rotó por DHCP y no debe
+usarse en configuraciones).
 
 ## Estructura
 
 ```
 deploy/
 ├── README.md                 # este documento
-├── dell/                     # nodo de IA (nodo-dell-1)
+├── dell/                     # nodo de IA (nodo-dell)
 │   ├── 01-install-runtime.sh # Ollama + systemd + modelos (idempotente)
 │   ├── 02-network.sh         # Tailscale + ufw + bind final
 │   └── 03-benchmark.sh       # tokens/s y latencia contra la API real
-└── hp/                       # nodo de aplicación (rafa)
+└── hp/                       # nodo de aplicación (nodo-hp)
     ├── README.md             # notas de despliegue del HP
     ├── docker-compose.hp.yml # tarea 3.2 (sin ollama-service, puerto remapeado)
     └── ready_probe.py        # sonda de readiness para evidencias (3.3/3.4)
@@ -41,7 +41,7 @@ deploy/
 ## Orden de despliegue
 
 1. **Dell** — `01-install-runtime.sh` (con sudo), benchmark local (`03`).
-2. **Dell** — `02-network.sh` con `HP_TS_IP=100.121.77.29`: enrola Tailscale,
+2. **Dell** — `02-network.sh` con `HP_TS_IP=<TS_HP>`: enrola Tailscale,
    activa `ufw` y deja Ollama accesible solo por la tailnet desde el HP.
 3. **HP** — desplegar la app con el overlay (sin Ollama local, puerto 8010) y
    `OLLAMA_HOST` al Dell (tarea 3.2); repetir métricas de 1.3/1.7 contra el
@@ -57,9 +57,9 @@ deploy/
 
 ```bash
 # desde el PC de desarrollo / HP
-ssh server@192.168.1.121 'sudo bash -s' < deploy/dell/01-install-runtime.sh
-ssh server@192.168.1.121 'sudo HP_TS_IP=100.121.77.29 bash -s' < deploy/dell/02-network.sh
-ssh server@192.168.1.121 'bash -s' < deploy/dell/03-benchmark.sh
+ssh server@<IP_DELL> 'sudo bash -s' < deploy/dell/01-install-runtime.sh
+ssh server@<IP_DELL> 'sudo HP_TS_IP=<TS_HP> bash -s' < deploy/dell/02-network.sh
+ssh server@<IP_DELL> 'bash -s' < deploy/dell/03-benchmark.sh
 ```
 
 ## Convenciones

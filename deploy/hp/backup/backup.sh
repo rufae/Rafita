@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup diario del homelab al USB RAFAEL con restic (tarea 3.6).
+# Backup diario del homelab al USB de backup con restic (tarea 3.6).
 #
 # Se ejecuta como root (systemd rafita-backup.service). Si el USB no esta
 # presente, registra "USB no presente" y sale con 0 (no es un fallo).
@@ -14,18 +14,23 @@
 #   - Configs del sistema + snapshot del Dell.
 set -euo pipefail
 
+# Valores especificos de cada instalacion (no se versionan):
+#   DELL_HOST, USB_LABEL, RESTIC_DIR_NAME...
+[ -f /etc/rafita-backup.env ] && . /etc/rafita-backup.env
+
 HOME_DIR="$(getent passwd server | cut -d: -f6 || true)"
 HOME_DIR="${HOME_DIR:-/home/server}"
 REPO_DIR="$HOME_DIR/proyectos/rafita"
 ENV_FILE="$REPO_DIR/.env"
-USB_MOUNT="/mnt/rafael"
-USB_LABEL="RAFAEL"
-RESTIC_REPO="$USB_MOUNT/Servidor/server-nodochicohp/restic"
+USB_MOUNT="${USB_MOUNT:-/mnt/backup}"
+USB_LABEL="${USB_LABEL:-BACKUP}"
+RESTIC_DIR_NAME="${RESTIC_DIR_NAME:-server-$(hostname -s)}"
+RESTIC_REPO="$USB_MOUNT/Servidor/$RESTIC_DIR_NAME/restic"
 RESTIC_PASSWORD_FILE="/root/.restic-password"
 STAGE="/var/lib/rafita-backup/stage"
 LOG="/var/log/rafita-backup.log"
 LOCK="/var/lock/rafita-backup.lock"
-DELL_HOST="server@100.83.40.103"
+DELL_HOST="${DELL_HOST:?Define DELL_HOST (usuario@host) en /etc/rafita-backup.env}"
 DELL_SNAPSHOT="$STAGE/dell-config-latest.tar.gz"
 
 mkdir -p /var/lib/rafita-backup
@@ -76,7 +81,7 @@ if ! lsblk -o LABEL | grep -qx "$USB_LABEL"; then
     exit 0
 fi
 if ! mountpoint -q "$USB_MOUNT"; then
-    systemctl start mnt-rafael.mount 2>/dev/null || mount "$USB_MOUNT" 2>/dev/null || true
+    systemctl start mnt-backup.mount 2>/dev/null || mount "$USB_MOUNT" 2>/dev/null || true
 fi
 if ! mountpoint -q "$USB_MOUNT"; then
     log "USB presente pero no se pudo montar; backup omitido."
@@ -96,7 +101,7 @@ fi
 
 NC_MAINTENANCE=0
 PORTAINER_STOPPED=0
-USB_LOG_DIR="$USB_MOUNT/Servidor/server-nodochicohp/logs"
+USB_LOG_DIR="$USB_MOUNT/Servidor/$RESTIC_DIR_NAME/logs"
 USB_LOG="$USB_LOG_DIR/backup-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$USB_LOG_DIR"
 
@@ -222,4 +227,4 @@ SNAP="$(restic snapshots --latest 1 --json 2>/dev/null \
     || echo '?')"
 SIZE="$(restic stats --mode raw-data 2>/dev/null | grep -i 'Total Size' || true)"
 log "=== Backup completado: snapshot $SNAP ==="
-notify "✅ Backup diario completado en el USB RAFAEL (snapshot $SNAP). $SIZE"
+notify "✅ Backup diario completado en el USB de backup (snapshot $SNAP). $SIZE"

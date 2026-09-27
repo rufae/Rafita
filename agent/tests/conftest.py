@@ -60,7 +60,7 @@ tags: [finanzas, personal]
 status: abierto
 created: 2026-08-10
 updated: 2026-08-10
-related: ["[[Salud Rafael]]"]
+related: ["[[Salud Usuario]]"]
 ---
 
 ## Ingresos

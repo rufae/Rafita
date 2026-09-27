@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Nodo Dell — red segura del LLM (tareas 3.0c/3.1). Idempotente.
 #
-# Local:  sudo HP_TS_IP=100.121.77.29 bash 02-network.sh
-# Remoto: ssh server@192.168.1.121 'sudo HP_TS_IP=100.121.77.29 bash -s' < 02-network.sh
+# Local:  sudo HP_TS_IP=<IP_TAILSCALE_HP> bash 02-network.sh
+# Remoto: ssh server@<IP_DEL> 'sudo HP_TS_IP=<IP_TAILSCALE_HP> bash -s' < 02-network.sh
 #
 # Efectos:
 #   1. Instala Tailscale si falta (la autenticacion es interactiva, ver abajo).
@@ -11,7 +11,8 @@
 #      127.0.0.1 sigue funcionando para benchmarks locales).
 set -euo pipefail
 
-HP_TS_IP="${HP_TS_IP:?Define HP_TS_IP con la IP Tailscale del nodo HP (ej: 100.121.77.29)}"
+HP_TS_IP="${HP_TS_IP:?Define HP_TS_IP con la IP Tailscale del nodo HP (ej: 100.x.y.z)}"
+LAN_CIDR="${LAN_CIDR:-192.168.1.0/24}"
 
 if ! command -v tailscale >/dev/null 2>&1; then
     echo "[1/4] Instalando Tailscale..."
@@ -30,7 +31,7 @@ TS_IP="$(tailscale ip -4 | head -1)"
 echo "  IP Tailscale del Dell: ${TS_IP}"
 
 echo "[3/4] Configurando ufw (SSH LAN + 11434 solo desde ${HP_TS_IP})..."
-ufw allow from 192.168.1.0/24 to any port 22 proto tcp >/dev/null
+ufw allow from "$LAN_CIDR" to any port 22 proto tcp >/dev/null
 ufw allow in on tailscale0 to any port 22 proto tcp >/dev/null
 ufw allow in on tailscale0 from "${HP_TS_IP}" to any port 11434 proto tcp >/dev/null
 ufw --force enable >/dev/null

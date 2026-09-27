@@ -1,5 +1,5 @@
 # Overlay del nodo HP (tarea 3.2): agente Rafita SIN Ollama local, apuntando
-# al LLM del nodo Dell por Tailscale (100.83.40.103). Ver ADR-004.
+# al LLM del nodo Dell por Tailscale. Ver ADR-004.
 #
 # Uso, desde la raiz del repo en el HP:
 #   docker compose -f docker-compose.yml -f deploy/hp/docker-compose.hp.yml up -d
@@ -24,5 +24,5 @@ services:
       - "127.0.0.1:8010:8000"
       - "127.0.0.1:8001:8001"
     environment:
-      OLLAMA_HOST: "http://100.83.40.103:11434"
+      OLLAMA_HOST: "${OLLAMA_HOST:?Define OLLAMA_HOST en .env (ej: http://<IP_DEL_DESDE_HP>:11434)}"
       WHISPER_CPU_THREADS: "2"

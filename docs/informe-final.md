@@ -31,12 +31,12 @@ La afirmación clave: **todo lo reportado como hecho tiene evidencia ejecutada**
 ## 2. Arquitectura desplegada
 
 ```
-[ HP "nodochicohp" ]                            [ Dell "nodo-dell-1" ]
+[ HP "nodo-hp" ]                            [ Dell "nodo-dell" ]
   Bot de Telegram (Rafita)                        Ollama 0.34.4
   Base vectorial (ChromaDB)                       gemma4:12b  (chat + visión)
   Bóveda de notas (Obsidian)                      bge-m3      (embeddings)
   Backups diarios → USB                           qwen2.5:7b  (respaldo)
-  Tailscale 100.121.77.29  ── WireGuard ──►       Tailscale 100.83.40.103
+  Tailscale <TS_HP>  ── WireGuard ──►       Tailscale <TS_DELL>
        (conexión directa, ~7 ms; sin exponer nada a la red local)
 ```
 
@@ -155,8 +155,8 @@ pruebas de caos, backups, observabilidad y documentación.
 - **Cómo**: base de datos con volcados consistentes en caliente; ficheros con
   modo mantenimiento de Nextcloud y una parada de ~5 s de Portainer (aprobado);
   todo empaquetado con **restic cifrado e incremental**.
-- **Dónde**: USB "RAFAEL" (117 GB) con estructura
-  `Servidor/server-nodochicohp/` (repositorio y logs) y `Servidor/server-dell/`.
+- **Dónde**: USB de backup (117 GB) con estructura
+  `Servidor/server-<hostname>/` (repositorio y logs) y `Servidor/server-dell/`.
   El contenido previo del USB se preservó intacto.
 - **Cuándo**: diario a las 03:30, **solo si el USB está presente**; si no,
   se omite y se registra. Aviso por Telegram de éxito o fallo.
@@ -273,10 +273,10 @@ adoptada (el propietario puede confirmar cada punto):
 | 8 | **Avisos de dependencias de GitHub** (1 crítica, 2 altas) | Revisados: son de la base vectorial, **sin corrección upstream y no aplican** al modo usado; se añadió un test que impide el modo vulnerable. Pendiente marcarlos como "no afectados" en GitHub. |
 | 9 | El envío a GitHub pedía credenciales interactivas | Se registró la **clave SSH** del PC y se cambió el repositorio a SSH; ya no pide credenciales. |
 | 10 | **Puerto de la aplicación** en el HP (el 8000 estaba ocupado) | Gateway en **8010**; el motor se referencia por la **IP de la red privada** (la IP local puede cambiar). |
-| 11 | **Direcciones IP fijas** de ambos nodos | **Reserva DHCP en el router** (la opción sin conflictos): Dell `192.168.1.121`, HP `192.168.1.129`. La dirección estable entre nodos es la de Tailscale. |
+| 11 | **Direcciones IP fijas** de ambos nodos | **Reserva DHCP en el router** (la opción sin conflictos): Dell `<IP_DELL>`, HP `<IP_HP>`. La dirección estable entre nodos es la de Tailscale. |
 | 12 | **Renombrar el usuario del HP** `rafa` → `server` para unificar | **Sí**, ejecutado de forma segura (mismo UID/GID, datos intactos, servicios recreados y verificados). |
 | 13 | **Alcance del backup**: ¿solo Rafita o todo el homelab? | **Todo el homelab** (BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer, Rafita y configuración). |
-| 14 | **Destino y formato del backup** | **USB "RAFAEL"** conectado al HP, con estructura `Servidor/<nodo>/`; **restic cifrado**; el contenido previo del USB no se toca. |
+| 14 | **Destino y formato del backup** | **USB de backup** conectado al HP, con estructura `Servidor/<nodo>/`; **restic cifrado**; el contenido previo del USB no se toca. |
 | 15 | **Frecuencia y condición** | **Diario a las 03:30 solo si el USB está conectado**; retención 7 diarios/4 semanales/6 mensuales. |
 | 16 | Paradas mínimas durante el backup | Aprobado: **Portainer ~5 s** y **Nextcloud en modo mantenimiento** durante la copia. |
 | 17 | **Verificación del restore**: destructiva o no | **No destructiva** (restaurar a un directorio temporal y validar); producción nunca se destruye. |

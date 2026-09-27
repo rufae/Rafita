@@ -12,21 +12,21 @@ y desplegada en 3.1 el 2026-09-26 (evidencia en `plan.md`).
 Hasta la Fase 2 el despliegue se asumió mono-máquina (`localhost`). La
 topología real pasa a ser:
 
-- **Dell OptiPlex 7060 Micro** (LAN `192.168.1.121` por reserva DHCP en el
-  router para la MAC `6c:2b:59:df:cc:a0`; estable — antes rotó `.121`→`.201`→
+- **Dell OptiPlex 7060 Micro** (LAN `<IP_DELL>` por reserva DHCP en el
+  router para la MAC `<MAC_DEL>`; estable — antes rotó `.121`→`.201`→
   `.121` por DHCP; el acceso estable entre nodos es la IP Tailscale
-  `100.83.40.103`): i7-8700 (6c/12t), 32 GB RAM,
+  `<TS_DELL>`): i7-8700 (6c/12t), 32 GB RAM,
   1 TB NVMe, **sin GPU discreta** (iGPU Intel UHD 630). Solo tiene el SO
   (Ubuntu Server 24.04.5). Rol: inferencia (chat, visión, embeddings).
-- **HP "nodochicohp"** (usuario `server` desde el renombrado 3.6; `192.168.1.129`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
+- **HP "nodo-hp"** (usuario `server` desde el renombrado 3.6; `<IP_HP>`): i3-1005G1 (2c/4t), 8 GB RAM (~6.9 GiB
   visibles), ~100 GB SSD. Ya corre 11 contenedores de producción. Rol: agente
   Rafita, ChromaDB embebido, vault, BrainMaintainer; llama al LLM del Dell por
   red.
 
 ## Evidencia recogida (solo lectura, sin tocar el Dell)
 
-Fecha 2026-09-25, desde el PC de desarrollo (192.168.1.206) y por SSH al HP
-(`nodochicohp`):
+Fecha 2026-09-25, desde el PC de desarrollo (<IP_GPU>) y por SSH al HP
+(`nodo-hp`):
 
 ```
 # Nodo HP
@@ -50,11 +50,11 @@ $ ss -tln | grep -v 127.0.0.1
  0.0.0.0:8001 NO aparece (libre)
  80/443/81/9443/51821/5434/61208/22 en uso
 $ tailscale status
-100.121.77.29 nodochicohp ... (peers: LAPTOP-6GIU8MDH offline, S20 android offline)
+<TS_HP> nodo-hp ... (peers: LAPTOP-6GIU8MDH offline, S20 android offline)
 # El Dell NO está enrolado en la tailnet todavía.
 
 # Alcance del Dell en el momento del análisis
-$ ping 192.168.1.121   (desde PC y desde HP)
+$ ping <IP_DELL>   (desde PC y desde HP)
 DELL_LAN_FAIL  -> el Dell no respondía a ICMP en el momento del análisis
 ```
 
@@ -157,7 +157,7 @@ aplicado en el cliente (commit `5698227`): `OLLAMA_REASONING_EFFORT` (default
 fragmentos del vault (finanzas, salud) dentro de prompts y respuestas. Un
 firewall restringe origen pero **no cifra**; Tailscale da restricción por
 identidad y **cifrado en tránsito** sin abrir puertos a la LAN. El HP ya corre
-Tailscale (100.121.77.29) y es subnet router; el Dell aún **no está enrolado**
+Tailscale (<TS_HP>) y es subnet router; el Dell aún **no está enrolado**
 (verificado en `tailscale status`), por lo que este paso es parte de 3.1.
 
 **Alternativa rechazada por ahora:** firewall LAN-only con HTTP en claro;
@@ -167,9 +167,9 @@ tránsito.
 **Implementación real (2026-09-26) — desviación documentada:** Ollama quedó en
 `OLLAMA_HOST=0.0.0.0:11434` (no solo en la IP Tailscale) porque necesita seguir
 atendiendo `127.0.0.1` para benchmarks locales y Ollama admite un único bind.
-La restricción efectiva es **ufw**: `11434/tcp` solo desde `100.121.77.29` por
-`tailscale0`; verificado que desde la LAN (PC de desarrollo, `192.168.1.206`)
-el puerto queda bloqueado. Enrolamiento: Dell = `100.83.40.103`, conexión
+La restricción efectiva es **ufw**: `11434/tcp` solo desde `<TS_HP>` por
+`tailscale0`; verificado que desde la LAN (PC de desarrollo, `<IP_GPU>`)
+el puerto queda bloqueado. Enrolamiento: Dell = `<TS_DELL>`, conexión
 **directa** HP↔Dell (7 ms, sin relay DERP).
 
 **Corrección (3.4, 2026-09-26) — la regla de ufw para la tailnet está
@@ -232,16 +232,16 @@ Collabora/Nextcloud.
 ## Elementos abiertos / riesgos
 
 - ~~El Dell no respondía a ping y no estaba en Tailscale~~ → resuelto: responde,
-  enrolado como `nodo-dell-1` / `100.83.40.103`.
+  enrolado como `nodo-dell` / `<TS_DELL>`.
 - ~~`ufw` sin confirmar~~ → activo y verificado (LAN bloqueada, tailnet HP
   permitida).
 - La latencia CPU del modelo grande sigue siendo el riesgo principal; está
   medida y aceptada por el usuario (ver (b)).
 - Portainer en 8000 obliga a remapear el gateway en HP (tarea 3.2).
 - ~~La IP LAN del Dell no es estática~~ → resuelto: reserva DHCP en el router
-  (MAC `6c:2b:59:df:cc:a0` → `192.168.1.121`); aun así el agente usa la IP
-  Tailscale (`100.83.40.103`), que es la referencia estable.
+  (MAC `<MAC_DEL>` → `<IP_DELL>`); aun así el agente usa la IP
+  Tailscale (`<TS_DELL>`), que es la referencia estable.
 
 **Estado:** aceptada y ejecutada en 3.1 (2026-09-26). Scripts en `deploy/dell/`
 idempotentes; pendiente 3.2 (agente del HP apuntando a
-`http://100.83.40.103:11434`).
+`http://<TS_DELL>:11434`).
