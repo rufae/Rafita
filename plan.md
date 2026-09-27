@@ -2614,6 +2614,23 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
     - E2E con OAuth: **0 fallos** (Calendar, Drive, Sheets, Docs, Tasks,
       Gmail, People con 5 contactos y Fitness).
     - Tests: **246 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 6 (2026-09-27, "no funciona nada" en Telegram)**:
+    - **Causa raíz**: el pre-filtro `_detect_tool_intent` decidía si ofrecer
+      herramientas al modelo y **no conocía** palabras como *correo*, *gmail*,
+      *bandeja*, *teléfono*, *contacto*, *tarea*, *pasos*, *fitness* o *drive*
+      → esas frases se respondían **sin ninguna herramienta** («no tengo
+      acceso»). Añadidos los keywords (con y sin tilde) y los de edición de
+      bóveda.
+    - **Edición de la bóveda**: `manage_obsidian_note` ya soportaba
+      create/append/read/delete; se añadió **`overwrite`** (reemplazar todo el
+      contenido) y su comando de detección («edita/reemplaza/modifica la
+      nota»). Guardar correos como notas: «guarda este correo como nota»
+      (search_gmail + manage_obsidian_note create).
+    - Verificado en el contenedor desplegado con las frases exactas del
+      usuario: todas activan las herramientas correctas
+      (`find_contact`, `search_gmail`, `fitness_daily_steps`,
+      `manage_google_tasks`, edición de notas) y `/ready` sigue en GPU.
+    - Tests: **250 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

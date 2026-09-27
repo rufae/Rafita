@@ -71,6 +71,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Corregido (2026-09-27): el pre-filtro de intención no conocía palabras como
+  correo/gmail/bandeja/teléfono/contacto/tarea/pasos/drive, así que esas
+  peticiones se respondían **sin herramientas** («no tengo acceso»). Añadidos
+  los keywords y la acción **`overwrite`** para editar notas de la bóveda
+  (create/append/overwrite/read/delete).
 - Herramientas nuevas en chat y llamada (2026-09-27): `search_gmail`,
   `manage_google_tasks`, `find_contact` y `fitness_daily_steps`. Para no
   degradar la fiabilidad (la suite bajó de 46/46 a 18/46 al ofrecer las 27

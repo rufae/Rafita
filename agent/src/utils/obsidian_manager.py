@@ -69,6 +69,25 @@ async def create_or_append_note(title: str, content: str, folder: str = "") -> d
     }
 
 
+async def overwrite_note(title: str, content: str, folder: str = "") -> dict[str, Any]:
+    """Reemplaza por completo el contenido de una nota (o la crea si no existe)."""
+    filepath = _resolve_path(title, folder)
+    _ensure_folder(folder)
+    existed = filepath.exists()
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+    except OSError as e:
+        return {"success": False, "message": "Error escribiendo la nota: %s" % e}
+    logger.info("Obsidian note %s: %s", "overwritten" if existed else "created", filepath)
+    return {
+        "success": True,
+        "action": "overwritten" if existed else "created",
+        "filepath": str(filepath),
+        "message": "Nota '%s' %s en Obsidian." % (title, "reemplazada" if existed else "creada"),
+    }
+
+
 async def read_note(title: str, folder: str = "") -> dict[str, Any]:
     filepath = _resolve_path(title, folder)
     if not filepath.exists():
