@@ -278,10 +278,11 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
             "des tu correo). Si no lo detecta, avisará en los logs." % (sa_email or "(no legible)")
         )
         return
-
     if oauth_file is not None and not args:
-        # Con OAuth: si ya hay token, conectado; si no, enlace de autorizacion.
-        if await google_services.initialize():
+        # Con OAuth: si el token ya tiene TODOS los permisos, conectado; si no
+        # (o no hay token), enlace de autorizacion.
+        missing = await google_services.oauth_missing_scopes()
+        if not missing and await google_services.initialize():
             if google_services.auth_method == "oauth":
                 await message.reply_text(
                     "✅ Google ya está conectado con OAuth (acceso completo). "
@@ -290,15 +291,19 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 return
         result = await google_service.generate_auth_url()
         if result.get("success"):
+            note = ""
+            if missing:
+                note = "\n\n(El enlace pedirá los permisos que faltan: %s.)" % ", ".join(
+                    scope.rsplit("/", 1)[-1] for scope in missing
+                )
             await message.reply_text(
                 "Para conectar tu cuenta de Google (acceso completo):\n\n"
                 "1. Abre este enlace y autoriza la aplicación:\n"
                 "%s\n\n"
                 "2. El navegador acabará en una página que no carga "
-                "(localhost:8080). Copia el valor de 'code=' de la barra de "
-                "direcciones y envíamelo así:\n"
-                "/setup_google <codigo>\n\n"
-                "(El código caduca pronto; si falla, repite /setup_google.)" % result["auth_url"]
+                "(localhost:8080). Copia SOLO el valor de 'code=' (hasta el "
+                "siguiente '&' si lo hay) y envíamelo así:\n"
+                "/setup_google <codigo>%s" % (result["auth_url"], note)
             )
         else:
             await message.reply_text(
@@ -313,7 +318,9 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         #   /setup_google            -> estado o enlace de autorizacion
         #   /setup_google <codigo>   -> intercambia el codigo por el token
         if args:
-            code = " ".join(args).strip()
+            # El usuario suele pegar el codigo junto con "&scope=..." de la URL:
+            # quedarse solo con el codigo real.
+            code = args[0].split("&")[0].strip()
             result = await google_service.exchange_code(code)
             await message.reply_text(result.get("message", "Resultado desconocido."))
             logger.info("setup_google: codigo intercambiado para user %d", user.id)
