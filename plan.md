@@ -2732,6 +2732,10 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       CallMeBot solo avisos a tu numero). Llamadas en vivo: **no existe nada
       100 % gratis** (software libre + DID ~1,50 $/mes); alternativa gratis:
       recado por WhatsApp/Telegram + resumen.
+    - **Decision del usuario (2026-09-27)**: WhatsApp **aplazado** con guia de
+      implementacion futura (`docs/whatsapp-upgrade.md`); llamadas: **seguir
+      investigando** una via gratuita (endpoint `/call` queda listo y probado
+      para conectar cuando exista).
     - Tests **275 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
