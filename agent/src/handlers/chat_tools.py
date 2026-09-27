@@ -49,9 +49,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_event",
-            "description": "Crea un evento o recordatorio en la base de datos. "
-            "Úsalo cuando el usuario mencione una fecha, cita, "
-            "reunión o recordatorio.",
+            "description": "Crea un evento o cita CON fecha y hora en la agenda local del "
+            "asistente (base de datos propia). Usalo cuando el usuario mencione "
+            "una fecha, cita, reunion o evento con hora. Si solo pide un aviso "
+            "o recordatorio sin fecha/hora, usa create_alert. Si menciona "
+            "Google Calendar, usa create_google_calendar_event.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -76,9 +78,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_alert",
-            "description": "Crea una alerta o notificación para el usuario. "
-            "Úsalo cuando el usuario quiera ser notificado "
-            "sobre algo importante.",
+            "description": "Crea una alerta o aviso importante del asistente (no es Google "
+            "Tasks). Usalo para 'recuérdame...', 'avísame...', 'es urgente' o "
+            "'es importante' cuando NO haya una cita con fecha y hora concreta "
+            "(para una cita con fecha/hora usa create_event). Para tareas de "
+            "Google usa manage_google_tasks.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -119,11 +123,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "remember_fact",
-            "description": "Guarda información personal sobre el usuario en la "
-            "memoria persistente. Úsalo cuando el usuario comparta "
-            "datos personales como su nombre, gustos, preferencias, "
-            "cumpleaños, dirección, teléfono, etc. Si la clave ya "
-            "existe, se actualiza el valor.",
+            "description": "Guarda informacion personal sobre el usuario en la memoria "
+            "persistente. Usalo SIEMPRE que el usuario comparta un dato "
+            "personal: nombre, gustos, preferencias, cumpleanos, direccion, "
+            "telefono, tallas (ropa, zapato), alergias, familia, mascotas, "
+            "horarios, numeros de cuenta... aunque lo diga de pasada. Si la "
+            "clave ya existe, se actualiza el valor.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -195,7 +200,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_obsidian_note",
-            "description": "Gestiona notas en la bóveda local de Obsidian. "
+            "description": "Gestiona notas en la bóveda local de Obsidian. Invocala "
+            "directamente (sin preguntar) cuando el usuario pida guardar, "
+            "apuntar, crear, leer, editar o borrar una nota. "
             "Acciones: create (crea nota nueva), append (añade "
             "contenido al final), overwrite (reemplaza todo el "
             "contenido), read (lee contenido), delete (elimina). "
@@ -331,9 +338,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "ask_deep_knowledge_base",
             "description": "Busca informacion en el segundo cerebro (vault de Obsidian + "
             "documentos indexados) usando busqueda semantica por embeddings. "
-            "Usalo cuando el usuario pregunte por cualquier informacion "
-            "personal, notas, apuntes, documentos locales, proyectos, "
-            "finanzas, o conocimiento almacenado en su vault. "
+            "Usalo SIEMPRE que la pregunta trate de informacion personal, notas, "
+            "apuntes, diario, proyectos, finanzas o documentos locales, aunque el "
+            "usuario diga solo 'documento' o 'busca'. NO es Google Drive. "
             "Este es un sistema RAG local que entiende "
             "el significado, no solo palabras clave.",
             "parameters": {
@@ -357,8 +364,8 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_second_brain",
-            "description": "Busca en TU segundo cerebro personal (vault de Obsidian) "
-            "usando busqueda semantica por embeddings con soporte de "
+            "description": "Busca en TU segundo cerebro personal (vault de Obsidian, NO "
+            "Google Drive) usando busqueda semantica por embeddings con soporte de "
             "filtro por etiquetas. Devuelve fragmentos relevantes con "
             "la ruta exacta de la nota origen, el encabezado donde "
             "aparece, y un enlace obsidian:// para abrirla directamente. "
@@ -536,10 +543,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_google_calendar_event",
-            "description": "Crea un evento directamente en el Google Calendar real del usuario. "
-            "Usalo cuando el usuario pida agendar algo en su calendario de Google, "
-            "como 'agenda una reunion manana a las 5', 'anade un evento a mi "
-            "calendario'. Despues de crear el evento, sincroniza en Obsidian.",
+            "description": "Crea un evento en Google Calendar. Usalo SOLO cuando el usuario "
+            "mencione Google Calendar o 'mi calendario de Google'. Si dice "
+            "'agendame', 'apuntame una cita' o similar SIN mencionar Google, usa "
+            "create_event (agenda local). Despues de crear el evento, sincroniza "
+            "en Obsidian.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -576,11 +584,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_google_drive",
-            "description": "Busca ficheros en el Google Drive del usuario (solo lo que haya "
-            "compartido con la cuenta de servicio) por nombre o por texto contenido. "
-            "Usalo cuando el usuario diga 'busca en mi drive', 'tengo un documento "
-            "sobre...', 'encuentra el archivo...'. Devuelve nombre e id; para leer "
-            "el contenido usa despues read_google_drive_file.",
+            "description": "Busca ficheros en Google Drive (la nube de Google) por nombre o "
+            "texto contenido. Usalo SOLO si el usuario menciona Google Drive, 'mi "
+            "drive', 'la nube de Google' o un fichero que subio alli. NO lo uses "
+            "para notas personales, apuntes, diario o el vault: para eso usa "
+            "search_second_brain, ask_deep_knowledge_base o search_obsidian_vault. "
+            "Devuelve nombre e id; para leer el contenido usa read_google_drive_file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -700,12 +709,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "ingest_file",
-            "description": "Registra la existencia de un archivo en el segundo cerebro "
-            "creando una nota companion con metadatos. Usalo despues de "
-            "que el usuario mencione o comparta un archivo (PDF, DOCX, TXT, CSV) "
-            "para que quede indexado en el vault y sea buscable semanticamente. "
-            "Incluye el nombre del archivo, carpeta donde se guardo, tipo de "
-            "contenido y etiquetas para clasificarlo.",
+            "description": "Registra en el segundo cerebro (vault) un archivo que el usuario "
+            "ha subido o compartido (PDF, DOCX, TXT, CSV), creando una nota con "
+            "sus metadatos para que quede indexado. Usalo cuando diga 'he subido "
+            "un PDF', 'te he pasado un documento', 'guarda este archivo en el "
+            "segundo cerebro'. NO es Google Drive: no busques en Drive cuando la "
+            "intencion sea registrar el archivo en la boveda.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -745,55 +754,74 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
-# Herramientas de Google que solo se ofrecen cuando el mensaje las menciona
-# (selección dinámica): con las 27 siempre, el modelo se dispersa y baja la
-# fiabilidad del resto (medido: 46/46 -> 18/46 el 2026-09-27).
-GOOGLE_EXTRA_TOOLS = {
-    "search_google_drive",
-    "read_google_drive_file",
-    "search_gmail",
-    "manage_google_tasks",
-    "find_contact",
-    "fitness_daily_steps",
-}
+_TOOL_EMBEDDINGS: dict[str, list[float]] | None = None
 
-_GOOGLE_TOOL_KEYWORDS = {
-    "search_google_drive": r"\bdrive\b|google drive",
-    "read_google_drive_file": r"\bdrive\b|google drive",
-    "search_gmail": r"gmail|correo|email|bandeja de entrada",
-    "manage_google_tasks": (
-        r"google tasks|tareas? de google|mis tareas|lista de tareas|"
-        r"a[nñ][aá]deme una tarea|a[nñ]adir( una)? tarea|crea(me)? una tarea"
-    ),
-    "find_contact": r"contacto|tel[eé]fono",
-    "fitness_daily_steps": r"\bpasos\b|fitness|actividad f[ií]sica",
-}
+
+def _tool_catalog_text(tool: dict[str, Any]) -> str:
+    return "%s: %s" % (tool["function"]["name"], tool["function"]["description"])
+
+
+def rank_tools_by_similarity(
+    message_vec: list[float], tool_vecs: dict[str, list[float]], tools: list[dict[str, Any]], k: int
+) -> list[dict[str, Any]]:
+    """Ranking puro por similitud (testeable sin red). bge-m3 da vectores
+    unitarios, así que el producto escalar es la similitud coseno."""
+
+    def dot(a: list[float], b: list[float]) -> float:
+        return sum(x * y for x, y in zip(a, b))
+
+    ranked = sorted(
+        tools,
+        key=lambda t: dot(message_vec, tool_vecs.get(t["function"]["name"], [])),
+        reverse=True,
+    )
+    return ranked[: max(1, min(k, len(ranked)))]
+
+
+async def select_tools_semantic(text: str, k: int = 10) -> list[dict[str, Any]]:
+    """Preselecciona herramientas por similitud semántica (no por palabras).
+
+    El usuario puede pedir lo mismo de mil formas: se embebe su mensaje y las
+    descripciones de las herramientas (bge-m3) y se ofrecen las `k` más
+    parecidas; **el modelo decide** cuál usar entre ellas. Si el embedding
+    falla, se ofrecen todas (comportamiento previo).
+    """
+    import asyncio
+
+    from src.ollama_client import llm
+
+    tools = get_tools_with_date_context()
+    global _TOOL_EMBEDDINGS
+    try:
+        if _TOOL_EMBEDDINGS is None or len(_TOOL_EMBEDDINGS) != len(tools):
+            vectors = await asyncio.to_thread(
+                llm.embed_texts, [_tool_catalog_text(t) for t in tools]
+            )
+            _TOOL_EMBEDDINGS = {
+                t["function"]["name"]: v for t, v in zip(tools, vectors, strict=False)
+            }
+        message_vec = (await asyncio.to_thread(llm.embed_texts, [text]))[0]
+    except Exception:
+        return tools
+    return rank_tools_by_similarity(message_vec, _TOOL_EMBEDDINGS, tools, k)
 
 
 def get_tools_for_message(text: str) -> list[dict[str, Any]]:
-    """Herramientas para un mensaje concreto (núcleo + extras relevantes)."""
-    import re
+    """Compatibilidad: devuelve todas las herramientas (sin filtrar).
 
-    tools = get_tools_with_date_context()
-    lowered = (text or "").lower()
-    selected = {
-        name for name, pattern in _GOOGLE_TOOL_KEYWORDS.items() if re.search(pattern, lowered)
-    }
-    return [
-        tool
-        for tool in tools
-        if tool["function"]["name"] not in GOOGLE_EXTRA_TOOLS
-        or tool["function"]["name"] in selected
-    ]
+    La selección real es `select_tools_semantic` (embeddings + decisión del
+    modelo); se probó el filtrado por palabras clave y es frágil.
+    """
+    return get_tools_with_date_context()
 
 
 def get_tools_with_date_context() -> list[dict[str, Any]]:
-    """Copia de las herramientas (sin sello de fecha en descripciones).
+    """Copia de todas las herramientas (sin sello de fecha en descripciones).
 
-    Nota (2026-09-27): se probó a inyectar "[HOY es ...]" en la descripción de
-    las herramientas de calendario y **degradaba** la selección del modelo
-    (medido: 46/46 -> 22/46). La fecha va en el prompt del sistema, en el
-    último mensaje del usuario y en el parámetro `when` + parser determinista.
+    Nota: se probó a inyectar "[HOY es ...]" en la descripción de las
+    herramientas de calendario y **degradaba** la selección del modelo. La
+    fecha va en el prompt del sistema, en el último mensaje del usuario y en
+    el parámetro `when` + parser determinista.
     """
     import copy
 
