@@ -3320,7 +3320,7 @@ comparación literal no matcheaba «Aa Mama» → vacío → «no lo encuentro»
 6. **Guarda de mensaje de usuario** en `_prepare_tool_phase` (si el historial
    no incluye la pregunta actual, se añade; evita respuestas de saludo).
 
-**Evidencia [2026-09-27] [commit pendiente, base `66be0d1`]:**
+**Evidencia [2026-09-27] [commit `22a3ba0`, base `66be0d1`]:**
 
 Logs reales que reproducen el bug (código anterior):
 ```
