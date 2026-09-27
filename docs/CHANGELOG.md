@@ -71,6 +71,11 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Selección de herramientas sin palabras clave (2026-09-27): router semántico
+  con embeddings (bge-m3) que ofrece las 10 herramientas más afines al mensaje
+  y deja decidir al modelo; batería de 25 frases variadas al 100% y suite de
+  tool-calling 46/46. Respuestas finales redactadas por el modelo (segunda
+  llamada) con tablas Markdown mostradas en monoespaciado en Telegram.
 - Corregido (2026-09-27): el pre-filtro de intención no conocía palabras como
   correo/gmail/bandeja/teléfono/contacto/tarea/pasos/drive, así que esas
   peticiones se respondían **sin herramientas** («no tengo acceso»). Añadidos

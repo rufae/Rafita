@@ -25,30 +25,25 @@ def _names(tools):
     return {t["function"]["name"] for t in tools}
 
 
-def test_message_without_google_keywords_gets_core_only():
+def test_rank_tools_by_similarity_picks_closest():
+    from src.handlers.chat_tools import get_tools_with_date_context, rank_tools_by_similarity
+
+    tools = get_tools_with_date_context()[:3]
+    names = [t["function"]["name"] for t in tools]
+    tool_vecs = {names[0]: [1.0, 0.0], names[1]: [0.0, 1.0], names[2]: [0.5, 0.5]}
+    ranked = rank_tools_by_similarity([1.0, 0.0], tool_vecs, tools, k=2)
+    assert len(ranked) == 2
+    assert ranked[0]["function"]["name"] == names[0]
+
+
+def test_all_tools_offered_without_keyword_filtering():
+    """El modelo decide con todas las herramientas (2026-09-27)."""
     names = _names(get_tools_for_message("Gasté 45 euros en gasolina"))
-    assert "search_google_drive" not in names
-    assert "search_gmail" not in names
     assert "save_expense" in names
-
-
-def test_message_with_gmail_keyword_includes_gmail_only():
-    names = _names(get_tools_for_message("resúmeme los correos de hoy"))
     assert "search_gmail" in names
-    assert "search_google_drive" not in names
-    assert "manage_google_tasks" not in names
-
-
-def test_message_with_tasks_keyword_includes_tasks():
-    names = _names(get_tools_for_message("añádeme una tarea: comprar pan"))
-    assert "manage_google_tasks" in names
-    assert "search_gmail" not in names
-
-
-def test_message_with_drive_keyword_includes_drive():
-    names = _names(get_tools_for_message("busca en mi Drive el informe"))
     assert "search_google_drive" in names
-    assert "read_google_drive_file" in names
+    assert "manage_google_tasks" in names
+    assert "fitness_daily_steps" in names
 
 
 def test_new_google_tools_registered():
