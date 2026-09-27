@@ -2557,6 +2557,22 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       actualizados: Drive completo, Gmail solo lectura, Contactos solo lectura,
       Fitness actividad.
     - Tests: **233 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 3 (2026-09-27, OAuth subido por el usuario)**:
+    - **Bug**: el usuario subió su `credentials.json` de OAuth («Aplicación de
+      escritorio») pero `/setup_google` respondía con el mensaje de cuenta de
+      servicio: el código comprobaba `service_account.json` **antes** que el
+      OAuth. Corregido: si hay `credentials.json` de tipo `installed`/`web`,
+      tiene **prioridad** y se genera el enlace de autorización (aunque exista
+      la cuenta de servicio). Nuevo `GOOGLE_AUTH_MODE`
+      (`auto`|`service_account`|`oauth`): en `auto`, si hay token OAuth se
+      prefiere (el usuario lo autorizó); si no, cuenta de servicio.
+    - El diagnóstico E2E ahora marca Tasks/Gmail/People/Fitness como
+      `requires_oauth` con cuenta de servicio (evita el falso «ok» de las
+      listas propias de la cuenta de servicio y el 400 de Gmail).
+    - Verificado el estado actual con cuenta de servicio: Calendar ✅,
+      Drive ✅, APIs Sheets/Docs ✅ (crear sigue 403 por cuota, se resuelve
+      con OAuth o carpeta compartida).
+    - Tests: **235 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 
