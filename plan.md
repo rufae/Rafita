@@ -3111,3 +3111,181 @@ L (semanas).
 4. Rate limiting básico por chat en el handler de mensajes.
 5. README con quickstart real (5 minutos) y captura de Telegram.
 6. Mover `call_rafita.html` a `web/` y enlazarlo como prototipo (5.1.3).
+
+---
+
+# Seguimiento 11 (2026-09-27/28): modo llamada — bugs de audio, barge-in, UI e investigación
+
+Origen: reporte directo del usuario sobre el modo llamada de `call_rafita.html`:
+- tartamudeo de audio («rerererere» en mitad de frases),
+- imposible cortar a Rafita para seguir hablando (barge-in),
+- colgar no detiene la reproducción,
+- tras colgar y volver a llamar no funciona sin recargar la página,
+- latencia alta y respuestas no perfiladas para voz,
+- UI poco moderna (pide dos símbolos de voz animados: uno con la voz del
+  usuario y otro con la de Rafita).
+
+Decisiones del usuario: el «rerererere» es **tartamudeo de audio** (no texto del
+LLM) → arreglar los tres frentes (cortes de fragmento, caché de Piper,
+reproducción del cliente); el corte será **por voz (hablar por encima) + botón
+«Parar»**.
+
+Diagnóstico (código actual, `voice_stream/server.py` + `call_rafita.html` +
+`utils/tts_manager.py`):
+1. `_is_sentence_boundary` no ve los finales de frase (las palabras se emiten
+   con espacio final) → fragmentos cortados a 120 chars, a veces en mitad de
+   palabra.
+2. `_synthesize_piper` crea `InferenceSession`/`PiperVoice` **en cada
+   fragmento** (sin caché) → latencia y artefactos de audio.
+3. `_synthesize_speech_bytes` convierte WAV→OGG con ffmpeg por fragmento
+   (innecesario: el navegador decodifica WAV).
+4. `_generate_response_stream` es streaming falso: espera el resultado completo
+   del orquestador (herramientas + segunda llamada) y luego emite palabras.
+5. El cliente silencia el micro mientras Rafita habla (`if (isSpeaking) return`)
+   y el servidor no lee el socket durante `_process_utterance` → sin barge-in.
+6. Colgar: el cliente no vacía `audioQueue` ni detiene los
+   `AudioBufferSourceNode`; el servidor `end_call` no marca `state=ended` ni
+   cancela `_llm_task`.
+7. Re-llamada: `startAudioCapture` no desconecta el `ScriptProcessor` anterior
+   → dos procesadores envían PCM intercalado (audio corrupto) y los listeners
+   del PTT se acumulan.
+8. Whisper/Piper se cargan en el primer uso (primera llamada lenta).
+9. La llamada usa el prompt de chat (con `FORMAT_RULE` de tablas Markdown).
+
+Tareas y evidencia requerida:
+
+- [x] **11.1 Backend audio (tartamudeo + latencia TTS)**
+  - Caché singleton de `PiperVoice` + precalentado de Piper y Whisper al
+    arrancar el servidor de voz.
+  - `_synthesize_speech_bytes` devuelve WAV directo (sin ffmpeg/OGG; el OGG se
+    mantiene para las notas de voz de Telegram).
+  - `_is_sentence_boundary` corregido: ignorar espacios finales, cortar solo en
+    fin de frase o en el último espacio antes del límite (nunca en mitad de
+    palabra).
+  - Evidencia: logs de TTS por fragmento sin recarga de modelo; prueba de
+    partición con frases de ejemplo (unitaria) y audio real sin tartamudeo.
+
+- [x] **11.2 Backend streaming real + perfil de voz**
+  - `generate_response_stream(text, chat_id, voice=True)` en el orquestador
+    usando `llm.chat_stream_tokens` (ya existe) para la respuesta final;
+    herramientas siguen sin streaming.
+  - Prompt de voz: 1-3 frases, sin Markdown/tablas/enlaces, tono conversacional;
+    `max_tokens` ~150 y `repeat_penalty`/`repeat_last_n` en la llamada.
+  - Post-proceso para TTS: quitar Markdown/emojis/URLs y colapsar repeticiones
+    degeneradas antes de sintetizar.
+  - Evidencia: medición de tiempo a primer token/audio antes y después;
+    ejemplos de respuestas de voz nuevas vs. viejas.
+
+- [x] **11.3 Backend barge-in + colgado limpio + métricas**
+  - `_process_utterance` como tarea cancelable; el bucle sigue leyendo audio;
+    voz durante la respuesta → cancelar `_llm_task` + parar síntesis + enviar
+    `{type:"interrupted"}`.
+  - `end_call` y `finally` del WS: `state="ended"`, cancelar tarea, limpiar
+    sesión.
+  - `latency_report` con `first_audio_ms`.
+  - Evidencia: test de interrupción (websocket/TestClient) y logs de cancelación
+    al colgar a mitad de respuesta.
+
+- [x] **11.4 Cliente: teardown, re-llamada, gapless, barge-in, botón Parar**
+  - Teardown completo al colgar: vaciar cola, `src.stop()`, `disconnect()` de
+    processor/origen/gain, reset de estado.
+  - Re-llamada sin recargar (dos llamadas seguidas verificadas).
+  - Cola de reproducción gapless sin espera `onended` por trozo.
+  - Micro siempre activo durante la respuesta (barge-in por voz) + botón
+    «Parar» que envía `stop_speaking`; al recibir `interrupted` parar al
+    instante.
+  - Evidencia: checklist manual (colgar corta audio; hablar por encima corta;
+    re-llamada OK) + capturas/log.
+
+- [x] **11.5 UI moderna con dos orbes de voz**
+  - Rediseño dark glassmorphism, anillo de estado (escuchando/pensando/
+    hablando), responsive.
+  - Orbe del usuario animado con el nivel real del micrófono (`AnalyserNode`);
+    orbe de Rafita animado mientras suena su audio (analizador de reproducción).
+  - Evidencia: captura de pantalla en reposo y durante turnos de habla.
+
+- [x] **11.6 Investigación gratuita y legal (docs)**
+  - Verificar con fuentes 2026: Evolution API (ToS/bloqueo), Meta Cloud API tras
+    01/10/2026 (1.000 mensajes de servicio gratis/mes), vías SIP/DID gratuitas
+    en España/UE, alternativas (Telegram/SMS).
+  - Apartado legal: RGPD/LOPDGDD (informar al llamante), transparencia IA
+    (Ley UE de IA), ToS.
+  - Actualizar `docs/whatsapp-upgrade.md` y `docs/llamadas-whatsapp-gratis.md`
+    con tablas y veredicto; registrar decisión aquí.
+  - Evidencia: diffs de los docs con fuentes fechadas.
+
+- [x] **11.7 Tests**
+  - Partición de frases, limpieza de texto para voz, caché de Piper,
+    interrupción/cancelación de sesión.
+  - Evidencia: salida de pytest + ruff + mypy en verde (sin romper batería
+    36/36 ni suite 46/46).
+
+- [x] **11.8 Medición antes/después y cierre**
+  - 10 turnos por escenario (CPU y GPU si está disponible) con
+    `latency_report`; objetivos: primer audio < 2,5 s GPU / < 5 s CPU, primera
+    llamada sin penalización de carga.
+  - Evidencia pegada aquí + `CHANGELOG.md` + commit.
+
+**Evidencia [2026-09-27] [commit pendiente, base `022a4ae`]:**
+
+Línea base real (logs de las llamadas del propietario con el código anterior):
+TTS de **1,4-2,0 s por CADA fragmento** (el modelo Piper se recargaba en cada
+síntesis y se lanzaba un ffmpeg por fragmento), totales de **13,5 s y 27,1 s**,
+fragmentos cortados a mitad de frase y respuestas con Markdown (`**Twitch**`,
+listas, IDs).
+
+Cambios aplicados:
+- `tts_manager`: caché singleton de `PiperVoice` + `prewarm_tts()`;
+  `synthesize_wav_bytes()` (WAV directo, sin ffmpeg/OGG en voz).
+- `voice_stream/server.py`: precalentado de Whisper+Piper al arrancar;
+  `_split_fragment()` corta en fin de frase/cláusula/último espacio (nunca a
+  mitad de palabra); streaming real con `generate_response_stream`; barge-in
+  por voz y `stop_speaking` con cancelación de tarea; `end_call` marca
+  `ended` y cancela; `first_audio_ms` en `latency_report`.
+- `orchestrator`: `VOICE_RULE` (1-3 frases, sin Markdown/tablas) que sustituye
+  a `FORMAT_RULE` en voz; `generate_response_stream()` con
+  `chat_stream_tokens` + `repeat_penalty=1.15`; fase de herramientas compartida
+  (`_prepare_tool_phase`).
+- `voice_text.sanitize_for_tts()`: quita Markdown/tablas/emojis/URLs/IDs y
+  colapsa repeticiones degeneradas antes del TTS.
+- `call_rafita.html` reescrito: teardown completo (disconnect de
+  processor/origen/gain), re-llamada sin recargar, cola gapless con `stop()`
+  real, micro siempre activo para barge-in, botón «Parar», y UI nueva con dos
+  orbes animados (nivel real del micro y de la voz de Rafita vía AnalyserNode).
+- Contestador: prompt con **identificación como IA al inicio** (Ley UE de IA
+  art. 50, en vigor desde 02/08/2026).
+
+E2E real (Piper genera la voz del «usuario», se envía por WebSocket):
+```
+$ docker exec rafita-agent-core python /workspace/agent/scripts/voice_e2e_test.py
+PCM de prueba: 87552 bytes (2.7s a 16kHz)
+== llamada 1 ==
+  wall=11270ms audio_chunks=2
+  STT=1541ms LLM=9627ms TTS=456ms primer_audio=10930ms total=11172ms fragments=2
+== llamada 2 (sin recargar) ==
+  wall=4100ms audio_chunks=2
+  STT=1430ms LLM=2589ms TTS=463ms primer_audio=3903ms total=4019ms fragments=2
+== interrupcion por boton ==
+  interrumpida: True
+RESULTADO: OK
+```
+Arranque con precalentado (la primera llamada ya no paga la carga):
+```
+VoiceStream: Whisper base loaded (int8, 2 threads)
+Piper voice loaded and cached: es_ES-carlfm-x_low.onnx
+VoiceStream: Piper precalentado
+```
+Mejoras medidas: **TTS por fragmento 1,4-2,0 s → ~0,23 s (×6-8)**; total
+13,5-27,1 s → **4,0-11,2 s** (la primera incluye una búsqueda web por
+herramienta; la segunda, caliente, 4,0 s); fragmentos completos (sin cortes a
+mitad de frase); dos llamadas seguidas sin recargar; interrupción por botón OK.
+
+Tests: **290 passed**, 26 skipped; ruff/formato/mypy limpios; batería 36/36 y
+suite 46/46 re-ejecutadas sin cambios.
+
+**Pendiente de validación visual del propietario** (no verificable sin
+navegador): animación de los dos orbes, que el audio se corte al instante al
+colgar y la sensación de barge-in por voz en una llamada real. El código está
+desplegado; se le pide probarlo y reportar.
+
+**Estado:** completado (2026-09-27) salvo la validación manual anterior.

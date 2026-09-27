@@ -43,6 +43,7 @@ class AIProvider(Protocol):
         messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
     ) -> Any: ...
 
     async def chat_vision(

@@ -82,6 +82,12 @@ def test_call_requires_signature(monkeypatch):
     assert bad.status_code in (401, 503)
 
 
+def test_call_prompt_discloses_ai_identity():
+    prompt = webhook_server._call_system_prompt()
+    assert "asistente de IA" in prompt
+    assert "PRIMERA frase" in prompt
+
+
 def test_call_requires_fields(monkeypatch):
     _prepare(monkeypatch)
     client = TestClient(webhook_server.app)
