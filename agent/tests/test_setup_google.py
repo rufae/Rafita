@@ -42,6 +42,32 @@ async def test_existing_credentials_generates_auth_link(monkeypatch, tmp_path):
     assert "/setup_google <codigo>" in reply
 
 
+async def test_code_argument_with_url_params_is_cleaned(monkeypatch, tmp_path):
+    monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
+    (tmp_path / "credentials.json").write_text(
+        '{"installed": {"client_id": "x"}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(admin_module.settings, "admin_ids", [1])
+    called = {}
+
+    async def exchange(code):
+        called["code"] = code
+        return {"success": True, "message": "ok"}
+
+    monkeypatch.setattr(admin_module.google_service, "exchange_code", exchange)
+    update = _update()
+    await admin_module.setup_google_command(
+        update,
+        SimpleNamespace(
+            args=[
+                "4/0AXabc&scope=https://www.googleapis.com/auth/drive.readonly",
+                "https://www.googleapis.com/auth/calendar",
+            ]
+        ),
+    )
+    assert called["code"] == "4/0AXabc"
+
+
 async def test_code_argument_exchanges_token(monkeypatch, tmp_path):
     monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
     (tmp_path / "credentials.json").write_text("{}", encoding="utf-8")
@@ -132,7 +158,11 @@ async def test_oauth_already_connected_reports_it(monkeypatch, tmp_path):
     async def init_true():
         return True
 
+    async def no_missing():
+        return []
+
     monkeypatch.setattr(admin_module.google_services, "initialize", init_true)
+    monkeypatch.setattr(admin_module.google_services, "oauth_missing_scopes", no_missing)
     monkeypatch.setattr(
         type(admin_module.google_services), "auth_method", property(lambda self: "oauth")
     )
