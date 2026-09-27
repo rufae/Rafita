@@ -42,6 +42,20 @@ async def test_existing_credentials_generates_auth_link(monkeypatch, tmp_path):
     assert "/setup_google <codigo>" in reply
 
 
+def test_extract_auth_code_variants():
+    code = "4/0AXabc-def_ghi"
+    assert admin_module.extract_auth_code(code) == code
+    assert admin_module.extract_auth_code("code=%s&scope=x" % code) == code
+    assert (
+        admin_module.extract_auth_code(
+            "http://localhost:8080/?state=abc&iss=https://accounts.google.com"
+            "&code=%s&scope=https://www.googleapis.com/auth/drive" % code
+        )
+        == code
+    )
+    assert admin_module.extract_auth_code("=4/0AXabc%2Fdef&scope=y") == "4/0AXabc/def"
+
+
 async def test_code_argument_with_url_params_is_cleaned(monkeypatch, tmp_path):
     monkeypatch.setattr(admin_module, "CREDENTIALS_DIR", tmp_path)
     (tmp_path / "credentials.json").write_text(
