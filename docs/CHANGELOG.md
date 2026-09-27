@@ -71,6 +71,12 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- OAuth completado y verificado con la cuenta real (2026-09-27): Calendar,
+  Drive completo, Sheets y Docs (crear/leer/borrar sin la limitación de cuota
+  de la cuenta de servicio), Tasks, Gmail (lectura) y Fitness. El bot acepta
+  cualquier formato de código pegado (URL completa, `code=`, encoded). Fix:
+  `tasks().delete` usaba `taskId` en vez de `task`. Pendiente: habilitar
+  People API para contactos.
 - Corregido (2026-09-27, 3ª ronda): `credentials.json` de OAuth tiene
   prioridad sobre la cuenta de servicio en `/setup_google` (antes se ignoraba
   el OAuth subido); nuevo `GOOGLE_AUTH_MODE` (auto/servicio/oauth) y el

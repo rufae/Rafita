@@ -2573,6 +2573,27 @@ contra los dos nodos reales, no solo simulado en el PC de desarrollo.
       Drive ✅, APIs Sheets/Docs ✅ (crear sigue 403 por cuota, se resuelve
       con OAuth o carpeta compartida).
     - Tests: **235 passed**, 26 skipped; ruff/formato/mypy limpios.
+  - **Seguimiento 4 (2026-09-27, OAuth completado y E2E real con la cuenta)**:
+    - OAuth completado por el usuario con **todos los scopes** (Drive completo,
+      Sheets, Docs, Tasks, Gmail lectura, Contactos, Fitness). El bot acepta
+      cualquier formato de código pegado (URL completa, `code=`, `=`,
+      URL-encoded).
+    - **E2E con OAuth** (copia de la BD de producción, sin tocarla):
+      ```
+      auth=oauth | calendario=rafaelcastanoblanca1805@gmail.com
+      calendar ok | drive ok | sheets ok | docs ok | tasks ok | gmail ok
+      Calendar: crear/listar(25)/borrar OK
+      Drive: 5 ficheros
+      Sheets: crear/escribir/leer/borrar OK (sin el 403 de cuota de la SA)
+      Docs: crear/escribir/leer/borrar OK
+      Tasks: crear/borrar OK | Gmail: perfil con 2765 mensajes
+      Fitness: pasos de hoy OK | People: API sin habilitar (único fallo)
+      ```
+    - Bug corregido detectado por el E2E: `tasks().delete` usa el parámetro
+      `task` (no `taskId`).
+    - Pendiente del usuario: habilitar **People API** (enlace en
+      `docs/google-oauth.md` §1) para contactos.
+    - Tests: **237 passed**, 26 skipped; ruff/formato/mypy limpios.
 
 **Bloqueado / no verificable (rellenar si aplica):**
 

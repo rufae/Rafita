@@ -694,8 +694,9 @@ class GoogleServicesManager:
         return {"success": True, "id": data.get("id"), "title": data.get("title", title)}
 
     async def delete_task(self, task_id: str, tasklist: str = "@default") -> dict[str, Any]:
+        # La API espera el parámetro `task` (no `taskId`) — bug detectado por el E2E.
         await self._run(
-            lambda: self.tasks.tasks().delete(tasklist=tasklist, taskId=task_id), "borrar tarea"
+            lambda: self.tasks.tasks().delete(tasklist=tasklist, task=task_id), "borrar tarea"
         )
         return {"success": True, "message": "Tarea borrada"}
 
