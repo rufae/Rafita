@@ -13,13 +13,14 @@ from src.database import db
 from src.handlers.chat_tools import (
     TOOLS_DEFINITIONS,
     WRITE_TOOLS,
-    get_tools_with_date_context,
+    get_tools_for_message,
 )
 from src.i18n import currency_symbol, language_name, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
 from src.ollama_client import OllamaClientError, llm
 from src.services.google_service import google_service
+from src.services.google_services_manager import google_services
 from src.utils import obsidian_manager as ob
 from src.utils import workspace_manager as wm
 from src.utils.google_calendar_manager import gcal
@@ -379,7 +380,7 @@ async def _process_ai_message(
             content, tool_calls = await asyncio.wait_for(
                 llm.chat_with_tools(
                     messages=messages_for_llm,
-                    tools=get_tools_with_date_context(),
+                    tools=get_tools_for_message(user_text),
                     max_tokens=512,
                 ),
                 timeout=600.0,
@@ -1166,6 +1167,79 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     " (recortado)" if result.get("truncated") else "",
                     result.get("text", ""),
                 ),
+            }
+
+        elif func_name == "search_gmail":
+            result = await google_services.search_gmail(
+                query=args.get("query", ""),
+                max_results=int(args.get("max_results", 5) or 5),
+            )
+            if not result.get("success"):
+                return result
+            messages = result.get("messages", [])
+            if not messages:
+                return {"success": True, "message": "No encontré correos para esa búsqueda."}
+            lines = ["📧 Correos encontrados:"]
+            for mail in messages:
+                lines.append(
+                    "  • %s — de %s (%s)\n    %s"
+                    % (mail["subject"], mail["from"], mail["date"], mail["snippet"])
+                )
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif func_name == "manage_google_tasks":
+            action = args.get("action", "").strip().lower()
+            if action == "list":
+                result = await google_services.list_tasks()
+                tasks = result.get("tasks", [])
+                if not tasks:
+                    return {"success": True, "message": "No tienes tareas pendientes."}
+                lines = ["✅ Tareas de Google:"]
+                for task in tasks:
+                    lines.append("  • %s (id: %s)" % (task["title"], task["id"]))
+                return {"success": True, "message": "\n".join(lines)}
+            if action == "create":
+                title = args.get("title", "").strip()
+                if not title:
+                    return {"success": False, "message": "Indica el título de la tarea."}
+                return await google_services.create_task(title)
+            if action in ("complete", "delete"):
+                task_id = args.get("task_id", "").strip()
+                if not task_id:
+                    return {
+                        "success": False,
+                        "message": "Necesito el task_id (lista las tareas primero).",
+                    }
+                if action == "complete":
+                    return await google_services.complete_task(task_id)
+                return await google_services.delete_task(task_id)
+            return {
+                "success": False,
+                "message": "Acción no válida: list, create, complete, delete.",
+            }
+
+        elif func_name == "find_contact":
+            result = await google_services.find_contact(args.get("query", ""))
+            contacts = result.get("contacts", [])
+            if not contacts:
+                return {"success": True, "message": "No encontré ese contacto."}
+            lines = ["👤 Contactos encontrados:"]
+            for contact in contacts:
+                lines.append(
+                    "  • %s — %s — %s"
+                    % (
+                        contact["name"],
+                        contact["email"] or "sin correo",
+                        contact["phone"] or "sin teléfono",
+                    )
+                )
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif func_name == "fitness_daily_steps":
+            result = await google_services.fitness_daily_steps()
+            return {
+                "success": True,
+                "message": "Hoy llevas %s pasos." % result.get("steps", 0),
             }
 
         elif func_name == "ingest_file":

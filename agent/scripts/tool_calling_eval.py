@@ -245,6 +245,7 @@ async def _setup_runtime(tmp: Path) -> None:
 async def run_case(llm: Any, case: dict[str, Any], attempts: int, execute: bool) -> dict[str, Any]:
     from src.core.orchestrator import SYSTEM_PROMPT_VOICE
     from src.handlers.chat import TOOLS_DEFINITIONS, _execute_tool
+    from src.handlers.chat_tools import get_tools_for_message
 
     required = required_args_by_tool(TOOLS_DEFINITIONS)
     results: list[dict[str, Any]] = []
@@ -254,7 +255,7 @@ async def run_case(llm: Any, case: dict[str, Any], attempts: int, execute: bool)
                 {"role": "system", "content": SYSTEM_PROMPT_VOICE},
                 {"role": "user", "content": case["prompt"]},
             ],
-            tools=TOOLS_DEFINITIONS,
+            tools=get_tools_for_message(case["prompt"]),
             max_tokens=512,
         )
         calls = tool_calls or []
