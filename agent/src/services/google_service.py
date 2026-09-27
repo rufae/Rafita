@@ -10,13 +10,12 @@ from googleapiclient.errors import HttpError
 from src.config import settings
 from src.database import db
 from src.logger import logger
-from src.services.google_services_manager import event_start_error, google_services
+from src.services.google_services_manager import SCOPES, event_start_error, google_services
 from src.utils.security_manager import encrypt_value
 
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive.readonly",
-]
+# La lista de scopes vive en el modulo centralizado (bug 27/09: aqui habia
+# una lista local con solo calendar+drive.readonly y el enlace OAuth pedia
+# solo esos permisos).
 
 CRED_DIR = Path("/workspace/credentials")
 OAUTH_CREDENTIALS_FILE = CRED_DIR / "credentials.json"

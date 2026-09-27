@@ -248,6 +248,7 @@ class GoogleServicesManager:
         if not self._creds.valid:
             return False
         self._auth_method = "oauth"
+        self._sa_email = ""
         return True
 
     async def initialize(self, force: bool = False) -> bool:
@@ -406,6 +407,18 @@ class GoogleServicesManager:
                     )
                     return str(cal.get("id"))
         return configured or "primary"
+
+    async def oauth_missing_scopes(self) -> list[str]:
+        """Scopes requeridos que el token OAuth actual no tiene (para reautorizar)."""
+        try:
+            token_enc = await db.kv_get("google_token")
+            if not token_enc:
+                return list(SCOPES)
+            data = json.loads(decrypt_value(token_enc))
+            granted = set(data.get("scopes") or [])
+            return [scope for scope in SCOPES if scope not in granted]
+        except Exception:
+            return list(SCOPES)
 
     async def set_calendar_id(self, calendar_id: str) -> dict[str, Any]:
         cid = (calendar_id or "").strip()
