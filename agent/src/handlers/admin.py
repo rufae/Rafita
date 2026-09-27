@@ -199,6 +199,26 @@ async def alertas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 CREDENTIALS_DIR = Path("/workspace/credentials")
 
 
+def extract_auth_code(raw: str) -> str:
+    """Extrae el código OAuth de lo que pegue el usuario (bug 27/09).
+
+    Acepta: el código suelto, `code=XXX`, `...&code=XXX&scope=...`, la URL
+    completa de redirección (localhost) o restos con `=` delante. Des-escapa
+    el valor (%2F -> /).
+    """
+    import re
+    from urllib.parse import unquote
+
+    text = (raw or "").strip()
+    match = re.search(r"[?&]?code=([^&\s]+)", text)
+    if match:
+        text = match.group(1)
+    else:
+        text = text.lstrip("=").strip()
+    text = text.split("&")[0].strip()
+    return unquote(text)
+
+
 async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Fija el calendario de Google a usar (tarea 3.9). Solo administradores."""
     message = update.effective_message
@@ -318,9 +338,9 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         #   /setup_google            -> estado o enlace de autorizacion
         #   /setup_google <codigo>   -> intercambia el codigo por el token
         if args:
-            # El usuario suele pegar el codigo junto con "&scope=..." de la URL:
-            # quedarse solo con el codigo real.
-            code = args[0].split("&")[0].strip()
+            # El usuario puede pegar el codigo suelto, con "&scope=..." o la
+            # URL completa de redireccion: extraer el codigo real.
+            code = extract_auth_code(" ".join(args))
             result = await google_service.exchange_code(code)
             await message.reply_text(result.get("message", "Resultado desconocido."))
             logger.info("setup_google: codigo intercambiado para user %d", user.id)
