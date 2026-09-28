@@ -1,0 +1,50 @@
+{
+  "name": "Rafita · 7 Automatizacion · Ejecutable desde chat/voz",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ejemplo-rafita",
+        "options": {}
+      },
+      "id": "a1000002-0000-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Aqui va tu logica: facturas, informes, lo que quieras.\n// En modo 'todos los items' se usa $input (no $json).\nconst primero = $input.first().json;\nconst datos = primero.body || primero;\nreturn [{ json: { ok: true, mensaje: 'Flujo de ejemplo ejecutado', recibido: datos } }];"
+      },
+      "id": "a1000002-0000-4000-8000-000000000002",
+      "name": "Procesar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Procesar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
