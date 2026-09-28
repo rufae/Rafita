@@ -153,6 +153,17 @@ def test_sanitize_removes_long_ids():
     assert "abcdef1234567890abcdef1234567890" not in out
 
 
+def test_sanitize_units_and_loanwords():
+    out = sanitize_for_tts("Tienes 24 h, paga el 90 % (8,88 €) en 30 min")
+    assert "24 horas" in out
+    assert "por ciento" in out
+    assert "euros" in out
+    assert "minutos" in out
+    out2 = sanitize_for_tts("☀️ *Briefing de hoy*: **importante**")
+    assert "resumen de hoy" in out2.lower()
+    assert "*" not in out2 and "☀" not in out2
+
+
 # ---------- 11.3 interrupcion y colgado ----------
 
 

@@ -127,12 +127,18 @@ def _load_piper_voice(model_path: str):
         with open(config_path) as f:
             cfg = json.load(f)
 
+        length_scale = cfg.get("inference", {}).get("length_scale", 1.0)
+        speed = float(getattr(settings, "tts_speed", 0.0) or 0.0)
+        if speed > 0:
+            # TTS_SPEED: >1 = mas lento y pausado, <1 = mas rapido.
+            length_scale = speed
+
         config = PiperConfig(
             num_symbols=cfg["num_symbols"],
             num_speakers=cfg["num_speakers"],
             sample_rate=cfg.get("audio", {}).get("sample_rate", 22050),
             espeak_voice=cfg.get("espeak", {}).get("voice", ""),
-            length_scale=cfg.get("inference", {}).get("length_scale", 1.0),
+            length_scale=length_scale,
             noise_scale=cfg.get("inference", {}).get("noise_scale", 0.667),
             noise_w=cfg.get("inference", {}).get("noise_w", 0.8),
             phoneme_id_map=cfg["phoneme_id_map"],
