@@ -385,7 +385,7 @@ async def test_convert_to_ogg_error_returns_wav(tmp_path, monkeypatch):
 
 
 async def test_synthesize_wav_bytes_without_tts_returns_none(monkeypatch):
-    async def fake_tts(text):
+    async def fake_tts(text, engine=None):
         return None
 
     monkeypatch.setattr(tts, "text_to_speech", fake_tts)
@@ -398,7 +398,7 @@ async def test_synthesize_wav_bytes_returns_bytes_and_cleans(tmp_path, monkeypat
     wav = out_dir / "response.wav"
     wav.write_bytes(b"RIFFWAV")
 
-    async def fake_tts(text):
+    async def fake_tts(text, engine=None):
         return wav
 
     monkeypatch.setattr(tts, "text_to_speech", fake_tts)
@@ -412,7 +412,7 @@ async def test_synthesize_wav_bytes_unreadable_returns_none(tmp_path, monkeypatc
     out_dir.mkdir()
     missing = out_dir / "response.wav"
 
-    async def fake_tts(text):
+    async def fake_tts(text, engine=None):
         return missing
 
     monkeypatch.setattr(tts, "text_to_speech", fake_tts)

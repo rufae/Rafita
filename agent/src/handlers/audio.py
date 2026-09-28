@@ -194,7 +194,9 @@ async def _send_voice_reply_fast(
         for i, chunk in enumerate(chunks):
             if not chunk.strip():
                 continue
-            wav_path = await text_to_speech(chunk)
+            # Respuestas de voz del chat: motor rapido por defecto (TTS_ENGINE_CHAT).
+            engine = (settings.tts_engine_chat or "piper").strip().lower()
+            wav_path = await text_to_speech(chunk, engine=engine)
             if wav_path is None:
                 continue
             ogg_path = await convert_to_ogg(wav_path)
