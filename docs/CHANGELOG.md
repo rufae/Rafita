@@ -8,6 +8,13 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Añadido
+- **Gastos por foto**: al enviar un ticket, la visión extrae importe, comercio,
+  fecha y categoría y el bot pide confirmación con botones (Registrar /
+  Descartar) antes de guardarlo en finanzas.
+- **Visión optimizada**: si el modelo de visión es el mismo que el de chat
+  (p. ej. gemma4:12b multimodal) no se descarga/carga en cada imagen — un
+  único modelo residente y sin *hot-swap*. `llava:7b` queda como alternativa
+  para equipos con poca VRAM.
 - **Integración completa con Google** vía OAuth: Calendar, Drive, Sheets,
   Docs, Tasks, Gmail (lectura y envío) y Contactos, con errores humanizados y
   resolución de calendario configurable (`/calendario`, `/setup_google`).
