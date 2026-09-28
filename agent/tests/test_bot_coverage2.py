@@ -427,3 +427,34 @@ async def test_process_raw_update_variants(monkeypatch):
     }
     await bot._process_raw_update(voice_payload)
     assert bot._app.process_update.await_count == 2
+
+
+async def test_raw_poll_processes_callback_queries(monkeypatch):
+    """Bug 2026-09-28: los botones inline no hacian nada porque el bucle de
+    polling descartaba los update de tipo callback_query."""
+    bot = make_bot()
+    bot._app = _fake_app()
+    processed = []
+
+    async def fake_process(update):
+        processed.append(update)
+
+    monkeypatch.setattr(bot._app, "process_update", fake_process, raising=False)
+    callback_update = {
+        "update_id": 99,
+        "callback_query": {
+            "id": "cb1",
+            "from": {"id": 42, "is_bot": False, "first_name": "x"},
+            "chat_instance": "ci1",
+            "data": "brief_reagendar",
+            "message": {
+                "message_id": 7,
+                "date": 0,
+                "chat": {"id": 42, "type": "private"},
+                "text": "briefing",
+            },
+        },
+    }
+    await bot._process_raw_update(callback_update)
+    assert processed and processed[0].callback_query is not None
+    assert processed[0].callback_query.data == "brief_reagendar"

@@ -279,30 +279,39 @@ class RafitaBot:
 
     async def _process_raw_update(self, upd: dict) -> None:
         msg = upd.get("message") or upd.get("edited_message")
-        if not msg:
+        callback = upd.get("callback_query")
+        if not msg and not callback:
             return
-        chat_id = msg.get("chat", {}).get("id")
-        user = msg.get("from", {})
         import time as _time
 
         _ts = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
-
-        msg_type = "text"
-        if msg.get("voice"):
-            msg_type = "voice"
-        elif msg.get("photo"):
-            msg_type = "photo"
-        elif msg.get("document"):
-            msg_type = "document"
-
-        logger.info(
-            "[TELEMETRY A] Mensaje recibido [%s] [%s] chat=%d user=@%s type=%s",
-            _ts,
-            msg_type,
-            chat_id,
-            user.get("username", "?"),
-            msg_type,
-        )
+        if msg:
+            chat_id = msg.get("chat", {}).get("id")
+            user = msg.get("from", {})
+            msg_type = "text"
+            if msg.get("voice"):
+                msg_type = "voice"
+            elif msg.get("photo"):
+                msg_type = "photo"
+            elif msg.get("document"):
+                msg_type = "document"
+            logger.info(
+                "[TELEMETRY A] Mensaje recibido [%s] [%s] chat=%d user=@%s type=%s",
+                _ts,
+                msg_type,
+                chat_id,
+                user.get("username", "?"),
+                msg_type,
+            )
+        else:
+            # Bug 2026-09-28: los callback_query (botones inline) se
+            # descartaban aqui y ningun boton funcionaba.
+            logger.info(
+                "[TELEMETRY A] Callback recibido [%s] user=%s data=%s",
+                _ts,
+                (callback or {}).get("from", {}).get("id"),
+                (callback or {}).get("data"),
+            )
 
         from telegram import Update
 
