@@ -13,9 +13,12 @@ from src.config import settings
 
 CURRENCY_SYMBOLS: dict[str, str] = {
     "EUR": "€",
+    "EURO": "€",
+    "EUROS": "€",
     "MXN": "$",
     "USD": "$",
     "GBP": "£",
+    "LIBRA": "£",
     "ARS": "$",
     "COP": "$",
     "CLP": "$",

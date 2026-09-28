@@ -252,6 +252,24 @@ async def ubicacion_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await message.reply_text(result.get("message", "Resultado desconocido."))
 
 
+async def clientes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Resumen del pipeline de clientes y seguimientos pendientes (mini-CRM)."""
+    message = update.effective_message
+    if not message:
+        return
+    from src.services.crm_service import handle as crm_handle
+    from src.services.crm_service import seguimientos_pendientes
+
+    resumen = await crm_handle("summary", {})
+    await message.reply_text(resumen.get("message", "Sin datos."), parse_mode="Markdown")
+    pendientes = await seguimientos_pendientes()
+    if pendientes:
+        lineas = ["🔔 *Seguimientos pendientes:*"]
+        for cliente in pendientes[:5]:
+            lineas.append("  • *%s* — %s" % (cliente["nombre"], cliente["motivo"]))
+        await message.reply_text("\n".join(lineas), parse_mode="Markdown")
+
+
 async def sync_google_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Copia contactos, calendario y Drive al segundo cerebro local."""
     message = update.effective_message

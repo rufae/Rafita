@@ -449,6 +449,72 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "manage_crm",
+            "description": "Gestiona el mini-CRM de clientes (notas en la carpeta CRM/ "
+            "de la boveda). Acciones: create/update (crea o actualiza un "
+            "cliente con sus datos), note (anade una nota fechada), estado "
+            "(cambia el estado: lead, contactado, propuesta, cerrado, "
+            "perdido), contacto (registra que hubo contacto hoy), list "
+            "(lista clientes, opcionalmente por estado) y summary (resumen "
+            "del pipeline con totales). Usalo con frases como 'mi cliente "
+            "Maria', 'pipeline', 'marca a Maria como cerrado', 'anota que "
+            "Juan quiere presupuesto'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "create",
+                            "update",
+                            "note",
+                            "estado",
+                            "contacto",
+                            "list",
+                            "summary",
+                        ],
+                        "description": "Accion a realizar",
+                    },
+                    "nombre": {
+                        "type": "string",
+                        "description": "Nombre del cliente (requerido salvo en list/summary)",
+                    },
+                    "estado": {
+                        "type": "string",
+                        "enum": ["lead", "contactado", "propuesta", "cerrado", "perdido"],
+                        "description": "Estado del cliente",
+                    },
+                    "valor": {
+                        "type": "number",
+                        "description": "Valor economico del cliente/proyecto",
+                    },
+                    "email": {"type": "string", "description": "Email de contacto"},
+                    "telefono": {"type": "string", "description": "Telefono de contacto"},
+                    "empresa": {"type": "string", "description": "Empresa del cliente"},
+                    "proximo_paso": {
+                        "type": "string",
+                        "description": "Siguiente paso acordado (ej: 'enviar presupuesto')",
+                    },
+                    "proximo_seguimiento": {
+                        "type": "string",
+                        "description": "Fecha de seguimiento AAAA-MM-DD (si el usuario la dio)",
+                    },
+                    "nota": {
+                        "type": "string",
+                        "description": "Texto de la nota (acciones create/update/note)",
+                    },
+                    "fecha": {
+                        "type": "string",
+                        "description": "Fecha del contacto AAAA-MM-DD (accion contacto; por defecto hoy)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_recurring_reminder",
             "description": "Configura un recordatorio recurrente con patron "
             "temporal. Patrones soportados: daily (cada 24h), "

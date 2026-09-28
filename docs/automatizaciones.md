@@ -206,7 +206,9 @@ disparo + entrega; endpoints HMAC `/automation/*`).
 
 ### Automatizaciones aún no implementadas (catálogo A-D)
 - B. Secuencias de email con personalización dinámica.
-- C. Mini-CRM de ventas y gestión de clientes.
+- ~~C. Mini-CRM de ventas y gestión de clientes~~ **Implementado (2026-09-28)**:
+  notas `CRM/<cliente>.md` con estado/valor/seguimiento, comando `/clientes`,
+  tool `manage_crm` en el chat y flujo n8n 9 (seguimientos los lunes).
 - D1. Facturas por email → Drive + contabilidad.
 - D2. Guardián de infraestructura con autocuración (2A).
 - D3. Revisión semanal GTD, actas de reunión, suscripciones recurrentes,

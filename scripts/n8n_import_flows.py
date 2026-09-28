@@ -38,6 +38,7 @@ ETIQUETAS = {
     "06-radar-ia.json": "Radar",
     "07-ejecutable-chat-voz.json": "Automatizacion",
     "08-plantilla-aviso-programado.json": "Plantillas",
+    "09-crm-seguimiento.json": "Clientes",
 }
 # Las plantillas de ejemplo no se activan nunca.
 NO_ACTIVAR = {"08-plantilla-aviso-programado.json"}

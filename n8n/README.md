@@ -15,6 +15,7 @@ valores sensibles se sustituyen desde el `.env` del proyecto.
 | `06-radar-ia.json` | Radar | Cron 09:00 | Busca novedades (GitHub/RSS), las filtra con IA y guarda las mejores en la bóveda. |
 | `07-ejecutable-chat-voz.json` | Automatización | Webhook | Permite lanzar un flujo desde el chat o la llamada de Rafita. |
 | `08-plantilla-aviso-programado.json` | Plantillas | Cron (inactivo) | Ejemplo mínimo: aviso programado a Telegram. |
+| `09-crm-seguimiento.json` | Clientes | Lunes 09:00 | Avisa de clientes del CRM sin contacto reciente o con seguimiento vencido. |
 
 Los flujos están etiquetados por categoría (Briefing, Correo, Bóveda, Google,
 Infra, Radar, Automatización, Plantillas) para poder filtrarlos en n8n.
