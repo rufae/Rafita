@@ -259,3 +259,21 @@ async def test_generate_response_stream_without_tools_chunks_words(monkeypatch):
     tokens = [t async for t in orchestrator.generate_response_stream("hola", 7, voice=True)]
     assert "".join(tokens) == "Una respuesta corta."
     assert saved == ["Una respuesta corta."]
+
+
+def test_sanitize_normalizes_units_for_speech():
+    from src.utils.voice_text import sanitize_for_tts
+
+    assert "24 horas" in sanitize_for_tts("Tienes 24 h para responder")
+    assert "90 por ciento" in sanitize_for_tts("Hay un 90 % de lluvia")
+    assert "23 grados" in sanitize_for_tts("Temperatura 23 °C")
+    assert "8,88 euros" in sanitize_for_tts("Total: 8,88 €")
+    assert "5 minutos" in sanitize_for_tts("En 5 min empieza")
+
+
+def test_sanitize_removes_stray_markdown_and_leading_symbols():
+    from src.utils.voice_text import sanitize_for_tts
+
+    assert sanitize_for_tts("hola * mundo _ raro #") == "hola mundo raro"
+    assert sanitize_for_tts("🎉🎉 Hola Rafael") == "Hola Rafael"
+    assert sanitize_for_tts("--- ¿Qué tal?") == "¿Qué tal?"

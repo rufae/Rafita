@@ -241,6 +241,17 @@ async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message.reply_text(result.get("message", "Resultado desconocido."))
 
 
+async def ubicacion_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fija la ubicacion para el tiempo (AEMET) y los avisos CAP."""
+    message = update.effective_message
+    if not message:
+        return
+    from src.services.automation_service import set_location
+
+    result = await set_location(" ".join(context.args or []))
+    await message.reply_text(result.get("message", "Resultado desconocido."))
+
+
 async def sync_google_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Copia contactos, calendario y Drive al segundo cerebro local."""
     message = update.effective_message

@@ -28,6 +28,15 @@ class _FakeServices:
             ],
         }
 
+    async def list_tasks(self, show_completed=False, max_results=20):
+        return {"success": True, "tasks": [{"id": "t1", "title": "Tarea A"}]}
+
+    async def search_gmail(self, query="", max_results=5):
+        return {
+            "success": True,
+            "messages": [{"subject": "Asunto", "from": "alguien@x.com", "date": "hoy"}],
+        }
+
     async def list_drive(self, kind="all", max_results=50, folder_id=None, folder=None):
         return {
             "success": True,
@@ -54,7 +63,13 @@ async def test_sync_google_to_vault_writes_notes(monkeypatch):
     result = await sync_mod.sync_google_to_vault()
 
     assert result["success"]
-    assert set(written) == {"Contactos Google", "Calendario Google", "Drive Google"}
+    assert set(written) == {
+        "Contactos Google",
+        "Calendario Google",
+        "Drive Google",
+        "Tareas Google",
+        "Correo Google",
+    }
     assert all(folder == "Google" for _content, folder in written.values())
     assert "Mama" in written["Contactos Google"][0]
     assert "Dentista" in written["Calendario Google"][0]
