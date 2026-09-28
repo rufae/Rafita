@@ -1,0 +1,90 @@
+{
+  "name": "Rafita · 3 Boveda · Captura (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "captura-vault",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b2000003-0000-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Toma el cuerpo entrante (text, title, tags, source) y firma HMAC.\nconst crypto = require('crypto');\nconst secret = 'PEGA_AQUI_TU_WEBHOOK_SECRET';\nconst data = $input.first().json.body || {};\nconst body = JSON.stringify({\n  text: data.text || '',\n  title: data.title || '',\n  tags: data.tags || [],\n  source: data.source || 'n8n',\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+      },
+      "id": "b2000003-0000-4000-8000-000000000002",
+      "name": "Firmar HMAC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://rafita-agent-core:8000/automation/capture",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {},
+        "contentType": "raw"
+      },
+      "id": "b2000003-0000-4000-8000-000000000003",
+      "name": "Rafita captura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Firmar HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firmar HMAC": {
+      "main": [
+        [
+          {
+            "node": "Rafita captura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
