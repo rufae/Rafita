@@ -521,6 +521,17 @@ async def automation_send_voice(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)[:200]})
 
 
+@app.post("/automation/sync")
+async def automation_sync(request: Request):
+    """Sync bidireccional Google <-> boveda (automatizacion A)."""
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    from src.services.sync_service import sync_google_vault
+
+    return await sync_google_vault()
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

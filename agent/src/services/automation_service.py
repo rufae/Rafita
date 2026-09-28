@@ -11,12 +11,127 @@ gateway son HMAC y devuelven JSON listo para n8n:
 """
 
 import json
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.logger import logger
+
+# Capitales de provincia -> (codigo INE, zona CAP meteoalerta si conocida).
+# La zona CAP se puede cambiar en .env (AEMET_AREA; anexo 2 del Plan
+# Meteoalerta). 61 = Andalucia (verificado contra la API de AEMET).
+CIUDADES: dict[str, tuple[str, str]] = {
+    "sevilla": ("41091", "61"),
+    "madrid": ("28079", ""),
+    "barcelona": ("08019", ""),
+    "valencia": ("46250", ""),
+    "zaragoza": ("50297", ""),
+    "malaga": ("29067", "61"),
+    "murcia": ("30030", ""),
+    "alicante": ("03014", ""),
+    "cordoba": ("14021", "61"),
+    "granada": ("18087", "61"),
+    "valladolid": ("47186", ""),
+    "bilbao": ("48020", ""),
+    "vitoria": ("01059", ""),
+    "pamplona": ("31201", ""),
+    "santander": ("39075", ""),
+    "oviedo": ("33044", ""),
+    "a coruna": ("15030", ""),
+    "vigo": ("36057", ""),
+    "palma": ("07040", ""),
+    "las palmas": ("35016", ""),
+    "santa cruz de tenerife": ("38038", ""),
+    "cadiz": ("11012", "61"),
+    "huelva": ("21041", "61"),
+    "salamanca": ("37274", ""),
+    "toledo": ("45168", ""),
+    "badajoz": ("06015", ""),
+    "logrono": ("26089", ""),
+    "leon": ("24089", ""),
+    "burgos": ("09059", ""),
+    "albacete": ("02003", ""),
+    "jaen": ("23050", "61"),
+    "almeria": ("04013", "61"),
+    "marbella": ("29069", "61"),
+    "jerez": ("11020", "61"),
+}
+
+
+async def _location() -> tuple[str, str, str]:
+    """(municipio_ine, zona_cap, nombre) con override en BD si existe."""
+    municipio = (settings.briefing_municipio or "28079").strip()
+    area = (settings.aemet_area or "").strip()
+    nombre = ""
+    try:
+        from src.database import db
+
+        stored_m = await db.kv_get("briefing_municipio")
+        stored_a = await db.kv_get("aemet_area")
+        stored_n = await db.kv_get("ubicacion_nombre")
+        if stored_m:
+            municipio = str(stored_m).strip()
+        if stored_a:
+            area = str(stored_a).strip()
+        if stored_n:
+            nombre = str(stored_n).strip()
+    except Exception:
+        pass
+    return municipio, area, nombre
+
+
+async def set_location(ciudad: str) -> dict[str, Any]:
+    """Guarda la ubicacion (ciudad del mapa o codigo INE de 5 digitos)."""
+    from src.database import db
+
+    raw = (ciudad or "").strip()
+    if not raw:
+        return {
+            "success": False,
+            "message": (
+                "Dime tu ciudad, por ejemplo: /ubicacion Sevilla "
+                "(o el codigo INE de 5 digitos, ej: /ubicacion 41091)."
+            ),
+        }
+    key = _normalize_location(raw)
+    if key.isdigit() and len(key) == 5:
+        municipio, area = key, ""
+        nombre = "INE %s" % key
+    elif key in CIUDADES:
+        municipio, area = CIUDADES[key]
+        nombre = raw.title()
+    else:
+        return {
+            "success": False,
+            "message": (
+                "No tengo '%s' en mi lista de capitales. Busca tu codigo INE "
+                "(5 digitos) y usa /ubicacion <codigo>." % raw
+            ),
+        }
+    try:
+        await db.kv_set("briefing_municipio", municipio)
+        await db.kv_set("ubicacion_nombre", nombre)
+        if area:
+            await db.kv_set("aemet_area", area)
+    except Exception as e:
+        return {"success": False, "message": "No pude guardar la ubicacion: %s" % str(e)[:120]}
+    extra = (
+        " Avisos AEMET activados para la zona %s." % area
+        if area
+        else " (los avisos CAP usan AEMET_AREA del .env)."
+    )
+    return {
+        "success": True,
+        "message": "📍 Ubicación guardada: %s (INE %s).%s" % (nombre, municipio, extra),
+    }
+
+
+def _normalize_location(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
+
 
 # ---------------------------------------------------------------- tiempo
 
@@ -26,7 +141,8 @@ async def _aemet_weather() -> str:
     key = (settings.aemet_api_key or "").strip()
     if not key:
         return ""
-    code = (settings.briefing_municipio or "").strip()
+    code, _area, _nombre = await _location()
+    code = (code or "").strip()
     if not code:
         return ""
     try:
@@ -41,6 +157,11 @@ async def _aemet_weather() -> str:
             first = json.loads((await client.get(url)).content.decode("latin-1"))
             datos_url = first.get("datos")
             if not datos_url:
+                logger.warning(
+                    "AEMET: respuesta sin datos (%s) para %s",
+                    first.get("descripcion", "?"),
+                    code,
+                )
                 return ""
             payload = json.loads((await client.get(datos_url)).content.decode("latin-1"))
         dia = payload[0]["prediccion"]["dia"][0]
@@ -163,10 +284,14 @@ async def _agenda_tasks_mail() -> tuple[list[str], list[str], list[str], list[di
     return agenda, tareas, correo, events
 
 
-def _parse_cap_alerts(blob: bytes) -> list[str]:
-    """Extrae avisos activos de un tar.gz CAP de AEMET (sin dependencias).
+def _parse_cap_alerts(blob: bytes, province: str = "") -> list[str]:
+    """Extrae avisos activos de un fichero CAP de AEMET (sin dependencias).
 
-    Devuelve lineas tipo '🟠 Moderado — Lluvias — Madrid (hasta 20:00)'.
+    AEMET puede devolver un tar (comprimido o no) con varios XML CAP o un XML
+    directo; se aceptan ambos. Con `province` (2 digitos INE, p.ej. '41') solo
+    se devuelven los avisos de esa provincia (el codigo de zona es
+    [CCAA 2][provincia 2][zona 2], p.ej. 614102 = Sevilla). Devuelve lineas
+    tipo '🟠 Severe — Lluvias — Campiña sevillana (hasta 20:00)'.
     """
     import io
     import tarfile
@@ -178,47 +303,67 @@ def _parse_cap_alerts(blob: bytes) -> list[str]:
     def _find_all(root, name):
         return [e for e in root.iter() if _tag(e) == name]
 
-    severity_icons = {"Moderate": "🟡", "Severe": "🟠", "Extreme": "🔴"}
-    alerts: list[str] = []
+    xml_blobs: list[bytes] = []
     try:
-        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:*") as tar:
             for member in tar.getmembers():
                 if not member.name.lower().endswith(".xml"):
                     continue
                 handle = tar.extractfile(member)
-                if not handle:
-                    continue
-                root = ET.fromstring(handle.read())
-                for info in _find_all(root, "info"):
-                    severity = ""
-                    event = ""
-                    area = ""
-                    expires = ""
-                    for child in info:
-                        name = _tag(child)
-                        text = (child.text or "").strip()
-                        if name == "severity":
-                            severity = text
-                        elif name == "event":
-                            event = text
-                        elif name == "areaDesc" and not area:
-                            area = text
-                        elif name == "expires":
-                            expires = text
-                    if severity in severity_icons:
-                        when = expires[11:16] if len(expires) > 15 else ""
-                        alerts.append(
-                            "%s %s — %s — %s%s"
-                            % (
-                                severity_icons[severity],
-                                severity,
-                                event or "aviso",
-                                area or "tu zona",
-                                " (hasta %s)" % when if when else "",
-                            )
-                        )
-    except Exception as e:
-        logger.warning("AEMET CAP: no se pudieron parsear los avisos (%s)", str(e)[:120])
+                if handle:
+                    xml_blobs.append(handle.read())
+    except Exception:
+        # No es un tar: puede ser un XML CAP directo.
+        xml_blobs = [blob]
+
+    severity_icons = {"Moderate": "🟡", "Severe": "🟠", "Extreme": "🔴"}
+    alerts: list[str] = []
+    for xml_blob in xml_blobs:
+        try:
+            root = ET.fromstring(xml_blob)
+        except Exception:
+            continue
+        for info in _find_all(root, "info"):
+            # CAP puede traer el mismo aviso en varios idiomas: quedarse con es.
+            languages = [(e.text or "").strip() for e in info if _tag(e) == "language"]
+            language = languages[0] if languages else ""
+            if language and not language.lower().startswith("es"):
+                continue
+            severity = ""
+            event = ""
+            expires = ""
+            for child in info:
+                name = _tag(child)
+                text = (child.text or "").strip()
+                if name == "severity":
+                    severity = text
+                elif name == "event":
+                    event = text
+                elif name == "expires":
+                    expires = text
+            # areaDesc va anidado en <area><areaDesc>
+            areas = [(e.text or "").strip() for e in _find_all(info, "areaDesc")]
+            area = areas[0] if areas else ""
+            # Codigos de zona (geocode de 6 digitos) para filtrar por provincia.
+            geocodes = [
+                (e.text or "").strip()
+                for e in _find_all(info, "value")
+                if (e.text or "").strip().isdigit() and len((e.text or "").strip()) >= 6
+            ]
+            if province and geocodes and not any(g[2:4] == province for g in geocodes):
+                continue
+            if severity in severity_icons:
+                when = expires[11:16] if len(expires) > 15 else ""
+                alerts.append(
+                    "%s %s — %s — %s%s"
+                    % (
+                        severity_icons[severity],
+                        severity,
+                        event or "aviso",
+                        area or "tu zona",
+                        " (hasta %s)" % when if when else "",
+                    )
+                )
     # Sin duplicados, maximo 3
     unique: list[str] = []
     for alert in alerts:
@@ -228,9 +373,11 @@ def _parse_cap_alerts(blob: bytes) -> list[str]:
 
 
 async def _aemet_alerts() -> list[str]:
-    """Avisos CAP oficiales de AEMET para la zona configurada."""
+    """Avisos CAP oficiales de AEMET para la provincia configurada."""
     key = (settings.aemet_api_key or "").strip()
-    area = (settings.aemet_area or "").strip()
+    code, area, _nombre = await _location()
+    area = (area or "").strip()
+    province = (code or "")[:2] if len(code or "") >= 2 else ""
     if not key or not area:
         return []
     try:
@@ -246,7 +393,7 @@ async def _aemet_alerts() -> list[str]:
             if not datos:
                 return []
             blob = (await client.get(datos)).content
-        return _parse_cap_alerts(blob)
+        return _parse_cap_alerts(blob, province=province)
     except Exception as e:
         logger.warning("AEMET CAP no disponible: %s", str(e)[:120])
         return []
@@ -351,6 +498,19 @@ async def build_briefing() -> dict[str, Any]:
         text = urgent + "\n\n" + text
     if alerts:
         text = "🚨 *Avisos AEMET:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
+
+    # Primera vez: pedir la ubicacion para el tiempo y los avisos.
+    try:
+        from src.database import db
+
+        configured = await db.kv_get("briefing_municipio")
+    except Exception:
+        configured = None
+    if not configured:
+        text += (
+            "\n\n📍 _Configura tu ubicación con /ubicacion <ciudad> para el "
+            "tiempo y los avisos (ej: /ubicacion Sevilla)._"
+        )
 
     await _save_briefing_copy(text)
 

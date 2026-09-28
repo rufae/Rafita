@@ -87,7 +87,8 @@ class Settings(BaseSettings):
     # Tiempo con AEMET (Espana, gratis): clave y municipio (codigo INE).
     aemet_api_key: str = Field("", alias="AEMET_API_KEY")
     briefing_municipio: str = Field("28079", alias="BRIEFING_MUNICIPIO")
-    # Zona meteoalerta para avisos CAP (61 = Madrid; ver meteoalerta).
+    # Zona meteoalerta para avisos CAP (61 = Andalucia; 62 = Aragon...; ver
+    # anexo 2 del Plan Meteoalerta de AEMET).
     aemet_area: str = Field("61", alias="AEMET_AREA")
 
     # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.

@@ -34,6 +34,23 @@ _REPEAT_SUBSTR_RE = re.compile(r"\b(\w{1,3})(?:\1){2,}\b", re.IGNORECASE)
 # IDs/tecnicismos largos que no se deben leer.
 _LONG_ID_RE = re.compile(r"\b[a-zA-Z0-9_-]{24,}\b")
 
+# Unidades: que no se lea "veinticuatro h" ni "por ciento" mal.
+_UNIT_REPLACEMENTS = [
+    (re.compile(r"(\d[\d.,]*)\s*°\s*C\b"), r"\1 grados"),
+    (re.compile(r"(\d[\d.,]*)\s*%"), r"\1 por ciento"),
+    (re.compile(r"(\d[\d.,]*)\s*€"), r"\1 euros"),
+    (re.compile(r"(\d[\d.,]*)\s*km\b", re.IGNORECASE), r"\1 kilómetros"),
+    (re.compile(r"(\d[\d.,]*)\s*h\b"), r"\1 horas"),
+    (re.compile(r"(\d[\d.,]*)\s*min\b", re.IGNORECASE), r"\1 minutos"),
+    (re.compile(r"(\d[\d.,]*)\s*GB\b"), r"\1 gigabytes"),
+    (re.compile(r"(\d[\d.,]*)\s*MB\b"), r"\1 megabytes"),
+]
+# Restos de Markdown que quedan sueltos (asterisco/almohadilla...).
+_STRAY_MD_RE = re.compile(r"[*_#`~|]+")
+# Simbolos al inicio (emojis sobrantes, comillas, guiones): causan balbuceo.
+# Se conservan los signos de apertura espanoles (¿ ¡).
+_LEADING_SYMBOLS_RE = re.compile(r"^[^\wÁÉÍÓÚÜÑáéíóúüñ¿¡]+")
+
 
 def sanitize_for_tts(text: str) -> str:
     """Devuelve texto listo para sintetizar en voz."""
@@ -52,8 +69,13 @@ def sanitize_for_tts(text: str) -> str:
     out = _REPEAT_WORD_RE.sub(r"\1", out)
     out = _REPEAT_SUBSTR_RE.sub(r"\1", out)
     out = _LONG_ID_RE.sub("", out)
+    for pattern, replacement in _UNIT_REPLACEMENTS:
+        out = pattern.sub(replacement, out)
+    out = _STRAY_MD_RE.sub(" ", out)
     out = _MULTISPACE_RE.sub(" ", out)
     out = _MULTINEWLINE_RE.sub(" ", out)
+    out = out.strip()
+    out = _LEADING_SYMBOLS_RE.sub("", out)
     return out.strip()
 
 

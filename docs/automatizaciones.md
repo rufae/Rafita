@@ -182,3 +182,36 @@ disparo + entrega; endpoints HMAC `/automation/*`).
    o sale una oportunidad que encaja con tu perfil.
 8. **Pipeline de contenido**: ideas del vault → borradores → calendario de
    publicación → recordatorio.
+
+---
+
+## Pendientes documentados (para hacer más adelante)
+
+### Voz más humana (mejora futura)
+- **Ya hecho**: voz por defecto `es_ES-davefx-medium` (calidad media) y
+  limpieza de texto (sin Markdown, emojis ni símbolos; unidades normalizadas
+  «24 h» → «24 horas»). Configurable con `TTS_VOICE`.
+- **Opciones siguientes** (gratis, local):
+  1. Voz **`high`** de Piper cuando exista para español (p. ej. `es_MX-claude-high`)
+     o voces `medium` alternativas (`es_ES-sharvard-medium`) — comparar y elegir.
+  2. **XTTS v2 / Coqui TTS** local: clonación de voz y prosodia más natural
+     (más CPU/GPU; probar en la torre).
+  3. **SSML-lite**: pausas y énfasis insertando comas/puntos suspensivos;
+     velocidad con `length_scale` de Piper (añadir `TTS_SPEED` al .env).
+  4. Trocear por frases con pausas naturales y respetar signos (ya se hace por
+     fragmentos en el modo llamada).
+
+### Automatizaciones aún no implementadas (catálogo A-D)
+- B. Secuencias de email con personalización dinámica.
+- C. Mini-CRM de ventas y gestión de clientes.
+- D1. Facturas por email → Drive + contabilidad.
+- D2. Guardián de infraestructura con autocuración (2A).
+- D3. Revisión semanal GTD, actas de reunión, suscripciones recurrentes,
+  onboarding de cliente, monitor de precios/licitaciones, pipeline de contenido.
+
+### Otras mejoras pendientes
+- RAG con bóveda real y reranking (híbrido BM25 + vectorial).
+- Métricas de coste/latencia por usuario y alertas proactivas de infraestructura.
+- Onboarding guiado (`/start`) que pregunte ubicación, Google, vault y
+  preferencias en pasos.
+- i18n completo, PWA de chat+voz y dispositivo de voz dedicado.

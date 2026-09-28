@@ -111,6 +111,7 @@ class RafitaBot:
             TelegramBotCommand("status", "Panel de control completo del sistema"),
             TelegramBotCommand("setup_google", "Configurar Google Calendar"),
             TelegramBotCommand("sync_google", "Copiar Google al segundo cerebro"),
+            TelegramBotCommand("ubicacion", "Fijar tu ciudad (tiempo y avisos)"),
         ]
         await self._app.bot.set_my_commands(bot_commands)
 
@@ -124,6 +125,7 @@ class RafitaBot:
             eventos_command,
             setup_google_command,
             sync_google_command,
+            ubicacion_command,
         )
         from src.handlers.audio import voice_handler as audio_voice_handler
         from src.handlers.chat import (
@@ -174,6 +176,7 @@ class RafitaBot:
 
         self._app.add_handler(CommandHandler("setup_google", self._wrap(setup_google_command)))
         self._app.add_handler(CommandHandler("sync_google", self._wrap(sync_google_command)))
+        self._app.add_handler(CommandHandler("ubicacion", self._wrap(ubicacion_command)))
         self._app.add_handler(CommandHandler("calendario", self._wrap(calendario_command)))
 
         self._app.add_handler(CommandHandler("modo_voz", self._wrap(modo_voz_command)))
