@@ -50,6 +50,11 @@ _STRAY_MD_RE = re.compile(r"[*_#`~|]+")
 # Simbolos al inicio (emojis sobrantes, comillas, guiones): causan balbuceo.
 # Se conservan los signos de apertura espanoles (¿ ¡).
 _LEADING_SYMBOLS_RE = re.compile(r"^[^\wÁÉÍÓÚÜÑáéíóúüñ¿¡]+")
+# Palabras inglesas que Piper pronuncia raro en espanol: se sustituyen al hablar.
+_LOANWORD_REPLACEMENTS = [
+    (re.compile(r"\bbriefings\b", re.IGNORECASE), "resúmenes"),
+    (re.compile(r"\bbriefing\b", re.IGNORECASE), "resumen"),
+]
 
 
 def sanitize_for_tts(text: str) -> str:
@@ -70,6 +75,8 @@ def sanitize_for_tts(text: str) -> str:
     out = _REPEAT_SUBSTR_RE.sub(r"\1", out)
     out = _LONG_ID_RE.sub("", out)
     for pattern, replacement in _UNIT_REPLACEMENTS:
+        out = pattern.sub(replacement, out)
+    for pattern, replacement in _LOANWORD_REPLACEMENTS:
         out = pattern.sub(replacement, out)
     out = _STRAY_MD_RE.sub(" ", out)
     out = _MULTISPACE_RE.sub(" ", out)

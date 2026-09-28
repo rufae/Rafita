@@ -62,7 +62,7 @@ CIUDADES: dict[str, tuple[str, str]] = {
 
 async def _location() -> tuple[str, str, str]:
     """(municipio_ine, zona_cap, nombre) con override en BD si existe."""
-    municipio = (settings.briefing_municipio or "28079").strip()
+    municipio = (settings.briefing_municipio or "").strip()
     area = (settings.aemet_area or "").strip()
     nombre = ""
     try:
@@ -503,7 +503,9 @@ async def build_briefing() -> dict[str, Any]:
     try:
         from src.database import db
 
-        configured = await db.kv_get("briefing_municipio")
+        configured = (await db.kv_get("briefing_municipio")) or (
+            settings.briefing_municipio or ""
+        ).strip()
     except Exception:
         configured = None
     if not configured:
