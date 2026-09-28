@@ -129,7 +129,7 @@ de 36 casos (28 positivos, 8 negativos) sobre un vault de evaluación:
 La métrica de distancia se verificó además como equivalente a coseno (vectores
 unitarios) y el umbral se calibró con el trade-off medido (0.49 → 0 falsos
 positivos, 3/28 falsos negativos; el 0.60 anterior habría descartado 9/28
-aciertos). Detalle en `plan.md` (tareas 1.3–1.5).
+aciertos). Medido con el dataset de evaluación versionado en `agent/tests/rag_eval/`.
 
 **Pendiente**: repetir la medición con el vault personal real y más negativos
 (Fase 3). El dataset sintético no sustituye esa validación.

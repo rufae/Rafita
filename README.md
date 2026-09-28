@@ -31,10 +31,10 @@ Esto no es un SaaS. Es una herramienta que instalas y posees.
 
 ## Arquitectura
 
-Despliegue real en dos nodos (ver `docs/adr/004-two-node-deployment.md`):
+Despliegue en dos nodos (opcional; también funciona todo en una máquina):
 
 ```
-Tu Telegram ──→ rafita-agent-core (HP) ──Tailscale──→ ollama (Dell, gemma4:12b)
+Tu Telegram ──→ rafita-agent-core (nodo de aplicación) ──red privada──→ ollama (nodo de IA, gemma4:12b)
                      │        │        │
                 SQLite   ChromaDB  Obsidian vault
               (memoria)  (RAG)    (2º cerebro)
@@ -42,11 +42,11 @@ Tu Telegram ──→ rafita-agent-core (HP) ──Tailscale──→ ollama (De
                      └── backup diario (restic cifrado) → USB
 ```
 
-- El nodo de IA (Dell) **no guarda datos de usuario** (solo pesos de modelos,
-  re-descargables) y se accede por red privada cifrada.
-- El agente (HP) ejecuta el bot, la base vectorial y la bóveda.
+- El nodo de IA **no guarda datos de usuario** (solo pesos de modelos,
+  re-descargables) y se accede por red privada cifrada (p. ej. Tailscale).
+- El nodo de aplicación ejecuta el bot, la base vectorial y la bóveda.
 - Backup diario automático solo si el USB está conectado, con aviso por
-  Telegram; operación y recuperación en `docs/runbook.md`.
+  Telegram.
 
 También puede ejecutarse todo en una sola máquina (dos contenedores Docker,
 sin bases de datos externas); el despliegue de dos nodos es el que está en
@@ -105,12 +105,12 @@ También puedes configurar los modelos manualmente en `.env`.
 ## Limitaciones conocidas
 
 - **Relevancia RAG en español con bge-m3**: medida con el dataset de evaluación
-  propio (36 casos) en el PC con RTX 3060: recall@3 = 1.0, MRR@5 = 0.98, umbral
+  propio (36 casos) en hardware con GPU: recall@3 = 1.0, MRR@5 = 0.98, umbral
   calibrado 0.49 con 0 falsos positivos (ver [ADR-003](docs/adr/003-model-selection.md)).
-  Pendiente validar con el vault personal real y más negativos (Fase 3).
+  Pendiente validar con bóvedas reales y más negativos.
 - **Fiabilidad de tools con gemma4:12b**: suite de 21 tools (2 intentos) →
-  **46/46 (100%)** en el despliegue real (agente en HP contra el LLM del Dell,
-  2026-09-26) con el thinking del modelo desactivado
+  **46/46 (100%)** en el despliegue de dos nodos, con el thinking del modelo
+  desactivado
   (`reasoning_effort=none`). La medición anterior de 29/46 (63%) se hizo sin
   ese ajuste y era efecto del razonamiento consumiendo los tokens.
 - **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a través de bind mounts. El watcher no funciona en este entorno. En Linux nativo funciona correctamente.
@@ -142,8 +142,6 @@ de cifrado en reposo y procedimiento de rotación de credenciales.
 
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
 - [docs/CHANGELOG.md](docs/CHANGELOG.md): cambios por versión (sección `Unreleased`).
-- [plan.md](plan.md): estado del proyecto y evidencia de cada tarea de la ronda
-  de estabilización.
 
 ## Licencia
 
