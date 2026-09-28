@@ -216,6 +216,9 @@ class Application:
     def __init__(self):
         self._shutdown_event: asyncio.Event | None = None
         self._proactive_worker = ProactiveWorker()
+        from src.utils.proactive_briefing import BriefingWorker
+
+        self._briefing_worker = BriefingWorker()
         self._indexer = BackgroundIndexer()
         self._gateway_task: asyncio.Task | None = None
         self._voice_stream_task: asyncio.Task | None = None
@@ -377,6 +380,7 @@ class Application:
 
         logger.info("Step 9/9: Starting background workers...")
         await self._proactive_worker.start(self._shutdown_event)
+        await self._briefing_worker.start(self._shutdown_event)
         await self._indexer.start(self._shutdown_event)
         await self._brain_maintainer.start(self._shutdown_event)
 
@@ -408,8 +412,12 @@ class Application:
             logger.error("Error stopping indexer: %s", e)
         try:
             await self._proactive_worker.stop()
+        except Exception:
+            pass
+        try:
+            await self._briefing_worker.stop()
         except Exception as e:
-            logger.error("Error stopping proactive worker: %s", e)
+            logger.error("Error stopping briefing worker: %s", e)
         try:
             await self._brain_maintainer.stop()
         except Exception as e:

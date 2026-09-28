@@ -24,6 +24,65 @@ class _FakeWS:
         self.sent.append(payload)
 
 
+class _FakeRequest:
+    class _Params(dict):
+        def get(self, key, default=None):
+            return dict.get(self, key, default)
+
+    def __init__(self, token=None):
+        self.query_params = self._Params(token=token) if token else self._Params()
+        self.headers = {}
+
+
+def test_call_token_gate(monkeypatch):
+    from src.config import settings
+    from src.voice_stream.server import _call_token_valid
+
+    monkeypatch.setattr(settings, "voice_call_token", "")
+    assert _call_token_valid(None) is True  # sin token: retrocompatible
+    monkeypatch.setattr(settings, "voice_call_token", "secreto123")
+    assert _call_token_valid("secreto123") is True
+    assert _call_token_valid(None) is False
+    assert _call_token_valid("otra") is False
+
+
+async def test_start_call_rejects_bad_token(monkeypatch):
+    from src.config import settings
+    from src.voice_stream.server import start_call
+
+    monkeypatch.setattr(settings, "voice_call_token", "secreto123")
+    bad = await start_call(_FakeRequest(token="malo"))
+    assert getattr(bad, "status_code", None) == 401
+
+
+async def test_speculative_stt_schedules_with_new_audio(monkeypatch):
+    from src.config import settings
+    from src.voice_stream import server as voice_server
+
+    monkeypatch.setattr(settings, "voice_speculative_stt", True)
+
+    async def fake_stt(audio_bytes, source_rate=48000):
+        return "hola que tal"
+
+    monkeypatch.setattr(voice_server, "_transcribe_audio_bytes", fake_stt)
+
+    session = {"audio_buffer": __import__("io").BytesIO(b"\x01" * 70000), "spec_stt": None}
+    voice_server._maybe_schedule_speculative_stt(session, 16000)
+    assert session["spec_stt"] is not None
+    assert session["spec_stt"]["covered"] == 70000
+    assert await session["spec_stt"]["task"] == "hola que tal"
+
+    # sin audio nuevo suficiente: no se reprograma
+    voice_server._maybe_schedule_speculative_stt(session, 16000)
+    assert session["spec_stt"]["covered"] == 70000
+
+    session["audio_buffer"].seek(0, 2)
+    session["audio_buffer"].write(b"\x01" * 70000)
+    voice_server._maybe_schedule_speculative_stt(session, 16000)
+    assert session["spec_stt"]["covered"] == 140000
+    assert await session["spec_stt"]["task"] == "hola que tal"
+
+
 # ---------- 11.1 corte de frases ----------
 
 
@@ -122,7 +181,7 @@ async def test_end_call_cancels_task_and_marks_ended():
         "state": "processing",
         "processing_task": task,
     }
-    result = await end_call("s-test")
+    result = await end_call("s-test", _FakeRequest())
     assert task.cancelled()
     assert "s-test" not in _active_sessions
     assert result["session_id"] == "s-test"

@@ -19,15 +19,42 @@ from src.logger import logger
 app = FastAPI(
     title="Rafita Voice Stream",
     description="Real-time voice interaction via WebSocket",
-    version="1.1.0",
+    version="1.2.0",
 )
+
+
+def _allowed_origins() -> list[str]:
+    """CORS restrictivo (2026-09-28): antes era '*' (cualquier web podia
+    hablar con este servidor desde el navegador del usuario)."""
+    raw = (settings.web_allowed_origins or "").strip()
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return ["http://localhost:8001", "http://127.0.0.1:8001"]
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _call_token_valid(token: str | None) -> bool:
+    """Token de acceso de la pagina de llamadas (VOICE_CALL_TOKEN en .env).
+
+    Sin token configurado el servidor queda abierto (retrocompatibilidad);
+    con token, cualquier peticion sin el token correcto se rechaza.
+    """
+    expected = (settings.voice_call_token or "").strip()
+    if not expected:
+        return True
+    import hmac
+
+    if not token:
+        return False
+    return hmac.compare_digest(expected, token)
+
 
 _active_sessions: dict[str, dict[str, Any]] = {}
 _whisper_model = None
@@ -38,6 +65,13 @@ _LEGACY_HTML_PATH = Path("/workspace/call_rafita.html")
 
 TARGET_SAMPLE_RATE = 16000
 SILENCE_RMS_THRESHOLD = 150
+
+# STT especulativo (2026-09-28, voz nativa): se transcribe MIENTRAS el usuario
+# habla (cada SPEC_MIN_SECONDS de audio nuevo); si al terminar el turno la
+# hipotesis cubre casi todo el audio, se reutiliza y el STT sale del camino
+# critico de latencia.
+SPEC_MIN_SECONDS = 2.0
+SPEC_COVER_RATIO = 0.85
 
 
 def _get_whisper():
@@ -125,6 +159,9 @@ async def test_tts():
 
 @app.post("/call/start")
 async def start_call(request: Request):
+    token = request.query_params.get("token") or request.headers.get("X-Call-Token")
+    if not _call_token_valid(token):
+        return JSONResponse(status_code=401, content={"error": "invalid call token"})
     body = await request.body()
     try:
         payload = json.loads(body) if body else {}
@@ -143,6 +180,7 @@ async def start_call(request: Request):
         "vad_chunks": 0,
         "sample_rate": 48000,
         "processing_task": None,
+        "spec_stt": None,
     }
 
     logger.info("VoiceStream: call started session=%s chat=%d", session_id, chat_id)
@@ -150,7 +188,10 @@ async def start_call(request: Request):
 
 
 @app.post("/call/{session_id}/end")
-async def end_call(session_id: str):
+async def end_call(session_id: str, request: Request):
+    token = request.query_params.get("token") or request.headers.get("X-Call-Token")
+    if not _call_token_valid(token):
+        return JSONResponse(status_code=401, content={"error": "invalid call token"})
     session = _active_sessions.pop(session_id, None)
     if not session:
         return JSONResponse(status_code=404, content={"error": "session not found"})
@@ -208,6 +249,9 @@ async def _interrupt(session: dict, websocket: WebSocket, reason: str = "barge_i
         except (asyncio.CancelledError, Exception):
             pass
     session["processing_task"] = None
+    stale_spec = session.pop("spec_stt", None)
+    if stale_spec and not stale_spec["task"].done():
+        stale_spec["task"].cancel()
     if session.get("state") != "ended":
         session["state"] = "listening"
     await _safe_send_json(websocket, session, {"type": "interrupted", "reason": reason})
@@ -229,6 +273,11 @@ def _start_utterance(websocket: WebSocket, session: dict, session_id: str) -> No
 
 @app.websocket("/call/ws/{session_id}")
 async def voice_websocket(websocket: WebSocket, session_id: str):
+    if not _call_token_valid(websocket.query_params.get("token")):
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "invalid call token"})
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     session = _active_sessions.get(session_id)
     if not session:
@@ -268,6 +317,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                     if is_speech:
                         session["audio_buffer"].write(audio_chunk)
                         session["vad_chunks"] += 1
+                        _maybe_schedule_speculative_stt(session, session.get("sample_rate", 48000))
                     elif session["vad_chunks"] > 0:
                         _start_utterance(websocket, session, session_id)
                         session["audio_buffer"] = io.BytesIO()
@@ -314,6 +364,25 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                 task.cancel()
 
 
+def _maybe_schedule_speculative_stt(session: dict, source_rate: int) -> None:
+    """Programa un STT del buffer actual si hay audio nuevo suficiente."""
+    if not settings.voice_speculative_stt:
+        return
+    spec = session.get("spec_stt")
+    if spec and not spec["task"].done():
+        return
+    data = session["audio_buffer"].getvalue()
+    min_bytes = int(source_rate * 2 * SPEC_MIN_SECONDS)
+    if len(data) < min_bytes:
+        return
+    if spec and len(data) - spec["covered"] < min_bytes:
+        return
+    session["spec_stt"] = {
+        "task": asyncio.create_task(_transcribe_audio_bytes(data, source_rate)),
+        "covered": len(data),
+    }
+
+
 def _simple_vad(audio_bytes: bytes, threshold: int = 300) -> bool:
     if len(audio_bytes) < 4:
         return False
@@ -332,6 +401,7 @@ async def _process_utterance(
     Corre como tarea cancelable: el bucle del WebSocket sigue leyendo audio
     para permitir barge-in y para parar al colgar.
     """
+    spec = session.pop("spec_stt", None)
     try:
         if len(audio_data) < 1000:
             return
@@ -360,12 +430,31 @@ async def _process_utterance(
         )
 
         t0 = time.time()
-        try:
-            transcript = await _transcribe_audio_bytes(audio_data, source_rate)
-        except Exception as e:
-            logger.warning("VoiceStream: STT error session=%s: %s", session_id, e)
-            transcript = None
-        t_stt = time.time() - t0
+        transcript = None
+        t_stt = 0.0
+        if spec:
+            if spec["task"].done():
+                try:
+                    spec_text = spec["task"].result()
+                except Exception:
+                    spec_text = None
+                if spec_text and spec["covered"] >= len(audio_data) * SPEC_COVER_RATIO:
+                    transcript = spec_text
+                    logger.info(
+                        "VoiceStream: STT especulativo reutilizado (%d/%d bytes) session=%s",
+                        spec["covered"],
+                        len(audio_data),
+                        session_id,
+                    )
+            else:
+                spec["task"].cancel()
+        if transcript is None:
+            try:
+                transcript = await _transcribe_audio_bytes(audio_data, source_rate)
+            except Exception as e:
+                logger.warning("VoiceStream: STT error session=%s: %s", session_id, e)
+                transcript = None
+            t_stt = time.time() - t0
 
         if not transcript or not transcript.strip():
             await _safe_send_json(

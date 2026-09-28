@@ -290,7 +290,7 @@ class DatabaseManager:
             WHERE id = (
                 SELECT id FROM chat_history
                 WHERE chat_id = ? AND role = ?
-                ORDER BY created_at DESC LIMIT 1
+                ORDER BY created_at DESC, id DESC LIMIT 1
             )
         """
         await self.execute(sql, (new_content, chat_id, role))
@@ -301,7 +301,7 @@ class DatabaseManager:
             SELECT id, chat_id, role, content, created_at
             FROM chat_history
             WHERE chat_id = ?
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT ?
         """
         rows = await self.fetchall(sql, (chat_id, limit))
@@ -345,7 +345,7 @@ class DatabaseManager:
             SELECT * FROM alerts
             WHERE chat_id = ? AND is_read = 0
                 AND (expires_at IS NULL OR expires_at >= datetime('now'))
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
         """
         return await self.fetchall(sql, (chat_id,))
 

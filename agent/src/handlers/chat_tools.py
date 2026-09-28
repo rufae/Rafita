@@ -679,6 +679,31 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "trigger_n8n",
+            "description": "Ejecuta una automatizacion (workflow) de n8n del usuario. "
+            "Usalo cuando diga 'ejecuta la automatizacion de X', 'lanza el flujo "
+            "de facturas', 'mándale el informe con tu flujo'. El nombre debe ser "
+            "uno de los definidos por el usuario (p. ej. facturas, informes) o "
+            "una URL de webhook de n8n.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workflow": {
+                        "type": "string",
+                        "description": "Nombre de la automatizacion (ej: facturas) o URL del webhook",
+                    },
+                    "payload": {
+                        "type": "object",
+                        "description": "Datos opcionales que el flujo necesite",
+                    },
+                },
+                "required": ["workflow"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_google_tasks",
             "description": "Gestiona las tareas de Google Tasks del usuario: list (listar), "
             "create (crear con titulo), complete (marcar hecha por task_id), delete "
