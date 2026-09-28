@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     briefing_time: str = Field("08:00", alias="BRIEFING_TIME")
     briefing_lat: float = Field(0.0, alias="BRIEFING_LAT")
     briefing_lon: float = Field(0.0, alias="BRIEFING_LON")
+    # Tiempo con AEMET (Espana, gratis): clave y municipio (codigo INE).
+    aemet_api_key: str = Field("", alias="AEMET_API_KEY")
+    briefing_municipio: str = Field("28079", alias="BRIEFING_MUNICIPIO")
 
     # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.
     n8n_webhooks: str = Field("", alias="N8N_WEBHOOKS")

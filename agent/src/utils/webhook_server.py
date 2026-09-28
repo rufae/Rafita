@@ -411,6 +411,57 @@ async def call_answering_machine(request: Request):
     return {"reply": reply, "end": False}
 
 
+# --- Automatizaciones profesionales (punto 1 de docs/automatizaciones.md) ---
+# Endpoints HMAC que n8n orquesta: briefing contextual, inbox zero y captura
+# a la boveda. Rafita pone los datos y la IA; n8n el disparo y la entrega.
+
+
+@app.post("/automation/briefing")
+async def automation_briefing(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    from src.services.automation_service import build_briefing
+
+    return await build_briefing()
+
+
+@app.post("/automation/inbox-scan")
+async def automation_inbox_scan(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        payload = {}
+    from src.services.automation_service import scan_inbox
+
+    return await scan_inbox(
+        hours=int(payload.get("hours", 2) or 2),
+        max_results=int(payload.get("max_results", 8) or 8),
+    )
+
+
+@app.post("/automation/capture")
+async def automation_capture(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    from src.services.automation_service import capture_to_vault
+
+    return await capture_to_vault(
+        text=str(payload.get("text", "")),
+        title=str(payload.get("title", "")),
+        tags=payload.get("tags") or [],
+        source=str(payload.get("source", "n8n")),
+    )
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

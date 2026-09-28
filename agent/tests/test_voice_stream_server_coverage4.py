@@ -4,6 +4,7 @@ import asyncio
 import io
 import struct
 import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -339,6 +340,11 @@ def test_ws_ptt_mode_accumulates_without_vad(client, monkeypatch):
         assert ws.receive_json()["type"] == "ready"
         ws.send_text('{"type": "ptt_start"}')
         ws.send_bytes(SILENT)
+        # El servidor procesa el chunk de forma asincrona: esperamos (con tope)
+        # a que lo acumule en vez de asumir que ya lo hizo (flaky en suite).
+        deadline = time.time() + 2
+        while session["vad_chunks"] != 1 and time.time() < deadline:
+            time.sleep(0.02)
         assert session["vad_chunks"] == 1
         ws.send_text('{"type": "end_speech"}')
         assert started.wait(2), "el turno no llego a procesarse"
