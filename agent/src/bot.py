@@ -121,6 +121,7 @@ class RafitaBot:
             alerta_command,
             alertas_command,
             calendario_command,
+            clientes_command,
             evento_command,
             eventos_command,
             setup_google_command,
@@ -177,6 +178,7 @@ class RafitaBot:
         self._app.add_handler(CommandHandler("setup_google", self._wrap(setup_google_command)))
         self._app.add_handler(CommandHandler("sync_google", self._wrap(sync_google_command)))
         self._app.add_handler(CommandHandler("ubicacion", self._wrap(ubicacion_command)))
+        self._app.add_handler(CommandHandler("clientes", self._wrap(clientes_command)))
         self._app.add_handler(CommandHandler("calendario", self._wrap(calendario_command)))
 
         self._app.add_handler(CommandHandler("modo_voz", self._wrap(modo_voz_command)))
