@@ -126,3 +126,59 @@ Siguientes (por orden de valor):
 3. **Contabilidad automática (punto 3A)** y **propuestas/facturas (3B)**.
 4. **Guardián de infraestructura con autocuración (2A)**: reinicio de
    contenedores caídos con aviso y log del diagnóstico.
+
+---
+
+## Automatizaciones avanzadas (catálogo para elegir)
+
+Las tres que pediste, desarrolladas, más ejemplos del mismo nivel. Todas
+gratuitas y encajan con la arquitectura actual (Rafita = datos + IA; n8n =
+disparo + entrega; endpoints HMAC `/automation/*`).
+
+### A. Sincronización e integración inteligente Google ↔ bóveda
+- **Qué**: cada hora (y a demanda) los eventos, tareas, correos destacados y
+  documentos recientes se reflejan como notas enlazadas en el vault; y al
+  revés, una tarea creada en una nota se crea en Google. Conflictos con
+  regla por campo (gana el más reciente) y registro de cambios.
+- **Cómo**: endpoint `/automation/sync` + tarea programada n8n; usa
+  `list_calendar_events`, `list_tasks`, `search_gmail`, `list_drive` y
+  `create_task`/`move_event`. Ya existe la base (`/sync_google` unidireccional).
+- **Valor**: una sola fuente de verdad consultable offline y por el RAG.
+- **Esfuerzo**: L (resolución de conflictos y pruebas).
+
+### B. Secuencias de email automáticas con personalización dinámica
+- **Qué**: plantillas con variables (nombre, proyecto, última interacción) y
+  envío escalonado (día 0, 3, 7); la secuencia se **detiene** si el contacto
+  responde; cada envío queda registrado en su nota.
+- **Cómo**: n8n gestiona la secuencia; Rafita redacta cada correo con contexto
+  (`send_gmail`) y detecta respuestas con `search_gmail`.
+- **Valor**: seguimiento de propuestas y onboarding sin trabajo manual.
+- **Esfuerzo**: M.
+
+### C. Ventas y gestión de clientes (mini-CRM en el vault)
+- **Qué**: cada cliente es una nota con estado (lead/propuesta/cerrado),
+  valor, último contacto y próximos pasos; el pipeline se resume a demanda;
+  recordatorios de seguimiento automáticos; propuestas en PDF (Google Docs)
+  y conciliación de ingresos con finanzas.
+- **Cómo**: notas con frontmatter + endpoint de resumen + flujos n8n de
+  recordatorio; Rafita responde «¿cómo va el pipeline?» con una tabla.
+- **Valor**: CRM ligero, privado y sin cuotas.
+- **Esfuerzo**: L.
+
+### D. Más ejemplos del mismo nivel
+1. **Facturas por email → Drive + contabilidad**: adjuntos PDF a
+   `Finanzas/<año>/Facturas` y registro del gasto (base ya hecha con tickets).
+2. **Guardián de infraestructura con autocuración**: contenedor caído → Rafita
+   diagnostica el log → n8n reinicia y avisa (punto 2A).
+3. **Revisión semanal GTD**: domingos, correo/tareas/vault → plan de la semana
+   con prioridades y huecos de agenda.
+4. **Actas de reunión**: audio → transcripción → resumen + tareas + nota
+   enlazada al evento.
+5. **Detección de suscripciones y cobros recurrentes** desde Gmail → aviso
+   mensual y propuesta de cancelación.
+6. **Onboarding de cliente**: carpeta en Drive + nota CRM + tarea + email de
+   bienvenida en un solo comando (`/nuevo_cliente Nombre`).
+7. **Monitor de precios/licitaciones**: RSS/scraping → aviso si baja el precio
+   o sale una oportunidad que encaja con tu perfil.
+8. **Pipeline de contenido**: ideas del vault → borradores → calendario de
+   publicación → recordatorio.

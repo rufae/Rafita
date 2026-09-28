@@ -89,11 +89,15 @@ async def test_ensure_voice_model_returns_existing_model(tmp_path, monkeypatch):
     monkeypatch.setattr(tts, "TTS_MODELS_DIR", tmp_path / "models")
     model = tts.TTS_MODELS_DIR
     model.mkdir(parents=True)
-    (model / "voz.onnx").write_bytes(b"model")
+    from src.config import settings
+
+    name = (settings.tts_voice or tts.DEFAULT_VOICE).strip()
+    (model / (name + ".onnx")).write_bytes(b"model")
+    (model / (name + ".onnx.json")).write_bytes(b"{}")
     monkeypatch.setattr(tts, "_tts_ready", False)
 
     result = await tts.ensure_voice_model()
-    assert result == model / "voz.onnx"
+    assert result == model / (name + ".onnx")
     assert tts._tts_ready is True
 
 
