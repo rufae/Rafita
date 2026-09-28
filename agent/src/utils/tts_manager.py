@@ -161,14 +161,13 @@ async def _fallback_espeak(text: str, output_path: Path) -> Path | None:
         max_chars = 500
         if len(text) > max_chars:
             text = text[:max_chars] + "..."
-        safe_text = text.replace('"', '\\"')
         cmd = [
             "espeak-ng",
             "-v",
             FALLBACK_LANG,
             "-w",
             str(output_path),
-            f'"{safe_text}"',
+            text,
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL

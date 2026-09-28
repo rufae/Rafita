@@ -763,6 +763,54 @@ _KINSHIP_KEYS = (
 )
 
 
+async def _post_n8n_webhook(url: str, payload: dict[str, Any]) -> tuple[bool, str]:
+    """POST a un webhook de n8n. Devuelve (ok, mensaje)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload or {})
+    except Exception as e:
+        return False, "No pude contactar con n8n: %s" % str(e)[:150]
+    if resp.status_code >= 400:
+        return False, "n8n respondio HTTP %s: %s" % (resp.status_code, resp.text[:200])
+    return True, "HTTP %s" % resp.status_code
+
+
+async def _trigger_n8n(args: dict[str, Any]) -> dict[str, Any]:
+    """Ejecuta una automatizacion de n8n por nombre (N8N_WEBHOOKS) o URL."""
+    workflow = (args.get("workflow") or "").strip()
+    payload = args.get("payload") or {}
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+    url = workflow if workflow.startswith("http") else ""
+    if not url:
+        import json as _json
+
+        try:
+            mapping = _json.loads(settings.n8n_webhooks or "{}")
+        except _json.JSONDecodeError:
+            mapping = {}
+        url = mapping.get(workflow.lower()) or mapping.get(workflow) or ""
+    if not url:
+        return {
+            "success": False,
+            "message": (
+                "No conozco la automatizacion '%s'. El usuario debe definirla en "
+                "N8N_WEBHOOKS (.env) con su nombre y URL de webhook." % workflow
+            ),
+        }
+    ok, detail = await _post_n8n_webhook(url, payload)
+    return {
+        "success": ok,
+        "message": (
+            "Automatizacion '%s' ejecutada en n8n (%s)." % (workflow, detail)
+            if ok
+            else "No se pudo ejecutar '%s': %s" % (workflow, detail)
+        ),
+    }
+
+
 async def _resolve_contact_alias(chat_id: int, query: str) -> str:
     """Resuelve parentescos ('mi madre') con alias aprendidos (remember_fact).
 
@@ -1443,6 +1491,9 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     % (mail["subject"], mail["from"], mail["date"], mail["snippet"])
                 )
             return {"success": True, "message": "\n".join(lines)}
+
+        elif func_name == "trigger_n8n":
+            return await _trigger_n8n(args)
 
         elif func_name == "send_gmail":
             to = args.get("to", "").strip()

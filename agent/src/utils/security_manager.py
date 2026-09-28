@@ -137,6 +137,29 @@ def get_or_create_webhook_secret() -> str:
     return secret
 
 
+def get_or_create_voice_call_token() -> str:
+    """Token de acceso a la pagina/WS de llamadas (2026-09-28).
+
+    Si no se puede persistir, se devuelve vacio y el servidor queda abierto
+    solo en modo retrocompatibilidad (documentado como riesgo de LAN).
+    """
+    if settings.voice_call_token:
+        return settings.voice_call_token.strip()
+
+    persisted = _read_env_var("VOICE_CALL_TOKEN")
+    if persisted:
+        return persisted
+
+    token = secrets.token_urlsafe(32)
+    try:
+        _persist_env_var("VOICE_CALL_TOKEN", token)
+    except RuntimeError as e:
+        logger.warning("Could not persist VOICE_CALL_TOKEN (%s). Call page stays open.", e)
+        return ""
+    logger.info("Voice call token generated and saved to %s", ENV_PATH)
+    return token
+
+
 _cipher: Fernet | None = None
 
 
