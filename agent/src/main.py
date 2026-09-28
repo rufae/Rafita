@@ -1,7 +1,7 @@
 import asyncio
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.bot import bot
@@ -53,7 +53,8 @@ class ProactiveWorker:
                 check_hour, check_minute = map(int, settings.proactive_check_time.split(":"))
                 target = now.replace(hour=check_hour, minute=check_minute, second=0, microsecond=0)
                 if now >= target:
-                    target = target.replace(day=target.day + 1)
+                    # Con timedelta: replace(day+1) revienta a fin de mes.
+                    target = target + timedelta(days=1)
                 wait_seconds = (target - now).total_seconds()
                 logger.info(
                     "Next proactive check at %s (in %d seconds)",
@@ -508,7 +509,7 @@ class Application:
         for _ in range(int(seconds)):
             if self._shutdown_event.is_set():
                 return
-                await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
 
 async def _health_monitor() -> None:

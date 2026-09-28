@@ -51,7 +51,7 @@ jobs:
         run: >
           pytest agent/tests -v --tb=short
           --cov=agent/src --cov-report=term
-          --cov-fail-under=38
+          --cov-fail-under=90
 
   security:
     name: Security Scan
