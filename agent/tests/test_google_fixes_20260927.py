@@ -2,7 +2,15 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.services.google_services_manager import GoogleServicesManager
+
+
+@pytest.fixture(autouse=True)
+def _google_ready(monkeypatch):
+    """Estos tests ejercitan la ruta Google: forzamos is_ready=True."""
+    monkeypatch.setattr(GoogleServicesManager, "is_ready", property(lambda self: True))
 
 
 class _Req:

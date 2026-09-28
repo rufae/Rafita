@@ -403,18 +403,18 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_google_calendar",
-            "description": "Gestiona eventos en Google Calendar real del usuario. "
-            "Acciones: create (crea evento nuevo), list (lista "
-            "proximos eventos), delete (elimina por ID o por titulo). "
-            "Usalo cuando el usuario pida anadir un evento a "
-            "su calendario, agendar una cita, reunion, "
-            "o consultar su agenda de Google Calendar.",
+            "description": "Gestiona eventos del calendario del usuario (Google Calendar si "
+            "esta conectado; si no, el calendario LOCAL integrado, igual de "
+            "funcional). Acciones: create (crea evento), list (lista proximos), "
+            "delete (elimina por ID o titulo), move (cambia fecha/hora: usa "
+            "title y when). Usalo para anadir eventos, citas, reuniones o "
+            "consultar/mover la agenda.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["create", "list", "delete"],
+                        "enum": ["create", "list", "delete", "move"],
                         "description": "Accion: create, list o delete",
                     },
                     "title": {
@@ -705,7 +705,8 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_google_tasks",
-            "description": "Gestiona las tareas de Google Tasks del usuario: list (listar), "
+            "description": "Gestiona las tareas del usuario (Google Tasks si esta conectado; "
+            "si no, tareas LOCALES integradas, igual de funcional): list (listar), "
             "create (crear con titulo), complete (marcar hecha por task_id), delete "
             "(borrar por task_id). Usalo para 'anademe una tarea', 'que tareas tengo', "
             "'marca como hecha la tarea...'.",
@@ -760,7 +761,8 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_google_drive",
-            "description": "Lista Google Drive: carpetas, archivos o todo; o el contenido de "
+            "description": "Lista Google Drive (o la boveda local si Google no esta "
+            "conectado): carpetas, archivos o todo; o el contenido de "
             "una carpeta concreta con folder (nombre o id). Usalo cuando el "
             "usuario pregunte 'que tengo en mi drive', 'que carpetas tengo', "
             "'que hay dentro de la carpeta X', 'ensename mis archivos de drive'. "

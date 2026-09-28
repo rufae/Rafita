@@ -8,6 +8,14 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Añadido
+- **Google opcional (modo local)**: calendario, tareas y ficheros funcionan sin
+  cuenta de Google (BD + bóveda) con las mismas herramientas; al conectar
+  Google (`/setup_google`) las herramientas usan Google sin cambiar comandos.
+- **Automatizaciones ampliadas**: botones con acción (enviar borrador por
+  Gmail, reagendar eventos), briefing adaptativo (fin de semana, evento en
+  <2 h, copia en el vault), avisos oficiales AEMET CAP, radar de IA
+  (GitHub + RSS filtrado), informe semanal de infraestructura y briefing en
+  audio (nota de voz estilo podcast).
 - **Automatizaciones con n8n** (endpoints HMAC en el gateway): briefing
   contextual (agenda, tareas, correo, tiempo AEMET y estado del servidor) para
   entrega en Telegram con botones; clasificación de correo no leído con

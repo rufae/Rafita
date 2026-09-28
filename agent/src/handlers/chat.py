@@ -770,6 +770,25 @@ _KINSHIP_KEYS = (
 )
 
 
+def _local_vault_files(query: str = "") -> list[dict[str, str]]:
+    """Lista ficheros de la boveda (modo local sin Google, 2026-09-28)."""
+    from src.utils.obsidian_manager import OBSIDIAN_VAULT
+
+    base = OBSIDIAN_VAULT
+    results: list[dict[str, str]] = []
+    if not base.exists():
+        return results
+    needle = (query or "").lower()
+    for path in sorted(base.rglob("*.md")):
+        rel = str(path.relative_to(base))
+        if needle and needle not in rel.lower():
+            continue
+        results.append({"name": rel, "id": rel, "mimeType": "text/markdown"})
+        if len(results) >= 30:
+            break
+    return results
+
+
 async def _post_n8n_webhook(url: str, payload: dict[str, Any]) -> tuple[bool, str]:
     """POST a un webhook de n8n. Devuelve (ok, mensaje)."""
     import httpx
@@ -1270,60 +1289,141 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "manage_google_calendar":
             action = args.get("action", "").strip().lower()
-            if action == "create":
-                title = args.get("title", "").strip()
-                dt_str = args.get("datetime_str", "").strip()
+            # Google opcional (2026-09-28): si Google no esta conectado, el
+            # calendario local de Rafita (SQLite) ofrece las mismas acciones.
+            use_google = google_services.is_ready
+
+            def _parse_when() -> str:
                 when = args.get("when", "").strip()
+                dt_str = args.get("datetime_str", "").strip()
                 if when and not dt_str:
                     from src.services.google_services_manager import parse_relative_datetime
 
                     parsed = parse_relative_datetime(when)
                     if parsed:
                         dt_str = parsed.isoformat()
+                return dt_str
+
+            if action == "create":
+                title = args.get("title", "").strip()
+                dt_str = _parse_when()
                 description = args.get("description", "").strip()
                 if not title or not dt_str:
                     return {
                         "success": False,
                         "message": "Título y fecha/hora son obligatorios para crear un evento.",
                     }
-                result = await gcal.add_event(title, dt_str, description=description)
-                return result
+                if use_google:
+                    return await gcal.add_event(title, dt_str, description=description)
+                event_id = await db.add_event(
+                    chat_id, title, dt_str.replace("T", " ")[:19], description
+                )
+                return {
+                    "success": True,
+                    "message": "Evento guardado en tu calendario local: %s (%s)"
+                    % (title, dt_str.replace("T", " ")[:16]),
+                    "event_id": event_id,
+                }
             elif action == "list":
-                events = await gcal.list_upcoming_events(max_results=10)
-                if not events:
+                if use_google:
+                    events = await gcal.list_upcoming_events(max_results=10)
+                    items = [
+                        {"id": e.get("id"), "title": e.get("title"), "start": e.get("start")}
+                        for e in events
+                    ]
+                    source = "Google Calendar"
+                else:
+                    rows = await db.get_upcoming_events(chat_id, limit=10)
+                    items = [
+                        {
+                            "id": r.get("id"),
+                            "title": r.get("title"),
+                            "start": r.get("event_datetime"),
+                        }
+                        for r in rows
+                    ]
+                    source = "calendario local"
+                if not items:
                     return {
                         "success": True,
-                        "message": "No hay eventos próximos en Google Calendar.",
+                        "message": "No hay eventos próximos en tu %s." % source,
                     }
-                lines = ["📅 *Próximos eventos en Google Calendar:*"]
-                for ev in events:
-                    lines.append("  • %s - %s" % (ev["title"], ev["start"]))
+                lines = ["📅 *Próximos eventos en tu %s:*" % source]
+                for ev in items:
+                    lines.append("  • %s - %s (id: %s)" % (ev["title"], ev["start"], ev["id"]))
                 return {"success": True, "message": "\n".join(lines)}
             elif action == "delete":
                 event_id = args.get("event_id", "").strip()
                 title = args.get("title", "").strip()
                 if not event_id and title:
-                    # Bug 2026-09-27: el modelo borraba sin id o con un id
-                    # inventado y decia que habia borrado. Resolvemos por titulo
-                    # contra los proximos eventos reales de Google.
-                    events = await gcal.list_upcoming_events(max_results=50)
                     needle = title.lower()
-                    matches = [e for e in events if needle in (e.get("title") or "").lower()]
-                    if not matches:
+                    if use_google:
+                        events = await gcal.list_upcoming_events(max_results=50)
+                        matches = [e for e in events if needle in (e.get("title") or "").lower()]
+                        if matches:
+                            event_id = matches[0].get("id", "")
+                    else:
+                        rows = await db.get_upcoming_events(chat_id, limit=50)
+                        matches = [r for r in rows if needle in (r.get("title") or "").lower()]
+                        if matches:
+                            event_id = str(matches[0].get("id", ""))
+                    if not event_id:
                         return {
                             "success": False,
                             "message": "No encontre ningun evento proximo llamado '%s'." % title,
                         }
-                    event_id = matches[0].get("id", "")
                 if not event_id:
                     return {
                         "success": False,
                         "message": "Necesito el event_id o el titulo del evento para eliminarlo.",
                     }
-                result = await gcal.delete_event(event_id)
-                return result
+                if use_google:
+                    return await gcal.delete_event(event_id)
+                await db.delete_event(chat_id, int(event_id))
+                return {"success": True, "message": "Evento eliminado de tu calendario local."}
+            elif action == "move":
+                title = args.get("title", "").strip()
+                event_id = args.get("event_id", "").strip()
+                new_dt = _parse_when()
+                if not new_dt:
+                    return {
+                        "success": False,
+                        "message": "Dime a que fecha/hora moverlo (ej: 'el viernes a las 10').",
+                    }
+                if not event_id and title:
+                    needle = title.lower()
+                    if use_google:
+                        events = await gcal.list_upcoming_events(max_results=50)
+                        matches = [e for e in events if needle in (e.get("title") or "").lower()]
+                        if matches:
+                            event_id = matches[0].get("id", "")
+                    else:
+                        rows = await db.get_upcoming_events(chat_id, limit=50)
+                        matches = [r for r in rows if needle in (r.get("title") or "").lower()]
+                        if matches:
+                            event_id = str(matches[0].get("id", ""))
+                    if not event_id:
+                        return {
+                            "success": False,
+                            "message": "No encontre ningun evento proximo llamado '%s'." % title,
+                        }
+                if not event_id:
+                    return {"success": False, "message": "Necesito el titulo o el event_id."}
+                if use_google:
+                    return await gcal.move_event(event_id, new_dt)
+                await db.update_event_datetime(
+                    chat_id, int(event_id), new_dt.replace("T", " ")[:19]
+                )
+                return {
+                    "success": True,
+                    "message": "Evento movido a %s en tu calendario local."
+                    % new_dt.replace("T", " ")[:16],
+                }
             else:
-                return {"success": False, "message": "Acción no válida. Usa create, list o delete."}
+                return {
+                    "success": False,
+                    "message": "Acción no válida. Usa create, list, delete o move.",
+                }
 
         elif func_name == "set_recurring_reminder":
             pattern = args.get("pattern", "").strip().lower()
@@ -1445,6 +1545,19 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
         elif func_name == "search_google_drive":
             # Bug 2026-09-28: se llamaba a google_services.search_drive(), que
             # no existe en el manager (daba AttributeError siempre).
+            if not google_services.is_ready:
+                files = _local_vault_files(args.get("query", ""))
+                if not files:
+                    return {
+                        "success": True,
+                        "files": [],
+                        "message": "No encontré nada en tu bóveda para '%s'."
+                        % args.get("query", ""),
+                    }
+                lines = ["🔍 En tu bóveda (modo local, sin Google):"]
+                for f in files:
+                    lines.append("  • %s" % f.get("name", "?"))
+                return {"success": True, "files": files, "message": "\n".join(lines)}
             files = await google_services.search_files(
                 query=args.get("query", ""),
                 max_results=int(args.get("max_results", 10) or 10),
@@ -1461,6 +1574,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return {"success": True, "files": files, "message": "\n".join(lines)}
 
         elif func_name == "list_google_drive":
+            if not google_services.is_ready:
+                files = _local_vault_files()
+                if not files:
+                    return {"success": True, "message": "Tu bóveda está vacía."}
+                lines = ["📂 Ficheros de tu bóveda (modo local, sin Google):"]
+                for f in files:
+                    lines.append("  • 📄 %s" % f.get("name", "?"))
+                return {"success": True, "files": files, "message": "\n".join(lines)}
             result = await google_services.list_drive(
                 kind=args.get("kind", "all"),
                 max_results=int(args.get("max_results", 20) or 20),
@@ -1526,12 +1647,18 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "manage_google_tasks":
             action = args.get("action", "").strip().lower()
+            use_google = google_services.is_ready
             if action == "list":
-                result = await google_services.list_tasks()
-                tasks = result.get("tasks", [])
+                if use_google:
+                    tasks = (await google_services.list_tasks()).get("tasks", [])
+                    source = "Google Tasks"
+                else:
+                    rows = await db.list_tasks(chat_id)
+                    tasks = [{"id": str(r.get("id")), "title": r.get("title", "")} for r in rows]
+                    source = "tareas locales"
                 if not tasks:
                     return {"success": True, "message": "No tienes tareas pendientes."}
-                lines = ["✅ Tareas de Google:"]
+                lines = ["✅ Tareas (%s):" % source]
                 for task in tasks:
                     lines.append("  • %s (id: %s)" % (task["title"], task["id"]))
                 return {"success": True, "message": "\n".join(lines)}
@@ -1539,7 +1666,13 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 title = args.get("title", "").strip()
                 if not title:
                     return {"success": False, "message": "Indica el título de la tarea."}
-                return await google_services.create_task(title)
+                if use_google:
+                    return await google_services.create_task(title)
+                task_id = await db.add_task(chat_id, title)
+                return {
+                    "success": True,
+                    "message": "Tarea guardada localmente: %s (id: %s)" % (title, task_id),
+                }
             if action in ("complete", "delete"):
                 task_id = args.get("task_id", "").strip()
                 if not task_id:
@@ -1547,9 +1680,15 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                         "success": False,
                         "message": "Necesito el task_id (lista las tareas primero).",
                     }
+                if use_google:
+                    if action == "complete":
+                        return await google_services.complete_task(task_id)
+                    return await google_services.delete_task(task_id)
                 if action == "complete":
-                    return await google_services.complete_task(task_id)
-                return await google_services.delete_task(task_id)
+                    await db.complete_task(chat_id, int(task_id))
+                    return {"success": True, "message": "Tarea completada (local)."}
+                await db.delete_task(chat_id, int(task_id))
+                return {"success": True, "message": "Tarea eliminada (local)."}
             return {
                 "success": False,
                 "message": "Acción no válida: list, create, complete, delete.",

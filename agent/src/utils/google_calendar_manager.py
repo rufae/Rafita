@@ -142,6 +142,44 @@ class GoogleCalendarManager:
             logger.exception("Google Calendar add_event error")
             return {"success": False, "message": "Error creando evento: %s" % e}
 
+    async def move_event(
+        self, event_id: str, new_start: str, duration_minutes: int = 60
+    ) -> dict[str, Any]:
+        """Mueve un evento existente a otra fecha/hora (accion 'move')."""
+        if not self._ready or not self._service:
+            return {"success": False, "message": "Google Calendar no configurado"}
+        try:
+            dt = datetime.fromisoformat(new_start)
+            end_dt = dt + timedelta(minutes=max(5, int(duration_minutes)))
+            body = {
+                "start": {"dateTime": dt.isoformat(), "timeZone": settings.timezone},
+                "end": {"dateTime": end_dt.isoformat(), "timeZone": settings.timezone},
+            }
+        except ValueError as e:
+            return {"success": False, "message": "Fecha nueva no valida: %s" % e}
+        loop = asyncio.get_running_loop()
+
+        def _do_patch():
+            return (
+                self._service.events()
+                .patch(calendarId=self._calendar_id, eventId=event_id, body=body)
+                .execute()
+            )
+
+        try:
+            event = await loop.run_in_executor(None, _do_patch)
+            logger.info("Google Calendar event moved: %s -> %s", event_id, new_start)
+            return {
+                "success": True,
+                "message": "Evento movido a %s." % new_start,
+                "event_id": event.get("id"),
+            }
+        except HttpError as e:
+            return {"success": False, "message": "Error de API de Google: %s" % e}
+        except Exception as e:
+            logger.exception("Google Calendar move_event error")
+            return {"success": False, "message": "Error moviendo evento: %s" % e}
+
     async def list_upcoming_events(self, max_results: int = 10) -> list[dict[str, Any]]:
         if not self._ready or not self._service:
             return []
