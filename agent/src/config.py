@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # Voz de Piper (calidad media suena mucho mas humana que x_low).
     # Formato: es_ES-davefx-medium, es_ES-sharvard-medium, es_ES-carlfm-x_low...
     tts_voice: str = Field("es_ES-davefx-medium", alias="TTS_VOICE")
+    tts_speed: float = Field(0.0, alias="TTS_SPEED")
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
 
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
     briefing_lon: float = Field(0.0, alias="BRIEFING_LON")
     # Tiempo con AEMET (Espana, gratis): clave y municipio (codigo INE).
     aemet_api_key: str = Field("", alias="AEMET_API_KEY")
-    briefing_municipio: str = Field("28079", alias="BRIEFING_MUNICIPIO")
+    briefing_municipio: str = Field("", alias="BRIEFING_MUNICIPIO")
     # Zona meteoalerta para avisos CAP (61 = Andalucia; 62 = Aragon...; ver
     # anexo 2 del Plan Meteoalerta de AEMET).
     aemet_area: str = Field("61", alias="AEMET_AREA")

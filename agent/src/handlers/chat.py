@@ -42,6 +42,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "Usa /ayuda para ver todos los comandos disponibles."
     )
     await update.effective_message.reply_text(welcome)
+    try:
+        from src.database import db
+
+        configured = (await db.kv_get("briefing_municipio")) or (
+            settings.briefing_municipio or ""
+        ).strip()
+    except Exception:
+        configured = None
+    if not configured:
+        await update.effective_message.reply_text(
+            "Antes de empezar, dime de dónde eres para darte el tiempo de tu "
+            "zona y sus avisos:\n`/ubicacion Sevilla` "
+            "(o tu ciudad, o tu código INE de 5 dígitos)."
+        )
     logger.info("User %d started the bot", user.id)
 
 
