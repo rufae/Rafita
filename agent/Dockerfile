@@ -14,6 +14,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --user -r requirements.txt
 
+# Kokoro (voz mas natural, ONNX+CPU): se instala sin dependencias porque
+# kokoro-onnx declara numpy>=2 y el proyecto usa numpy 1.26 (verificado que
+# funciona); onnxruntime ya viene con piper-tts.
+RUN pip install --no-cache-dir --user --no-deps kokoro-onnx==0.6.1 && \
+    pip install --no-cache-dir --user phonemizer==3.4.0 espeakng-loader==0.2.4
+
 
 FROM python:3.11-slim AS runtime
 

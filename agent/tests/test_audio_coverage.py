@@ -199,7 +199,7 @@ async def test_send_voice_reply_skips_bad_chunks(monkeypatch, tmp_path):
     ogg = tmp_path / "a.ogg"
     ogg.write_bytes(b"OggS-ok")
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         if chunk == "sin-audio":
             return None
         return wav
@@ -227,7 +227,7 @@ async def test_send_voice_reply_tolerates_unreadable_chunk(monkeypatch, tmp_path
     bad_ogg.exists.return_value = True
     bad_ogg.read_bytes.side_effect = OSError("disco roto")
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         return wav
 
     results = [bad_ogg, ogg]
@@ -255,7 +255,7 @@ async def test_send_voice_reply_tolerates_reply_failures(monkeypatch):
     message.reply_text = boom_reply
     update = SimpleNamespace(effective_message=message)
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         raise RuntimeError("piper caido")
 
     monkeypatch.setattr(audio, "text_to_speech", fake_tts)
@@ -278,7 +278,7 @@ async def test_send_voice_reply_sends_combined_audio(monkeypatch, tmp_path):
     ogg = tmp_path / "a.ogg"
     ogg.write_bytes(b"OggS-part")
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         return wav
 
     async def fake_convert(path):
@@ -300,7 +300,7 @@ async def test_send_voice_reply_without_audio_reports_failure(monkeypatch):
     message = FakeMessage()
     update = SimpleNamespace(effective_message=message)
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         return None
 
     monkeypatch.setattr(audio, "text_to_speech", fake_tts)
@@ -314,7 +314,7 @@ async def test_send_voice_reply_reports_errors(monkeypatch):
     message = FakeMessage()
     update = SimpleNamespace(effective_message=message)
 
-    async def fake_tts(chunk):
+    async def fake_tts(chunk, engine=None):
         raise RuntimeError("piper caido")
 
     monkeypatch.setattr(audio, "text_to_speech", fake_tts)

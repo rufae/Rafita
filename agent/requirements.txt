@@ -31,3 +31,6 @@ python-multipart==0.0.31
 watchdog==6.0.0
 pyyaml==6.0.2
 python-docx==1.1.2
+# Nota: kokoro-onnx==0.6.1 + phonemizer==3.4.0 + espeakng-loader==0.2.4
+# (voz Kokoro) se instalan en el Dockerfile con --no-deps porque kokoro-onnx
+# declara numpy>=2 y aqui usamos numpy 1.26 (verificado compatible).

@@ -1,5 +1,20 @@
 # Opciones de voz TTS open source (investigación, 2026-09)
 
+> **Implementado (2026-09-28)**: backend **Kokoro** con `kokoro-onnx` (int8,
+> ~142 MB) y backend **Voicebox** por REST, con cadena de respaldo
+> `kokoro → piper → espeak`. Selector por caso de uso:
+> `TTS_ENGINE` (notas de voz/briefing), `TTS_ENGINE_CHAT` (respuestas de voz
+> del chat) y `TTS_ENGINE_CALL` (llamada en vivo). Voces en español:
+> `ef_dora`, `em_alex`, `em_santa`.
+>
+> **Rendimiento medido (importante)**: en el HP (Intel i3-1005G1, 2 núcleos)
+> Kokoro int8 da **RTF ~2,5** (2,5 s de cálculo por segundo de audio): una
+> nota de 30 s tarda ~75 s. En una CPU moderna (2 hilos) baja a RTF ~1,4.
+> Por eso la llamada y el chat usan Piper por defecto; Kokoro queda para
+> audio asíncrono (briefing, notas). Alternativas para acelerar: servir
+> Kokoro en otra máquina (Dell/torre con GPU) por HTTP — el backend
+> `voicebox` ya soporta un servicio remoto — o usar Voicebox con GPU.
+
 Estado actual: Piper (`es_ES-davefx-medium`) con limpieza de texto para voz
 (sin Markdown, emojis, unidades expandidas). Es rápido y gratis, pero suena
 sintético. Aquí están las alternativas evaluadas para una voz menos robótica,
