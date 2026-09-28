@@ -4,11 +4,13 @@ import tempfile
 import threading
 from pathlib import Path
 
+from src.config import settings
 from src.logger import logger
 
 TTS_MODELS_DIR = Path("/app/tts_models")
 VOICE_URL_PREFIX = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 FALLBACK_LANG = "es"
+DEFAULT_VOICE = "es_ES-davefx-medium"
 
 _tts_ready = False
 
@@ -19,43 +21,66 @@ _piper_voice = None
 _piper_lock = threading.Lock()
 
 
-async def ensure_voice_model() -> Path | None:
-    TTS_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+def _voice_parts(name: str) -> tuple[str, str, str, str]:
+    """'es_ES-davefx-medium' -> (lang, locale, speaker, quality)."""
+    parts = name.split("-")
+    if len(parts) < 3 or "_" not in parts[0]:
+        raise ValueError("TTS_VOICE debe tener el formato es_ES-davefx-medium")
+    locale = parts[0]
+    quality = parts[-1]
+    speaker = "-".join(parts[1:-1])
+    lang = locale.split("_")[0]
+    return lang, locale, speaker, quality
 
-    model_files = sorted(TTS_MODELS_DIR.glob("*.onnx"))
-    if not model_files:
-        logger.info("No Piper model found. Downloading Spanish voice...")
+
+async def ensure_voice_model() -> Path | None:
+    """Descarga (una vez) la voz configurada en TTS_VOICE y la devuelve."""
+    TTS_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    name = (settings.tts_voice or DEFAULT_VOICE).strip()
+    model_path = TTS_MODELS_DIR / (name + ".onnx")
+    config_path = TTS_MODELS_DIR / (name + ".onnx.json")
+    global _tts_ready
+    if model_path.exists() and config_path.exists():
+        _tts_ready = True
+        return model_path
+
+    try:
+        lang, locale, speaker, quality = _voice_parts(name)
+    except ValueError as e:
+        logger.warning("TTS_VOICE invalido (%s); usa es_ES-davefx-medium", e)
+        return None
+
+    model_url = f"{VOICE_URL_PREFIX}/{lang}/{locale}/{speaker}/{quality}/{name}.onnx"
+    config_url = model_url + ".json"
+    try:
         import httpx
 
-        model_name = "es_ES-carlfm-x_low"
-        model_url = f"{VOICE_URL_PREFIX}/es/es_ES/carlfm/x_low/{model_name}.onnx"
-        config_url = f"{VOICE_URL_PREFIX}/es/es_ES/carlfm/x_low/{model_name}.onnx.json"
-        model_path = TTS_MODELS_DIR / f"{model_name}.onnx"
-        config_path = TTS_MODELS_DIR / f"{model_name}.onnx.json"
+        async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+            logger.info("Downloading Piper voice %s ...", name)
+            resp = await client.get(model_url)
+            resp.raise_for_status()
+            model_path.write_bytes(resp.content)
+            logger.info("Model saved (%d bytes)", len(resp.content))
+            resp = await client.get(config_url)
+            resp.raise_for_status()
+            config_path.write_bytes(resp.content)
+            logger.info("Config saved (%d bytes)", len(resp.content))
+    except Exception as e:
+        logger.warning("Failed to download Piper model: %s. Will use espeak fallback.", e)
+        return None
 
-        try:
-            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-                logger.info("Downloading model from %s ...", model_url)
-                resp = await client.get(model_url)
-                resp.raise_for_status()
-                model_path.write_bytes(resp.content)
-                logger.info("Model saved (%d bytes)", len(resp.content))
-                logger.info("Downloading config from %s ...", config_url)
-                resp = await client.get(config_url)
-                resp.raise_for_status()
-                config_path.write_bytes(resp.content)
-                logger.info("Config saved (%d bytes)", len(resp.content))
-            model_files = [model_path]
-        except Exception as e:
-            logger.warning("Failed to download Piper model: %s. Will use espeak fallback.", e)
-            return None
-
-    global _tts_ready
     _tts_ready = True
-    return model_files[0]
+    return model_path
 
 
 async def text_to_speech(text: str) -> Path | None:
+    # Limpieza para voz (2026-09-28): quita Markdown (se leia "asterisco
+    # asterisco") y emojis (piper balbuceaba al inicio con ellos).
+    from src.utils.voice_text import sanitize_for_tts
+
+    text = sanitize_for_tts(text)
+    if not text:
+        return None
     output_dir = Path(tempfile.mkdtemp(prefix="rafita_tts_"))
     output_path = output_dir / "response.wav"
 

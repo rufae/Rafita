@@ -66,6 +66,9 @@ class Settings(BaseSettings):
 
     whisper_model: str = Field("tiny", alias="WHISPER_MODEL")
     whisper_cpu_threads: int = Field(4, alias="WHISPER_CPU_THREADS", ge=1, le=32)
+    # Voz de Piper (calidad media suena mucho mas humana que x_low).
+    # Formato: es_ES-davefx-medium, es_ES-sharvard-medium, es_ES-carlfm-x_low...
+    tts_voice: str = Field("es_ES-davefx-medium", alias="TTS_VOICE")
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
 
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.

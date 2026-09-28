@@ -49,6 +49,12 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
   `ruff`/`mypy` limpios; Dependabot para pip, GitHub Actions y Docker.
 
 ### Corregido
+- Botones inline: el bucle de polling propio descartaba los `callback_query`
+  (ningún botón funcionaba: reagendar, enviar respuesta, gastos).
+- Audio: el TTS leía el Markdown («asterisco asterisco») y balbuceaba al
+  inicio por los emojis; ahora todo el texto pasa por el limpiador de voz.
+  Voz por defecto mejorada a `es_ES-davefx-medium` (calidad media, más
+  humana) y configurable con `TTS_VOICE`.
 - Cifrado de credenciales fail-closed y persistente (nunca texto plano).
 - Path traversal del vault confinado con resolución real de ancestro,
   incluidos symlinks y prefijos hermanos.
