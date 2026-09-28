@@ -101,7 +101,7 @@ queda por tanto **sombreada** (comprobado: borrarla no corta el acceso). En la
 práctica, el motor de IA es accesible desde **cualquier dispositivo
 autenticado en el tailnet** (incluido un móvil fuera de casa), no solo desde
 el HP. Es una **decisión aceptada explícitamente por el propietario** por
-utilidad; para restringirlo hay procedimiento documentado en `plan.md`
+utilidad; el acceso se restringe con firewall (LAN/tailnet) y el token del gateway
 (3.4.1): ACL de Tailscale o regla iptables insertada antes de `ts-input`.
 
 **La red local sigue protegida**: el `deny` por defecto de ufw bloquea 11434

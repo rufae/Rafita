@@ -448,5 +448,5 @@ docker compose logs -f rafita-agent-core | grep -i "backfill"
 
 Si encuentras problemas durante la migración:
 1. Revisa los logs: `docker compose logs rafita-agent-core`
-2. Consulta el [runbook de incidentes](runbook.md)
+2. Revisa los logs del contenedor y el endpoint `/ready`
 3. Abre un issue en [GitHub](https://github.com/rufae/Rafita/issues)
