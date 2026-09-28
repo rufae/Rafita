@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -144,7 +145,7 @@ class RafitaBot:
             resumen_command,
             status_command,
         )
-        from src.handlers.files import document_handler, photo_handler
+        from src.handlers.files import document_handler, expense_callback, photo_handler
         from src.handlers.finance import (
             exportar_command,
             finanzas_command,
@@ -197,6 +198,9 @@ class RafitaBot:
         self._app.add_handler(MessageHandler(filters.Document.ALL, self._wrap(document_handler)))
 
         self._app.add_handler(MessageHandler(filters.PHOTO, self._wrap(photo_handler)))
+        self._app.add_handler(
+            CallbackQueryHandler(self._wrap(expense_callback), pattern=r"^gasto_")
+        )
 
         self._app.add_error_handler(self._error_handler)
 

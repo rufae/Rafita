@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from telegram import Document, PhotoSize, Update
+from telegram import Document, InlineKeyboardButton, InlineKeyboardMarkup, PhotoSize, Update
 from telegram.ext import ContextTypes
 
 from src.config import settings
@@ -25,6 +25,101 @@ TEMP_DIR = Path("/tmp/rafita_uploads")
 
 def _folder(key: str) -> Path:
     return VAULT_ROOT / get_taxonomy().path(key)
+
+
+_EXPENSE_LINE_RE = re.compile(r"GASTO:\s*(\{.*?\})", re.DOTALL)
+_EXPENSE_CAPTION_HINTS = (
+    "ticket",
+    "factura",
+    "gasto",
+    "compra",
+    "recibo",
+    "apunta",
+    "registra",
+)
+
+
+def _parse_expense_from_text(text: str | None) -> dict[str, Any] | None:
+    """Extrae el gasto estructurado de la linea GASTO: {...} de la vision.
+
+    Devuelve None si no hay linea valida o falta el importe.
+    """
+    if not text:
+        return None
+    match = _EXPENSE_LINE_RE.search(text)
+    if not match:
+        return None
+    try:
+        import json
+
+        data = json.loads(match.group(1))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        amount = float(str(data.get("importe", "")).replace(",", ".").replace("€", "").strip())
+    except (ValueError, TypeError):
+        return None
+    if amount <= 0:
+        return None
+    return {
+        "amount": amount,
+        "comercio": str(data.get("comercio", "")).strip() or "desconocido",
+        "fecha": str(data.get("fecha", "")).strip(),
+        "categoria": str(data.get("categoria", "")).strip().lower() or "otros",
+    }
+
+
+def _expense_confirmation_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Registrar", callback_data="gasto_ok"),
+                InlineKeyboardButton("❌ Descartar", callback_data="gasto_no"),
+            ]
+        ]
+    )
+
+
+async def expense_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Botones de confirmacion del gasto detectado en una foto."""
+    query = update.callback_query
+    if not query or not query.message:
+        return
+    await query.answer()
+    pending = (context.user_data or {}).get("pending_expense")
+    if not pending:
+        await query.edit_message_text("Este gasto ya no está pendiente.")
+        return
+    if query.data == "gasto_ok":
+        from src.handlers.chat import _execute_tool
+
+        result = await _execute_tool(
+            query.message.chat_id,
+            "save_expense",
+            {
+                "amount": pending["amount"],
+                "category": pending["categoria"],
+                "description": "%s (foto)%s"
+                % (
+                    pending["comercio"],
+                    " — %s" % pending["fecha"] if pending.get("fecha") else "",
+                ),
+            },
+        )
+        if result.get("success"):
+            await query.edit_message_text(
+                "✅ Gasto registrado: %.2f € — %s (%s)"
+                % (pending["amount"], pending["comercio"], pending["categoria"])
+            )
+        else:
+            await query.edit_message_text(
+                "⚠️ No se pudo registrar el gasto: %s" % result.get("message", "error")
+            )
+    else:
+        await query.edit_message_text("❌ Gasto descartado.")
+    context.user_data.pop("pending_expense", None)
 
 
 folder_keys = get_taxonomy()
@@ -635,12 +730,17 @@ async def _process_vision_image(
     )
 
     await update.effective_message.reply_text(
-        "🔍 Analizando imagen con llava:7b (visión de alta precisión)..."
+        "🔍 Analizando imagen con %s (visión)..." % llm.vision_model
     )
 
     vision_prompt = (
         "Analiza la imagen adjunta y extrae toda la información relevante en texto plano. "
         "Si es un ticket o factura, extrae: montos, productos, fecha, establecimiento. "
+        "IMPORTANTE: si la imagen es un ticket, factura o recibo de compra, añade "
+        "AL FINAL una línea exacta con formato JSON: "
+        'GASTO: {"importe": 0.0, "comercio": "", "fecha": "", "categoria": ""} '
+        "(categoría: alimentacion, transporte, servicios, salud, educacion, ocio u otros). "
+        "Si no es un ticket, no añadas esa línea. "
         "Si es un documento, extrae el texto clave. "
         "Si es una pizarra o apunte, transcribe el contenido. "
         "Si es una captura de pantalla, describe lo importante. "
@@ -698,10 +798,15 @@ async def _process_vision_image(
 
     gc.collect()
 
-    try:
-        await llm.unload_model(llm.vision_model)
-    except Exception as _e:
-        logger.warning("[VISION] No se pudo descargar llava explicitamente: %s", _e)
+    # Solo descargar el modelo de vision si es DISTINTO del de chat: con
+    # gemma4 como vision, descargarlo obligaria a recargar 7.6 GB despues.
+    vision_name = getattr(llm, "vision_model", "")
+    chat_name = getattr(llm, "model", "")
+    if vision_name and chat_name and vision_name != chat_name:
+        try:
+            await llm.unload_model(vision_name)
+        except Exception as _e:
+            logger.warning("[VISION] No se pudo descargar el modelo de vision: %s", _e)
 
     gc.collect()
 
@@ -751,6 +856,26 @@ async def _process_vision_image(
         MessageRole.user.value,
         "[Envió una imagen. Descripción de la IA: %s]" % extracted_text.strip()[:300],
     )
+
+    # Mejora 3 (2026-09-28): ticket detectado -> confirmar con botones antes de
+    # registrar el gasto (y no pasar por el procesado generico para no duplicar).
+    expense = _parse_expense_from_text(extracted_text)
+    if expense and context is not None:
+        context.user_data["pending_expense"] = expense
+        await update.effective_message.reply_text(
+            "🧾 He detectado un gasto:\n"
+            "• Importe: %.2f €\n• Comercio: %s\n• Fecha: %s\n• Categoría: %s\n\n"
+            "¿Lo registro?"
+            % (
+                expense["amount"],
+                expense["comercio"],
+                expense["fecha"] or "no indicada",
+                expense["categoria"],
+            ),
+            reply_markup=_expense_confirmation_markup(),
+        )
+        logger.info("[GASTO] pendiente de confirmar para user %d: %.2f", chat_id, expense["amount"])
+        return
 
     await update.effective_message.reply_text(
         "⚡ Procesando con Qwen 2.5 (razonamiento + acciones)..."
