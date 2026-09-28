@@ -8,6 +8,10 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Añadido
+- **Automatizaciones con n8n** (endpoints HMAC en el gateway): briefing
+  contextual (agenda, tareas, correo, tiempo AEMET y estado del servidor) para
+  entrega en Telegram con botones; clasificación de correo no leído con
+  borradores y deduplicación; y captura de notas a la bóveda con frontmatter.
 - **Gastos por foto**: al enviar un ticket, la visión extrae importe, comercio,
   fecha y categoría y el bot pide confirmación con botones (Registrar /
   Descartar) antes de guardarlo en finanzas.

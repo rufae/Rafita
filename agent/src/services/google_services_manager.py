@@ -762,6 +762,7 @@ class GoogleServicesManager:
             }
             messages.append(
                 {
+                    "id": ref["id"],
                     "subject": headers.get("subject", "(sin asunto)"),
                     "from": headers.get("from", ""),
                     "date": headers.get("date", ""),
