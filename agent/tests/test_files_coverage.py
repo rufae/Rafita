@@ -62,6 +62,7 @@ class FakeDB:
 
 class FakeLLM:
     vision_model = "llava:7b"
+    model = "gemma4:12b"
 
     def __init__(self):
         self.vision_calls = []
