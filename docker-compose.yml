@@ -60,6 +60,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/data
+      - ./data/tts_models:/app/tts_models
       - ./agent/src:/app/src
       - ./mi_boveda_obsidian:/data/obsidian_vault
       - ./:/workspace

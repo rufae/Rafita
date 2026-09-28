@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     # Formato: es_ES-davefx-medium, es_ES-sharvard-medium, es_ES-carlfm-x_low...
     tts_voice: str = Field("es_ES-davefx-medium", alias="TTS_VOICE")
     tts_speed: float = Field(0.0, alias="TTS_SPEED")
+    # Motor TTS (2026-09-28): piper | kokoro | voicebox.
+    # Kokoro (mas natural, mas lento en CPU) para notas/briefing; la llamada
+    # usa TTS_ENGINE_CALL (por defecto piper) para no perder fluidez.
+    tts_engine: str = Field("piper", alias="TTS_ENGINE")
+    tts_engine_call: str = Field("piper", alias="TTS_ENGINE_CALL")
+    tts_engine_chat: str = Field("piper", alias="TTS_ENGINE_CHAT")
+    kokoro_threads: int = Field(0, alias="KOKORO_THREADS", ge=0, le=32)
+    # Voicebox (opcional): REST local del estudio de voz (github.com/jamiepine/voicebox).
+    voicebox_url: str = Field("", alias="VOICEBOX_URL")
+    voicebox_profile_id: str = Field("", alias="VOICEBOX_PROFILE_ID")
+    voicebox_language: str = Field("es", alias="VOICEBOX_LANGUAGE")
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
 
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.

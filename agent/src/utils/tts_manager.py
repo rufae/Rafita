@@ -73,7 +73,12 @@ async def ensure_voice_model() -> Path | None:
     return model_path
 
 
-async def text_to_speech(text: str) -> Path | None:
+async def text_to_speech(text: str, engine: str | None = None) -> Path | None:
+    """Sintetiza a WAV con el motor configurado (TTS_ENGINE).
+
+    Cadena de respaldo: motor pedido -> piper (si no era el pedido) -> espeak.
+    Motores disponibles: `piper`, `kokoro`, `voicebox` (REST externo).
+    """
     # Limpieza para voz (2026-09-28): quita Markdown (se leia "asterisco
     # asterisco") y emojis (piper balbuceaba al inicio con ellos).
     from src.utils.voice_text import sanitize_for_tts
@@ -84,11 +89,28 @@ async def text_to_speech(text: str) -> Path | None:
     output_dir = Path(tempfile.mkdtemp(prefix="rafita_tts_"))
     output_path = output_dir / "response.wav"
 
+    requested = (engine or settings.tts_engine or "piper").strip().lower()
+    order = [requested]
+    if requested != "piper":
+        order.append("piper")
+
+    for name in order:
+        if name == "kokoro":
+            result = await _synth_kokoro_to_wav(text, output_path)
+        elif name == "voicebox":
+            result = await _synth_voicebox_to_wav(text, output_path)
+        else:
+            result = await _synth_piper_to_wav(text, output_path)
+        if result is not None:
+            return result
+
+    return await _fallback_espeak(text, output_path)
+
+
+async def _synth_piper_to_wav(text: str, output_path: Path) -> Path | None:
     model_path = await ensure_voice_model()
-
     if model_path is None:
-        return await _fallback_espeak(text, output_path)
-
+        return None
     try:
         logger.debug("TTS synthesizing %d chars via Piper", len(text))
 
@@ -104,8 +126,81 @@ async def text_to_speech(text: str) -> Path | None:
         return output_path
 
     except Exception as e:
-        logger.warning("Piper TTS failed: %s. Falling back to espeak.", e)
-        return await _fallback_espeak(text, output_path)
+        logger.warning("Piper TTS failed: %s", e)
+        return None
+
+
+async def _synth_kokoro_to_wav(text: str, output_path: Path) -> Path | None:
+    """Voz Kokoro (mas natural, mas lenta en CPU)."""
+    try:
+        from src.utils import tts_kokoro
+
+        scale = float(getattr(settings, "tts_speed", 0.0) or 0.0)
+        result = await tts_kokoro.synthesize_kokoro(
+            text, voice=settings.tts_voice, speed=tts_kokoro.speed_from_length_scale(scale)
+        )
+        if not result:
+            return None
+        samples, sample_rate = result
+        if samples is None or len(samples) == 0:
+            return None
+        import soundfile as sf
+
+        sf.write(str(output_path), samples, sample_rate)
+        if output_path.exists() and output_path.stat().st_size > 0:
+            logger.info("TTS Kokoro: %s (%d Hz)", output_path.name, sample_rate)
+            return output_path
+        return None
+    except Exception as e:
+        logger.warning("Kokoro TTS failed: %s", e)
+        return None
+
+
+async def _synth_voicebox_to_wav(text: str, output_path: Path) -> Path | None:
+    """Motor externo Voicebox (https://github.com/jamiepine/voicebox) via REST.
+
+    Requiere VOICEBOX_URL (p. ej. http://100.97.252.19:17493) y, si se quiere
+    una voz clonada, VOICEBOX_PROFILE_ID. La respuesta puede ser audio directo
+    o JSON con base64/url; si no se entiende, se cae a Piper.
+    """
+    import base64
+
+    import httpx
+
+    base_url = (settings.voicebox_url or "").strip().rstrip("/")
+    if not base_url:
+        return None
+    payload: dict[str, object] = {
+        "text": text,
+        "language": (settings.voicebox_language or "es").strip(),
+    }
+    profile = (settings.voicebox_profile_id or "").strip()
+    if profile:
+        payload["profile_id"] = profile
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(base_url + "/generate", json=payload)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            if content_type.startswith("audio/"):
+                output_path.write_bytes(resp.content)
+                return output_path
+            data = resp.json()
+            audio_b64 = data.get("audio_base64") or data.get("audio")
+            if isinstance(audio_b64, str) and audio_b64.strip():
+                output_path.write_bytes(base64.b64decode(audio_b64))
+                return output_path
+            audio_url = data.get("audio_url") or data.get("url")
+            if isinstance(audio_url, str) and audio_url.startswith("http"):
+                audio = await client.get(audio_url)
+                audio.raise_for_status()
+                output_path.write_bytes(audio.content)
+                return output_path
+            logger.warning("Voicebox: respuesta no reconocida (%s)", list(data)[:6])
+            return None
+    except Exception as e:
+        logger.warning("Voicebox TTS failed: %s", e)
+        return None
 
 
 def _load_piper_voice(model_path: str):
@@ -152,7 +247,13 @@ def _load_piper_voice(model_path: str):
 
 
 async def prewarm_tts() -> bool:
-    """Precalienta Piper al arrancar (la primera llamada ya no paga la carga)."""
+    """Precalienta el motor configurado (Piper y/o Kokoro) al arrancar."""
+    engine = (settings.tts_engine or "piper").strip().lower()
+    if engine == "kokoro":
+        from src.utils import tts_kokoro
+
+        if await tts_kokoro.prewarm_kokoro():
+            return True
     model_path = await ensure_voice_model()
     if model_path is None:
         return False
@@ -214,13 +315,13 @@ async def _fallback_espeak(text: str, output_path: Path) -> Path | None:
         return None
 
 
-async def synthesize_wav_bytes(text: str) -> bytes | None:
+async def synthesize_wav_bytes(text: str, engine: str | None = None) -> bytes | None:
     """Sintetiza y devuelve WAV en memoria (modo llamada: sin ffmpeg/OGG).
 
     El navegador decodifica WAV nativamente con decodeAudioData, asi que la
     conversion a OGG (un proceso ffmpeg por fragmento) era latencia pura.
     """
-    wav_path = await text_to_speech(text)
+    wav_path = await text_to_speech(text, engine=engine)
     if wav_path is None:
         return None
     try:

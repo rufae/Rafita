@@ -212,7 +212,7 @@ async def test_synthesize_wav_bytes_reads_and_cleans(monkeypatch):
     wav_path = tmp_dir / "response.wav"
     wav_path.write_bytes(b"RIFFfakewav")
 
-    async def fake_tts(text):
+    async def fake_tts(text, engine=None):
         return wav_path
 
     monkeypatch.setattr(tts_mod, "text_to_speech", fake_tts)

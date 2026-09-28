@@ -732,11 +732,15 @@ async def _synthesize_speech_bytes(text: str) -> bytes | None:
 
     Bug 2026-09-27: convertir a OGG lanzaba un ffmpeg por fragmento (latencia)
     y el modelo Piper se recargaba en cada sintesis (tartamudeo).
+    La llamada usa TTS_ENGINE_CALL (piper por defecto): Kokoro suena mejor
+    pero es mas lento en CPU y rompe la fluidez en tiempo real.
     """
     try:
+        from src.config import settings
         from src.utils.tts_manager import synthesize_wav_bytes
 
-        return await synthesize_wav_bytes(text)
+        engine = (settings.tts_engine_call or "piper").strip().lower()
+        return await synthesize_wav_bytes(text, engine=engine)
     except Exception as e:
         logger.warning("VoiceStream TTS error: %s", e)
         return None
