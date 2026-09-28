@@ -102,6 +102,16 @@ Rafita detecta tu hardware automáticamente y recomienda el perfil óptimo:
 
 También puedes configurar los modelos manualmente en `.env`.
 
+## Google es opcional
+
+Rafita funciona **sin cuenta de Google**: el calendario, las tareas y los
+ficheros viven en local (base de datos + bóveda Obsidian) y las mismas
+herramientas y comandos operan sobre ellos. Si conectas tu cuenta
+(`/setup_google`), esas herramientas pasan a usar Google Calendar, Tasks,
+Drive, Gmail y Contactos sin cambiar nada más; `/sync_google` copia los datos
+al segundo cerebro. Puedes usarlo en modo local y conectar Google más
+adelante.
+
 ## Limitaciones conocidas
 
 - **Relevancia RAG en español con bge-m3**: medida con el dataset de evaluación

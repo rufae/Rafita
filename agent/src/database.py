@@ -66,6 +66,21 @@ class DatabaseManager:
             ON events(event_datetime)
             """,
             """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                due TEXT,
+                source TEXT NOT NULL DEFAULT 'local',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_tasks_chat_id
+            ON tasks(chat_id)
+            """,
+            """
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -330,6 +345,51 @@ class DatabaseManager:
             LIMIT ?
         """
         return await self.fetchall(sql, (chat_id, limit))
+
+    async def delete_event(self, chat_id: int, event_id: int) -> None:
+        await self.execute(
+            "UPDATE events SET is_active = 0 WHERE id = ? AND chat_id = ?",
+            (event_id, chat_id),
+        )
+        await self._conn.commit()
+
+    async def update_event_datetime(self, chat_id: int, event_id: int, new_datetime: str) -> None:
+        await self.execute(
+            "UPDATE events SET event_datetime = ? WHERE id = ? AND chat_id = ?",
+            (new_datetime, event_id, chat_id),
+        )
+        await self._conn.commit()
+
+    # ------------------------------------------------------------------ tareas
+    # (capa local: Rafita funciona sin Google; si Google esta conectado se usa
+    # Google Tasks y esta tabla queda como respaldo/offline)
+
+    async def add_task(self, chat_id: int, title: str, due: str | None = None) -> int:
+        sql = """
+            INSERT INTO tasks (chat_id, title, due)
+            VALUES (?, ?, ?)
+        """
+        return await self.insert(sql, (chat_id, title, due))
+
+    async def list_tasks(self, chat_id: int, show_completed: bool = False) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM tasks
+            WHERE chat_id = ?%s
+            ORDER BY status ASC, due IS NULL, due ASC, id ASC
+            LIMIT 50
+        """ % ("" if show_completed else " AND status = 'pending'")
+        return await self.fetchall(sql, (chat_id,))
+
+    async def complete_task(self, chat_id: int, task_id: int) -> None:
+        await self.execute(
+            "UPDATE tasks SET status = 'completed' WHERE id = ? AND chat_id = ?",
+            (task_id, chat_id),
+        )
+        await self._conn.commit()
+
+    async def delete_task(self, chat_id: int, task_id: int) -> None:
+        await self.execute("DELETE FROM tasks WHERE id = ? AND chat_id = ?", (task_id, chat_id))
+        await self._conn.commit()
 
     async def add_alert(
         self, chat_id: int, message: str, alert_type: str = "info", expires_at: str | None = None

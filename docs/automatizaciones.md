@@ -13,6 +13,11 @@
 > - **1C Captura a bóveda** (`5-captura-vault.json`): webhook → nota `.md` con
 >   frontmatter y etiquetas en `00-Inbox/`. Verificado con nota real.
 >   (La captura por voz/foto desde Telegram ya es nativa en Rafita.)
+> - **Extras implementados (2026-09-28, verificados)**: botones con acción
+>   (enviar borrador por Gmail, reagendar), briefing adaptativo (finde, evento
+>   en <2 h, copia al vault), avisos AEMET CAP, radar de IA (`6-radar-ia.json`),
+>   informe semanal de infraestructura (`7-informe-semanal.json`) y **briefing
+>   en audio** (nota de voz estilo podcast).
 >
 > Arquitectura: **Rafita aporta datos + IA** (ya tiene OAuth de Google, vault y
 > LLM local) y **n8n orquesta** disparos y entrega. Los endpoints del gateway
@@ -95,27 +100,29 @@ A. Radar de Inteligencia e Innovación en IA/Software
 
 ## Mejoras propuestas (profesionalización)
 
-Implementadas ya:
+Implementadas y verificadas (2026-09-28):
 - **Deduplicación del Inbox** por id de correo (el flujo corre cada 30 min; sin
   esto avisaría del mismo correo en bucle).
-- **Tiempo con AEMET** (clave en `.env`, municipio configurable con
-  `BRIEFING_MUNICIPIO`) con respaldo a open-meteo.
-- **Botones URL** en el briefing (tareas/calendario) y **flujo manual de
-  prueba** (`Rafita - Briefing (prueba manual)`, desactivado) para re-lanzarlo
-  a demanda.
+- **Tiempo con AEMET** (clave en `.env`, municipio con `BRIEFING_MUNICIPIO`) y
+  **avisos oficiales CAP** (zona con `AEMET_AREA`, por defecto Madrid) que se
+  destacan al principio del briefing.
+- **Botones con acción real**: `[✉️ Responder]` en el Inbox envía el borrador
+  por Gmail; `[⏰ Reagendar evento]` en el briefing muestra la agenda y permite
+  mover un evento («mueve dentista al viernes a las 10» → acción `move`).
+- **Briefing adaptativo**: fin de semana en modo resumen, evento en <2 h
+  encabezando el mensaje y copia diaria en el vault (`Briefings/`).
+- **Radar de IA** (punto 4): GitHub (repos nuevos con más estrellas) + RSS
+  (Hugging Face, Real Python, n8n) filtrado por el LLM → 3 items prácticos.
+- **Informe semanal de infraestructura** (punto 2B): backups (estado real
+  escrito por los scripts), restore-drill, disco, BD y servicios; alertas
+  críticas y **sin inventar datos** si algo falta.
+- **Briefing en audio**: nota de voz (piper) estilo podcast para escucharlo
+  mientras haces otras cosas.
 
 Siguientes (por orden de valor):
-1. **Botones con acción real**: `[Reagendar]` que abra el flujo de creación de
-   evento, `[Enviar respuesta]` que dispare `send_gmail` con el borrador
-   (requiere callback en Rafita, ya hay precedente con los gastos).
-2. **Facturas por email → Drive**: extraer adjuntos PDF de los correos
+1. **Facturas por email → Drive**: extraer adjuntos PDF de los correos
    clasificados como factura y guardarlos en `Drive/Finanzas/<año>/Facturas`.
-3. **Lista VIP de remitentes** (jefe/clientes) que fuerza categoría urgente y
-   evita que el clasificador se equivoque.
-4. **Briefing adaptativo**: fines de semana en modo resumen; encabezar el
-   evento si empieza en <2 h; guardar copia del briefing como nota del vault.
-5. **Avisos AEMET oficiales** (CAP): alertas naranjas/rojas al briefing.
-6. **Radar de IA (punto 4)**: feeds RSS + GitHub trending → resumen de 3 items
-   relevantes al stack (siguiente bloque a implementar).
-7. **Informe semanal de infraestructura (punto 2B)**: estado de snapshots
-   restic, disco, backups de Drive y actualizaciones pendientes, los domingos.
+2. **Lista VIP de remitentes** (jefe/clientes) que fuerza categoría urgente.
+3. **Contabilidad automática (punto 3A)** y **propuestas/facturas (3B)**.
+4. **Guardián de infraestructura con autocuración (2A)**: reinicio de
+   contenedores caídos con aviso y log del diagnóstico.

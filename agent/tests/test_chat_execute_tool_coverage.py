@@ -6,6 +6,13 @@ import pytest
 
 from src.config import settings
 from src.handlers import chat as chat_mod
+from src.services.google_services_manager import GoogleServicesManager
+
+
+@pytest.fixture(autouse=True)
+def _google_ready(monkeypatch):
+    """Estos tests ejercitan la ruta Google: forzamos is_ready=True."""
+    monkeypatch.setattr(GoogleServicesManager, "is_ready", property(lambda self: True))
 
 
 def _fn(result=None, exc=None, calls=None):

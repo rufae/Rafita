@@ -201,6 +201,17 @@ class RafitaBot:
         self._app.add_handler(
             CallbackQueryHandler(self._wrap(expense_callback), pattern=r"^gasto_")
         )
+        from src.handlers.automation_callbacks import (
+            brief_reagendar_callback,
+            inbox_send_callback,
+        )
+
+        self._app.add_handler(
+            CallbackQueryHandler(self._wrap(inbox_send_callback), pattern=r"^inbox_send:")
+        )
+        self._app.add_handler(
+            CallbackQueryHandler(self._wrap(brief_reagendar_callback), pattern=r"^brief_")
+        )
 
         self._app.add_error_handler(self._error_handler)
 
@@ -351,6 +362,21 @@ class RafitaBot:
                 chat_id,
                 e,
             )
+            return False
+
+    async def send_voice(self, chat_id: int, ogg_path: str) -> bool:
+        """Envia una nota de voz (audio/podcast) a un chat."""
+        if not self._app:
+            logger.warning("Bot not initialized, cannot send voice")
+            return False
+        try:
+            await self._app_started.wait()
+            with open(ogg_path, "rb") as voice_file:
+                await self._app.bot.send_voice(chat_id=chat_id, voice=voice_file)
+            logger.info("Voice note sent to chat %d", chat_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to send voice to chat %d: %s", chat_id, e)
             return False
 
     @staticmethod
