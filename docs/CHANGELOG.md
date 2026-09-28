@@ -7,350 +7,55 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
-Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
-`5ce1cac`..`83a337b`). Todas las tareas tienen evidencia ejecutada en `plan.md`.
+### Añadido
+- **Integración completa con Google** vía OAuth: Calendar, Drive, Sheets,
+  Docs, Tasks, Gmail (lectura y envío) y Contactos, con errores humanizados y
+  resolución de calendario configurable (`/calendario`, `/setup_google`).
+- **`/sync_google`**: copia contactos, agenda y Drive al segundo cerebro local
+  (notas en `Google/`) para consultar sin depender de la API.
+- **Modo llamada por voz** (WebSocket + web): STT especulativo (transcribe
+  mientras hablas), TTS por frases con caché del modelo Piper, barge-in por
+  voz y botón, y UI con dos orbes animados según el nivel real de audio.
+- **`trigger_n8n`**: ejecutar automatizaciones de n8n desde chat o voz, con
+  flujos de ejemplo importables.
+- **Briefing matutino** (agenda + correo + tiempo con open-meteo) y
+  **recordatorios proactivos** de eventos y tareas.
+- **Backup v2**: verificación `restic check` tras cada copia, restore-drill
+  mensual automático, copia horaria de la base de datos y sincronización
+  opcional a la nube con rclone.
+- **Bot privado**: whitelist por `ADMIN_IDS` y rate limiting por usuario.
+- **Seguridad de la voz**: token de acceso para la página/WS de llamadas y
+  CORS configurable (por defecto solo localhost).
+- **Calidad**: 1.169 tests con cobertura del 94% y candado en CI al 90%;
+  `ruff`/`mypy` limpios; Dependabot para pip, GitHub Actions y Docker.
 
 ### Corregido
-- Cifrado de credenciales fail-closed y persistente: la clave se guarda en el
-  mismo `.env` que lee `Settings`, sin fallback a texto plano y sin clave
-  efímera (tarea 0.1).
-- Path traversal del vault confinado con resolución real de ancestro
-  (`utils/path_safety.resolve_within`), incluidos symlinks y prefijos hermanos
-  (tarea 0.3).
-- Webhook secret único por instancia; endpoints fail-closed (503 sin secreto,
-  401 con firma inválida) y sin default compartido (tarea 0.4).
-- `ADMIN_IDS` acepta CSV/JSON del `.env.example` sin edición extra (tarea 0.5).
-- Health check real: `/ready` comprueba Ollama+modelo, Chroma y Telegram;
-  `/health` queda como liveness (tarea 0.6).
-- Reindexado RAG: la clave de borrado coincide con la de indexado
-  (`note_path`), con compatibilidad para filas legadas (tarea 1.1).
-- Tests de Fernet reescritos sin auto-captura del `AssertionError` (tarea 1.8).
-- Dependencias: `pypdf 6.19.0`, `fastapi 0.141.1`, `starlette 1.7.0`; el gate de
-  `pip-audit` es bloqueante con 3 excepciones documentadas de ChromaDB (0.2).
-- Documentación alineada: URLs reales, descripción correcta de Fernet,
-  puertos en loopback, vault montado, estado de Calendar (Fase 4).
-- Modelos que razonan por defecto (gemma4): las llamadas de chat Ollama envían
-  `reasoning_effort` (`OLLAMA_REASONING_EFFORT`, por defecto `none`) y el
-  prewarm nativo desactiva `think`; antes el razonamiento consumía
-  `LLM_MAX_TOKENS` y el contenido visible llegaba vacío. `OLLAMA_NUM_THREAD`
-  hace configurable el número de hilos (antes `num_thread=8` fijo en visión) y
-  `OPENAI_REASONING_EFFORT` permite lo mismo con `AI_PROVIDER=openai` sobre
-  Ollama `/v1` (tarea 3.1).
-
-### Añadido
-- Evaluación RAG reproducible: 36 casos en español, `Recall@3 = 1.0`,
-  `MRR@5 = 0.98` con bge-m3, umbral calibrado 0.49 (0 falsos positivos en el
-  dataset) y respuesta `NO_ENCONTRADO` (tareas 1.2–1.5).
-- Filtrado por tags en la query de Chroma con flags escalares (tarea 1.6).
-- Suite de tool-calling con modelo real: 21 tools, 2 intentos por tool,
-  equivalencias explícitas (tarea 1.7).
-- `BrainMaintainer`: versionado git del vault con snapshots y revert real,
-  carpetas protegidas configurables y desactivado por defecto (tarea 2.4).
-- Taxonomía del vault, idioma, zona horaria, moneda y nombre configurables
-  (tareas 2.1–2.2); `PERSIST_TO_BRAIN` bloquea escrituras en modo depuración
-  (tarea 2.3).
-- Adapters de proveedor de IA: Ollama local y cualquier endpoint
-  OpenAI-compatible, seleccionable por configuración (tarea 2.5).
-- Wizard de instalación multiplataforma (`scripts/setup_wizard.py`, tarea 2.6)
-  y `CONTRIBUTING.md`.
-- Test-guardia de ChromaDB embebido (`test_chromadb_embedded_only.py`): falla
-  si se introduce modo servidor o `trust_remote_code`, convirtiendo en
-  invariante verificable la mitigación de los avisos PYSEC-2026-3813/3814/3815
-  (revisión Dependabot 2026-09-26; no existe versión corregida).
-- Visión con el mismo modelo que chat (`gemma4:12b`): si
-  `OLLAMA_VISION_MODEL == OLLAMA_MODEL` se omite el hot-swap (antes descargaba
-  y recargaba los mismos pesos en cada imagen) y se mantiene `keep_alive=-1`.
-  Validado con imagen real: `content='Rojo'` (2026-09-26).
-- Seguridad del despliegue: la contraseña de PostgreSQL de Nextcloud se movió
-  de su compose a un fichero `.env` con permisos 600 (se detectó además que el
-  valor del compose era un placeholder distinto del real de los contenedores),
-  se **rotó**, se verificó que la antigua no quedó en git/historial/logs y el
-  `.env` se incluye ya en el backup cifrado.
-- Uso opcional de la GPU de la torre con detección y respaldo (tarea 3.8):
-  `OLLAMA_GPU_HOST` preferido con sonda cacheada (`OLLAMA_GPU_PROBE_INTERVAL`);
-  si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
-  mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
-  40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
-- Plan completo (2026-09-28): seguridad (CORS restrictivo + token de la
-  página de voz), mejoras 1/2/6 (`trigger_n8n` + flujos de ejemplo, briefing
-  matutino, recordatorios proactivos), voz nativa con STT especulativo,
-  backups v2 (`Backups-Rafita-AVP`, restore-drill mensual, BD horaria, copia
-  a Drive con rclone, `migrate-v2.sh`) y campaña de cobertura **39% → 94%**
-  (1.195 tests; candado CI 90%) que cazó y corrigió 8 bugs reales
-  (`search_google_drive` roto, orden de historial, fin de mes en
-  recordatorios, busy-spin, espeak, `%` en prompts, tool calls frágiles).
-- Homelab (2026-09-27): n8n desplegado en el HP (`deploy/hp/
-  docker-compose.n8n.yml`, proyecto independiente, secretos en `.env`),
-  Glances en el Dell sin root (venv + `@reboot`), guía en `docs/n8n-hp.md` y
-  análisis crítico honesto con métricas reales en `docs/analisis-critico.md`
-  (personal 72/100, «mis manos» 60/100, producto 40/100).
-- Contactos en llamada (2026-09-27): matching difuso («A A mamá» del STT ya
-  encuentra «Aa Mama»), variantes de parentesco («mi madre»), alias
-  aprendidos con `remember_fact`, relevancia por palabras y filtro de
-  alucinaciones del STT. Verificado en real con alias y variantes.
-- Fase 5 (2026-09-27): bot privado (whitelist por ADMIN_IDS + rate limiting
-  por usuario), candado de cobertura en CI (39% medido), Dependabot y
-  `web/call_rafita.html`.
-- Propuesta de integración n8n y menú de extensiones gratuitas:
-  `docs/n8n-y-extensiones.md` (pendiente de elección del propietario).
-- Modo llamada (2026-09-27): tartamudeo de audio corregido (caché singleton de
-  Piper, corte de frases en fin de palabra, WAV directo sin ffmpeg por
-  fragmento, reproducción gapless); barge-in por voz + botón Parar (cancela
-  generación y síntesis); colgar detiene el audio y vuelve a llamarse sin
-  recargar; streaming real con `chat_stream_tokens` y prompt de voz (1-3
-  frases, sin Markdown); métrica `first_audio_ms`; UI nueva con dos orbes
-  animados; precalentado de Whisper/Piper. Medido: TTS por fragmento
-  1,4-2,0 s → ~0,23 s (×6-8) y total 13,5-27,1 s → 4,0-11,2 s.
-- Contestador (2026-09-27): el prompt se identifica como IA al inicio
-  (transparencia, Ley UE de IA art. 50).
-- Saneamiento de datos sensibles (2026-09-27): email de cuenta de servicio
-  leído del JSON; IPs a variables de entorno; unidades de backup renombradas
-  (`mnt-backup.*`) con UUID fuera del repo (`install.sh` lo sustituye) y
-  valores por instalación en `/etc/rafita-backup.env`; docs/plan con
-  placeholders. Sin secretos en git.
-- Contactos (2026-09-27): regla de prompt para usar `find_contact` siempre y
-  orden por relevancia; verificado «mama» → «Aa Mama».
-- Segundo cerebro (2026-09-27): `/sync_google` copia contactos, calendario
-  (90 días) y Drive a notas locales; el bot lo ofrece tras `/setup_google`.
-- Contestador de llamadas (2026-09-27): `POST /call` con HMAC, conversación
-  por turnos y resumen al Telegram del propietario; informe de viabilidad
-  gratis en `docs/llamadas-whatsapp-gratis.md` (decisión: seguir investigando
-  una vía gratuita; WhatsApp aplazado con guía en `docs/whatsapp-upgrade.md`).
-- Segunda ronda de correcciones Google (2026-09-27): contactos con paginación
-  completa (encuentra contactos de páginas siguientes); calendario unificado
-  (el gestor de acciones usaba la cuenta de servicio y por eso los borrados
-  no aplicaban — ahora todo va por OAuth con el calendario del usuario);
-  borrado de eventos por título; `list_google_drive` lista el contenido de
-  una carpeta (`folder`); nueva herramienta `send_gmail` (envío de correos,
-  resuelve nombres desde contactos); más memoria de conversación (10×800) y
-  orden de honestidad al redactar.
-- Correcciones de integración Google (2026-09-27): Gmail se limita a la
-  bandeja principal por defecto (`in:inbox category:primary`); contactos sin
-  acentos + búsqueda en «Otros contactos»; `create_event` crea en Google
-  Calendar cuando está conectado; nueva herramienta `list_google_drive`
-  (carpetas/archivos); respuestas con Markdown convertido a HTML en Telegram
-  (negritas, títulos, viñetas, código y tablas alineadas).
-- Selección de herramientas sin palabras clave (2026-09-27): router semántico
-  con embeddings (bge-m3) que ofrece las 10 herramientas más afines al mensaje
-  y deja decidir al modelo; batería de 25 frases variadas al 100% y suite de
-  tool-calling 46/46. Respuestas finales redactadas por el modelo (segunda
-  llamada) con tablas Markdown mostradas en monoespaciado en Telegram.
-- Corregido (2026-09-27): el pre-filtro de intención no conocía palabras como
-  correo/gmail/bandeja/teléfono/contacto/tarea/pasos/drive, así que esas
-  peticiones se respondían **sin herramientas** («no tengo acceso»). Añadidos
-  los keywords y la acción **`overwrite`** para editar notas de la bóveda
-  (create/append/overwrite/read/delete).
-- Herramientas nuevas en chat y llamada (2026-09-27): `search_gmail`,
-  `manage_google_tasks`, `find_contact` y `fitness_daily_steps`. Para no
-  degradar la fiabilidad (la suite bajó de 46/46 a 18/46 al ofrecer las 27
-  siempre), se aplica **selección dinámica por palabras clave**: el núcleo de
-  21 herramientas va siempre y las de Google se ofrecen solo cuando el mensaje
-  las menciona. Suite de tool-calling de nuevo **46/46**; E2E con OAuth sin
-  fallos (People incluido).
-- OAuth completado y verificado con la cuenta real (2026-09-27): Calendar,
-  Drive completo, Sheets y Docs (crear/leer/borrar sin la limitación de cuota
-  de la cuenta de servicio), Tasks, Gmail (lectura) y Fitness. El bot acepta
-  cualquier formato de código pegado (URL completa, `code=`, encoded). Fix:
-  `tasks().delete` usaba `taskId` en vez de `task`. Pendiente: habilitar
-  People API para contactos.
-- Corregido (2026-09-27, 3ª ronda): `credentials.json` de OAuth tiene
-  prioridad sobre la cuenta de servicio en `/setup_google` (antes se ignoraba
-  el OAuth subido); nuevo `GOOGLE_AUTH_MODE` (auto/servicio/oauth) y el
-  diagnóstico marca Tasks/Gmail/People/Fitness como `requires_oauth` con
-  cuenta de servicio.
-- Corregido (2026-09-27, 2ª ronda): fechas relativas resueltas en el servidor
-  (parser español + parámetro `when` en las herramientas + fecha en el mensaje
-  y en la descripción de la herramienta); `docker compose up -d` para aplicar
-  el `.env` (la zona horaria seguía en Mexico_City por usar `restart`); guía
-  OAuth completa (`docs/google-oauth.md`) con Drive completo, Gmail, Tasks,
-  People y Fitness.
-- Corregido (2026-09-27): el flujo de Telegram usaba un prompt propio sin la
-  fecha actual ni el estado de Google (creaba eventos en 2025 y decía no estar
-  conectado); ahora usa `build_system_prompt()` y hay una guardia que rechaza
-  fechas pasadas con la fecha real en el mensaje. Limpiados los eventos
-  erróneos de 2025. La GPU de la torre vuelve a arrancar con el sistema
-  (`restart always`); latencia medida: 0,8 s por llamada de herramienta.
-- Integración de Google refactorizada en un **módulo centralizado**
-  (`GoogleServicesManager`): autenticación única (cuenta de servicio u OAuth),
-  servicios Calendar/Drive/Sheets/Docs (Tasks/Gmail solo vía OAuth), scopes de
-  mínimo privilegio, `HttpError` con reintentos/backoff y mensajes accionables.
-  Incluye **test E2E** (`agent/scripts/test_google_services.py`) y guía
-  (`docs/google-setup.md`).
-- Corregido: el prompt del sistema no incluía la **fecha actual** ni el estado
-  de Google (el modelo inventaba fechas y decía no estar conectado); zona
-  horaria del despliegue puesta en `Europe/Madrid`; el listado de eventos
-  ahora normaliza la zona horaria (evitaba un 400 de Google).
-- Google Drive (solo lectura de lo compartido): herramientas
-  `search_google_drive` y `read_google_drive_file` (Docs/Sheets/Slides, PDF y
-  texto) y comando `/calendario <id>` para fijar el calendario desde el bot
-  (la cuenta de servicio no ve calendarios compartidos en su lista).
-- Google Calendar con cuenta de servicio: detección automática del JSON
-  (`service_account.json`), soporte en los dos módulos y **autodetección del
-  calendario compartido** (sin necesidad de configurar el correo);
-  `GOOGLE_CALENDAR_ID` queda como override. Se retiraron los permisos de
-  Tasks/Drive que no se usaban. Drive y Tasks siguen **sin implementar**.
-- Panel `/status` migrado a HTML con escapado (los guiones bajos de las
-  herramientas rompían el formato Markdown) y `credentials/` protegido
-  (permisos 600/700 y en `.gitignore`).
-- Timeout del cliente de chat acotado y configurable
-  (`OLLAMA_REQUEST_TIMEOUT`, 600 s por defecto; 120 s entre fragmentos en
-  streaming): una caída de red silenciosa ya no puede esperar el timeout de la
-  SDK (1200 s); una conexión rechazada sigue fallando en segundos.
-- Pasada de coherencia Fase 3 ↔ Fase 4 (tarea 4.5) y ítem propio 3.4.1 para el
-  hallazgo del sombreado de ufw por Tailscale: ADR-003 con el experimento
-  controlado (46/46 en la misma RTX 3060 del baseline), SECURITY.md y README
-  reescritos para la topología real de dos nodos.
-- Guía de re-verificación independiente (`docs/auditoria-reverificacion.md`)
-  con los comandos reproducibles de los puntos críticos (tool-calling 46/46
-  reproducible con el mismo script, contraseña de Nextcloud e integridad tras
-  el renombrado de usuario).
-- Arranque con el LLM caído (tarea 3.4): el agente ya no se bloquea en
-  "Connecting to Ollama..." cuando el nodo de IA está apagado; arranca en modo
-  degradado (Telegram y gateway activos, `/ready` 503) y se recupera solo al
-  volver el backend. Health check de arranque con timeout corto y prewarm
-  omitido si no hay backend.
-- Versionado verificable y procedimiento de actualización/rollback (tarea 3.7):
-  `LABEL rafita.version` en la imagen y campo `version` en `/health`;
-  medidor de downtime (`deploy/hp/measure-readiness.sh`) y runbook con el
-  ciclo completo. Medido en real: upgrade 4,7 s y rollback 5,1 s hasta
-  `/ready` 200, con rollback ejecutado de verdad y prueba de nodos
-  independientes (Dell actualizado con el agente vivo).
-- Backup diario de todo el homelab al USB de backup (tarea 3.6): restic cifrado
-  e incremental con retención 7d/4s/6m, solo si el USB está presente; cubre
-  Rafita, BuenaTierra, Nextcloud, NPM, AdGuard, WireGuard, Portainer y la
-  configuración, más snapshot diario de config del Dell. Aviso por Telegram y
-  verificación de restore no destructiva (SQLite, Chroma, Fernet y Postgres).
-  Incluye el renombrado seguro del usuario del HP a `server`.
-- Logs estructurados y seguros (tarea 3.5): `LOG_FORMAT=json` opcional,
-  redacción de credenciales en todos los handlers antes de escribir a disco,
-  rotación acotada en fichero (10 MB×5 / 5 MB×3) y en Docker
-  (`json-file` 10m×3), y comando remoto `/logs` (solo administradores) para
-  consultar logs sin SSH. Arreglado `/status` con los estados de 3.3.
-- Readiness real (tarea 3.3): `/ready` usa el `check_health()` genérico del
-  proveedor de IA (`ok`/`degraded`/`unhealthy` según modelo disponible y
-  cargado), añade check de vault (existencia/permisos) y agrega
-  `ready`/`degraded`/`not_ready` con fallo rápido (<10 s con el nodo caído);
-  `/health` queda como liveness. Sonda versionada `deploy/hp/ready_probe.py`
-  y 5 escenarios de fallo verificados en el HP.
-
-### Limitaciones conocidas (ronda de estabilización)
-- La calidad RAG está medida sobre un vault de evaluación sintético; falta
-  validarla con el vault personal real y más negativos.
-- Tool-calling con `gemma4:12b`: la medición de 29/46 era efecto del
-  `thinking` del modelo, activo por defecto. Con `reasoning_effort=none`
-  (tareas 3.1/3.2) la suite completa da **46/46 (100%)** en el despliegue real
-  (agente en HP → LLM en Dell). Ver README y `plan.md`.
-- El despliegue continuo ya está desplegado (LLM en Dell, agente en HP por
-  Tailscale; tareas 3.1/3.2); las pruebas de caos, logs y upgrade/rollback
-  siguen pendientes (3.4–3.7).
-
-## [0.1.0] - 2026-08-12
-
-### Añadido
-
-#### Fase 0 — Desbloqueo inicial
-- Fix crítico: OllamaEmbeddingFunction ahora lanza excepción en fallos en vez de guardar vectores-cero
-- Procesamiento de chunks uno a uno con 3 reintentos y backoff exponencial
-- Timeout de embeddings aumentado a 600s para hardware modesto
-- Fórmula de relevancia ajustada: `max(0, 1.0 - distance/2.0)` (la ronda de
-  estabilización verificó después que con vectores unitarios equivale a la
-  similitud coseno; ver `[Unreleased]`)
-- Timeout de chat aumentado a 600s para CPU-only
-
-#### Fase 1 — Calidad de código base
-- Configuración de ruff (lint + format) con 400+ auto-fixes aplicados
-- Configuración de mypy con overrides justificados para stubs incompletos
-- Pre-commit hooks: ruff check, ruff format, mypy
-- 34 tests unitarios: vault_indexer (12), vector_manager (13), chat_tools (8), fernet (4)
-- pytest.ini con `pythonpath = ["agent"]` para resolución robusta de imports
-- chat.py partido: TOOLS_DEFINITIONS extraído a chat_tools.py (580 líneas)
-
-#### Fase 2 — Seguridad y privacidad
-- SECURITY.md con modelo de amenaza completo
-- Cifrado en reposo documentado: BitLocker/LUKS/FileVault recomendado
-- Procedimiento de rotación de clave Fernet documentado
-- pip-audit integrado: 63 vulnerabilidades iniciales → 8 (starlette pendiente)
-- Auditoría de path traversal en webhook_server.py y files.py
-- Fix de path traversal: `_safe_vault_subpath()` en files.py
-- Puertos restringidos a localhost (127.0.0.1) en docker-compose.yml
-- Filtrado de tags post-procesamiento en Python (ChromaDB 0.5.0 no soporta `$contains`)
-
-#### Fase 3 — Observabilidad
-- Correlation ID por conversación vía contextvars
-- Métricas locales: latencia LLM, latencia embeddings, tasa de fallos de tools
-- Endpoint `/metrics` en FastAPI para monitoreo
-- Health monitor en background: alerta si tools fallan >10 veces o DB vacía
-
-#### Fase 4 — Arquitectura
-- ADR-001: Almacén vectorial (mantener ChromaDB, 0 servicios extra)
-- ADR-002: Cola de trabajos (sin cola externa, asyncio inline)
-- ADR-003: Modelos de IA (gemma4:12b GPU, qwen2.5:7b CPU, bge-m3 embeddings)
-- Detección automática de hardware: GPU/CPU profiles
-- 0 servicios nuevos añadidos al stack
-
-#### Fase 5 — CI/CD
-- GitHub Actions: lint + tests + security scan + Docker build
-- Dockerfile multi-stage: builder + runtime, usuario no-root (rafita)
-- Backup automatizado con verificación de integridad
-- gitleaks para detección de secretos en el historial
-
-#### Fase 6 — Documentación técnica
-- ADR-003: Modelos de IA con evidencia empírica
-- Runbook de incidentes: crash loop, backfill fallido, bot no responde, rotación Fernet, restauración backup
-
-#### Fase 7 — Preparación para publicación
-- Licencia AGPL-3.0 añadida
-- README.md profesional con badges, arquitectura, quickstart, limitaciones conocidas
-- INSTALL.md completo: perfiles hardware, 7 pasos, troubleshooting
-- vault_ejemplo/ con 3 notas demo (sin datos reales)
-- ASSISTANT_NAME configurable en .env
-- Repo publicado en github.com/rufae/Rafita
-
-#### Fase 8 — Pulido final
-- CI verde en GitHub Actions (4/4 jobs passing)
-- Tag v0.1.0 creado y pusheado
-- Topics añadidos: self-hosted, obsidian, local-llm, ollama, rag, privacy, telegram-bot, second-brain, ai-assistant
-- Secret scanning y Dependabot activados
-- Issue #1: F0.5 pendiente (relevancia RAG >60% requiere GPU)
-- CVEs resueltos: cryptography 50.0.0, python-dotenv 1.2.2
-
-#### Fase 9 — Voz: unificación del cerebro
-- Diagnóstico: voz usaba `llm.chat_stream_tokens()` directo sin tools ni RAG
-- Orquestador compartido creado: `agent/src/core/orchestrator.py`
-- Voz ahora consume el mismo orquestador que Telegram (mismo system prompt, mismas tools, mismo RAG)
-- STT mejorado: faster-whisper modelo "base" (antes "tiny"), language="es" forzado
-- WebSocket mejorado: orchestrator en background, cancelación de tarea LLM al colgar
-- Test Fernet añadido: 4 tests (roundtrip, clave inválida, multi-valor UTF-8, token manipulado)
-- SECURITY.md actualizado: sección "Privacidad en llamadas de voz"
-
-### Limitaciones conocidas
-
-- **F0.5**: Relevancia RAG >60% en español con bge-m3 no validada en producción (requiere GPU).
-  → Actualizado en `[Unreleased]`: medida en GPU (Recall@3 1.0, MRR@5 0.98, umbral 0.49);
-  queda validar con el vault personal real.
-- **F9.5/F9.6**: Prueba real de voz con RAG no pasa en CPU (qwen2.5:7b no invoca tools de forma fiable ~50% de las veces).
-  → Actualizado en `[Unreleased]`: suite de tool-calling con gemma4:12b en GPU (29/46 con equivalencias);
-  7 tools no se invocan de forma fiable, mejora planificada para v0.2.0.
-- **Watchdog en Docker Desktop Windows**: inotify no propaga eventos a través de bind mounts
-- **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only
+- Cifrado de credenciales fail-closed y persistente (nunca texto plano).
+- Path traversal del vault confinado con resolución real de ancestro,
+  incluidos symlinks y prefijos hermanos.
+- Webhooks HMAC fail-closed: secreto único por instancia, 503 sin secreto y
+  401 con firma inválida.
+- Historial de chat estable (desempate por `id`) y búsqueda de contactos
+  robusta ante variantes del STT («A A mamá» → «Aa Mama»), con alias
+  aprendidos («mi madre es X»).
+- Varios bugs de fechas/orden detectados por la campaña de tests (fin de mes,
+  reindexado RAG, `search_google_drive`, reconexión con busy-spin).
 
 ### Seguridad
+- Dependencias sin CVEs conocidas; 3 avisos de ChromaDB aceptados con
+  mitigación documentada (uso embebido, sin servidor HTTP).
+- Los secretos viven en `.env` (no versionado) y las credenciales OAuth se
+  guardan cifradas.
 
-- Ver [SECURITY.md](SECURITY.md) para modelo de amenaza completo
-- Cifrado de disco recomendado (BitLocker/LUKS/FileVault)
-- Cifrado de credenciales con Fernet (AES-128-CBC + HMAC-SHA256)
-- Privacidad en llamadas de voz: RAG puede recuperar datos sensibles sin vista previa
+## [0.2.0] - 2026-09-27
+- Integración Google, modo llamada, sincronización con el segundo cerebro,
+  contactos robustos, bot privado con rate limiting y campaña de calidad
+  (tests + cobertura + CI).
 
-## [0.0.0] - 2026-08-10
+## [0.1.0] - 2026-08-12
+- Primera versión funcional: bot de Telegram, RAG con ChromaDB, bóveda
+  Obsidian, finanzas, alertas y panel de control.
 
-### Añadido
-- Versión inicial pre-pública (no publicada)
-- Arquitectura base: Docker Compose con ollama-service + rafita-agent-core
-- Bot de Telegram con comandos básicos
-- Vault de Obsidian con estructura PARA+Zettelkasten
-- Chunking semántico H2/H3
-- ChromaDB para búsqueda vectorial
-- Cifrado de credenciales con Fernet
-
+[Unreleased]: https://github.com/rufae/Rafita/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rufae/Rafita/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rufae/Rafita/releases/tag/v0.1.0
-[0.0.0]: https://github.com/rufae/Rafita/commits/v0.0.0

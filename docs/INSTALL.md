@@ -252,7 +252,7 @@ docker compose logs rafita-agent-core | grep -i error
 
 ## 7. Solución de problemas
 
-Ver [runbook.md](runbook.md) para una guía completa de incidentes.
+Para incidentes, revisa los logs (`/data/logs`) y el estado en `/ready`.
 
 ### Problemas comunes
 
