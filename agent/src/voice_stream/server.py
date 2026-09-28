@@ -599,7 +599,7 @@ def _is_sentence_boundary(text: str) -> bool:
     chars en mitad de palabra (tartamudeo del TTS). Ahora se ignora el
     espacio final.
     """
-    stripped = text.rstrip()
+    stripped = text.rstrip(" \t")  # conserva \n (que tambien es fin de frase)
     if not stripped:
         return False
     if stripped[-1] in _SENTENCE_ENDINGS:

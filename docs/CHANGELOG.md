@@ -71,6 +71,14 @@ Ronda de estabilización tras la auditoría externa del 2026-09-24 (commits
   si la torre está apagada se usa el nodo de CPU automáticamente y, si falla a
   mitad, se reintenta en el respaldo. Medido: ~12× más rápido (23 casos en
   40 s frente a ~8 min). `/ready` y `/status` muestran el backend activo.
+- Plan completo (2026-09-28): seguridad (CORS restrictivo + token de la
+  página de voz), mejoras 1/2/6 (`trigger_n8n` + flujos de ejemplo, briefing
+  matutino, recordatorios proactivos), voz nativa con STT especulativo,
+  backups v2 (`Backups-Rafita-AVP`, restore-drill mensual, BD horaria, copia
+  a Drive con rclone, `migrate-v2.sh`) y campaña de cobertura **39% → 94%**
+  (1.195 tests; candado CI 90%) que cazó y corrigió 8 bugs reales
+  (`search_google_drive` roto, orden de historial, fin de mes en
+  recordatorios, busy-spin, espeak, `%` en prompts, tool calls frágiles).
 - Homelab (2026-09-27): n8n desplegado en el HP (`deploy/hp/
   docker-compose.n8n.yml`, proyecto independiente, secretos en `.env`),
   Glances en el Dell sin root (venv + `@reboot`), guía en `docs/n8n-hp.md` y

@@ -394,6 +394,12 @@ async def _process_ai_message(
                 messages_for_llm[index]["content"],
             )
             break
+    else:
+        # Garantiza que la pregunta actual llegue al modelo aunque el
+        # historial no la incluya.
+        messages_for_llm.append(
+            {"role": "user", "content": "%s %s" % (date_context_line(), user_text)}
+        )
 
     await message.reply_chat_action("typing")
 
@@ -498,9 +504,10 @@ async def _process_ai_message(
     if tool_calls:
         results = []
         for tc in tool_calls:
-            func_name = tc["function"]["name"]
+            fn = tc.get("function") or {}
+            func_name = fn.get("name", "")
             try:
-                args = json.loads(tc["function"]["arguments"])
+                args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
             logger.info(
@@ -1333,12 +1340,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             if time_str:
                 try:
                     from datetime import datetime as dt2
+                    from datetime import timedelta as td2
 
                     now = dt2.now()
                     hour, minute = map(int, time_str.split(":"))
                     first_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                     if first_run <= now:
-                        first_run = first_run.replace(day=first_run.day + 1)
+                        # Con timedelta: replace(day+1) revienta a fin de mes.
+                        first_run = first_run + td2(days=1)
                     first_run_str = first_run.strftime("%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     first_run_str = None
@@ -1434,11 +1443,22 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return result
 
         elif func_name == "search_google_drive":
-            result = await google_services.search_drive(
+            # Bug 2026-09-28: se llamaba a google_services.search_drive(), que
+            # no existe en el manager (daba AttributeError siempre).
+            files = await google_services.search_files(
                 query=args.get("query", ""),
                 max_results=int(args.get("max_results", 10) or 10),
             )
-            return result
+            if not files:
+                return {
+                    "success": True,
+                    "files": [],
+                    "message": "No encontré nada en Drive para '%s'." % args.get("query", ""),
+                }
+            lines = ["🔍 En Drive:"]
+            for f in files:
+                lines.append("  • %s (id: %s)" % (f.get("name", "?"), f.get("id", "?")))
+            return {"success": True, "files": files, "message": "\n".join(lines)}
 
         elif func_name == "list_google_drive":
             result = await google_services.list_drive(
