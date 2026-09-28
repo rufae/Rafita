@@ -1006,6 +1006,7 @@ class GoogleServicesManager:
         )
         events = [
             {
+                "id": e.get("id", ""),
                 "title": e.get("summary", "Sin titulo"),
                 "start": e["start"].get("dateTime", e["start"].get("date")),
                 "end": e["end"].get("dateTime", e["end"].get("date")),

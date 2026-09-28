@@ -192,6 +192,7 @@ async def test_list_calendar_events_supports_all_day(monkeypatch):
     result = await manager.list_calendar_events(days=5, max_results=999)
     assert result["success"] is True
     assert result["events"][0] == {
+        "id": "",
         "title": "Todo el dia",
         "start": "2026-10-01",
         "end": "2026-10-02",

@@ -46,6 +46,10 @@ async def sync_google_to_vault() -> dict[str, Any]:
     contacts = (await google_services.list_all_contacts()).get("contacts", [])
     events = (await google_services.list_calendar_events(days=90)).get("events", [])
     drive = (await google_services.list_drive(kind="all", max_results=50)).get("files", [])
+    tasks = (await google_services.list_tasks()).get("tasks", [])
+    mails = (
+        await google_services.search_gmail(query="is:unread newer_than:7d", max_results=10)
+    ).get("messages", [])
 
     contact_lines = _frontmatter("Contactos Google")
     contact_lines += [
@@ -81,10 +85,32 @@ async def sync_google_to_vault() -> dict[str, Any]:
         )
     drive_lines.append("")
 
+    task_lines = _frontmatter("Tareas Google")
+    task_lines += ["# Tareas pendientes (Google Tasks)", "", "| Tarea | id |", "|---|---|"]
+    for t in tasks:
+        task_lines.append("| %s | %s |" % (t.get("title") or "-", t.get("id") or "-"))
+    task_lines.append("")
+
+    mail_lines = _frontmatter("Correo Google")
+    mail_lines += [
+        "# Correo sin leer (7 dias)",
+        "",
+        "| Asunto | De | Fecha |",
+        "|---|---|---|",
+    ]
+    for m in mails:
+        mail_lines.append(
+            "| %s | %s | %s |"
+            % (m.get("subject") or "-", m.get("from") or "-", m.get("date") or "-")
+        )
+    mail_lines.append("")
+
     notes = [
         ("Contactos Google", "\n".join(contact_lines)),
         ("Calendario Google", "\n".join(event_lines)),
         ("Drive Google", "\n".join(drive_lines)),
+        ("Tareas Google", "\n".join(task_lines)),
+        ("Correo Google", "\n".join(mail_lines)),
     ]
     results = []
     for title, content in notes:
@@ -92,17 +118,21 @@ async def sync_google_to_vault() -> dict[str, Any]:
 
     ok = all(r.get("success") for r in results)
     logger.info(
-        "Sync Google->vault: %d contactos, %d eventos, %d elementos de Drive",
+        "Sync Google->vault: %d contactos, %d eventos, %d elementos de Drive, "
+        "%d tareas, %d correos",
         len(contacts),
         len(events),
         len(drive),
+        len(tasks),
+        len(mails),
     )
     return {
         "success": ok,
         "message": (
-            "Copia local creada en el segundo cerebro: %d contactos, %d eventos "
-            "y %d elementos de Drive (carpeta Google/). Ya puedes preguntarme "
-            "por ellos sin depender de la API." % (len(contacts), len(events), len(drive))
+            "Copia local creada en el segundo cerebro: %d contactos, %d eventos, "
+            "%d elementos de Drive, %d tareas y %d correos (carpeta Google/). "
+            "Ya puedes preguntarme por ellos sin depender de la API."
+            % (len(contacts), len(events), len(drive), len(tasks), len(mails))
         ),
         "files": [r.get("filepath") for r in results],
     }
