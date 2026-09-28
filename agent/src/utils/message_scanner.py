@@ -33,7 +33,7 @@ async def _extract_batch_with_llm(
         "Analiza los siguientes mensajes de Telegram del usuario y extrae SOLO "
         "informacion estructurada que merezca ser guardada. Ignora saludos, charla casual, "
         "y mensajes sin valor informativo.\n\n"
-        "MENSAJES A ANALIZAR:\n%s\n\n"
+        f"MENSAJES A ANALIZAR:\n{batch_text[:6000]}\n\n"
         "EXTRAE y clasifica en estas categorias:\n"
         f"1. ENLACES: URLs utiles, articulos, herramientas → guardar en {get_taxonomy().path('resources')}\n"
         f"2. IDEAS: conceptos, aprendizajes, insights → guardar en {get_taxonomy().path('zettelkasten')}\n"
@@ -47,7 +47,7 @@ async def _extract_batch_with_llm(
         "Se CONCISO. Solo guarda lo que realmente aporte valor al segundo cerebro. "
         "No guardes duplicados. Si un mensaje no tiene nada valioso, ignoralo.\n\n"
         "Responde en español confirmando brevemente que extrajiste y donde guardaste cada cosa."
-    ) % batch_text[:6000]
+    )
 
     try:
         messages_for_llm = [

@@ -210,6 +210,13 @@ function getWsBase() {
   return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
 }
 
+function callToken() {
+  return new URLSearchParams(window.location.search).get('token') || '';
+}
+function withToken(url) {
+  return callToken() ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(callToken()) : url;
+}
+
 const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
 
 let ws = null, sessionId = null;
@@ -364,7 +371,7 @@ async function startCall() {
   await ensureAudioContext();
 
   try {
-    const resp = await fetch(getApiBase() + '/call/start', {
+    const resp = await fetch(withToken(getApiBase() + '/call/start'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -392,7 +399,7 @@ async function startCall() {
   }
 
   return new Promise(function (resolve) {
-    ws = new WebSocket(getWsBase() + '/call/ws/' + sessionId);
+    ws = new WebSocket(withToken(getWsBase() + '/call/ws/' + sessionId));
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = function () {
@@ -506,7 +513,7 @@ function stopSpeaking() {
 async function endCall() {
   stopSpeaking();
   if (sessionId) {
-    try { await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST' }); } catch (e) {}
+    try { await fetch(withToken(getApiBase() + '/call/' + sessionId + '/end'), { method: 'POST' }); } catch (e) {}
   }
   sessionId = null;
 }
@@ -589,7 +596,7 @@ requestAnimationFrame(animationLoop);
 async function testTTS() {
   setStatus(STATUS.PROCESSING, 'Probando TTS...');
   try {
-    const resp = await fetch(getApiBase() + '/call/test_tts');
+    const resp = await fetch(withToken(getApiBase() + '/call/test_tts'));
     if (!resp.ok) {
       const err = await resp.json().catch(function () { return { reason: resp.statusText }; });
       throw new Error(err.reason || 'HTTP ' + resp.status);

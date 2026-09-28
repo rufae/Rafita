@@ -67,6 +67,24 @@ class Settings(BaseSettings):
     whisper_model: str = Field("tiny", alias="WHISPER_MODEL")
     whisper_cpu_threads: int = Field(4, alias="WHISPER_CPU_THREADS", ge=1, le=32)
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
+
+    # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.
+    voice_call_token: str = Field("", alias="VOICE_CALL_TOKEN")
+    voice_speculative_stt: bool = Field(True, alias="VOICE_SPECULATIVE_STT")
+
+    # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
+    # coma). Vacio = solo mismo origen/localhost.
+    web_allowed_origins: str = Field("", alias="WEB_ALLOWED_ORIGINS")
+
+    # Briefing matutino y recordatorios proactivos (mejoras 2 y 6, 2026-09-28).
+    briefing_enabled: bool = Field(True, alias="BRIEFING_ENABLED")
+    briefing_time: str = Field("08:00", alias="BRIEFING_TIME")
+    briefing_lat: float = Field(0.0, alias="BRIEFING_LAT")
+    briefing_lon: float = Field(0.0, alias="BRIEFING_LON")
+
+    # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.
+    n8n_webhooks: str = Field("", alias="N8N_WEBHOOKS")
+
     backup_retention_days: int = Field(30, alias="BACKUP_RETENTION_DAYS")
     embedding_model: str = Field("nomic-embed-text", alias="EMBEDDING_MODEL")
     embedding_dim: int = Field(768, alias="EMBEDDING_DIM")
