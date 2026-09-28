@@ -532,6 +532,36 @@ async def automation_sync(request: Request):
     return await sync_google_vault()
 
 
+@app.post("/automation/crm-remind")
+async def automation_crm_remind(request: Request):
+    """Seguimientos de clientes pendientes (mini-CRM, Fase 1)."""
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    from src.services.crm_service import seguimientos_pendientes
+
+    dias = int(payload.get("dias", 7) or 7)
+    pendientes = await seguimientos_pendientes(dias=dias)
+    if not pendientes:
+        return {"success": True, "changes": 0, "clients": [], "message": ""}
+    lineas = ["🔔 *Seguimiento de clientes*"]
+    for cliente in pendientes[:10]:
+        paso = (" → %s" % cliente["proximo_paso"]) if cliente.get("proximo_paso") else ""
+        lineas.append(
+            "  • *%s* (%s): %s%s" % (cliente["nombre"], cliente["estado"], cliente["motivo"], paso)
+        )
+    return {
+        "success": True,
+        "changes": len(pendientes),
+        "clients": pendientes,
+        "message": "\n".join(lineas),
+    }
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

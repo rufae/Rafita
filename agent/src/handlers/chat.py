@@ -1301,6 +1301,11 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             lines.append("\n_Puedes verificar esta informacion en tu vault de Obsidian._")
             return {"success": True, "message": "\n".join(lines)}
 
+        elif func_name == "manage_crm":
+            from src.services.crm_service import handle as crm_handle
+
+            return await crm_handle(str(args.get("action", "")), args)
+
         elif func_name == "manage_google_calendar":
             action = args.get("action", "").strip().lower()
             # Google opcional (2026-09-28): si Google no esta conectado, el
