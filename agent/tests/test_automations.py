@@ -63,7 +63,9 @@ async def test_build_briefing_composes_with_llm(monkeypatch):
     result = await auto.build_briefing()
     assert result["success"]
     assert "Dentista" in result["text"]
-    assert result["counts"] == {"agenda": 1, "tareas": 1, "correo": 1}
+    assert result["counts"]["agenda"] == 1
+    assert result["counts"]["tareas"] == 1
+    assert result["counts"]["correo"] == 1
     assert result["buttons"][0]["text"].startswith("✅")
     assert any("Pagar luz" in msg["content"] for call in fake_llm.calls for msg in call)
 

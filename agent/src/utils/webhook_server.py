@@ -462,6 +462,65 @@ async def automation_capture(request: Request):
     )
 
 
+@app.post("/automation/radar")
+async def automation_radar(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    from src.services.automation_service import radar
+
+    return await radar()
+
+
+@app.post("/automation/infra-report")
+async def automation_infra_report(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    from src.services.automation_service import infra_report
+
+    return await infra_report()
+
+
+@app.post("/automation/send-voice")
+async def automation_send_voice(request: Request):
+    """Sintetiza un texto y lo envia como nota de voz de Telegram (podcast)."""
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+    from src.config import settings
+
+    target = payload.get("chat_id")
+    if not target:
+        admins = settings.admin_ids or []
+        target = admins[0] if admins else None
+    if not target or _bot_ref is None:
+        return JSONResponse(status_code=503, content={"error": "bot o chat_id no disponible"})
+
+    from src.utils.tts_manager import convert_to_ogg, text_to_speech
+
+    wav = await text_to_speech(text[:1500])
+    if wav is None:
+        return JSONResponse(status_code=500, content={"error": "TTS no disponible"})
+    ogg = await convert_to_ogg(wav)
+    if not ogg or not ogg.exists():
+        return JSONResponse(status_code=500, content={"error": "no se pudo convertir a ogg"})
+    try:
+        await _bot_ref.send_voice(int(target), str(ogg))
+        logger.info("Automation: nota de voz enviada a %s", target)
+        return {"success": True, "sent_to": target}
+    except Exception as e:
+        logger.error("Automation send-voice fallo: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)[:200]})
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

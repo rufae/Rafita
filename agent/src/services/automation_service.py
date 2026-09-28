@@ -11,7 +11,7 @@ gateway son HMAC y devuelven JSON listo para n8n:
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -103,36 +103,186 @@ async def _server_status() -> dict[str, Any]:
     return status
 
 
-async def _agenda_tasks_mail() -> tuple[list[str], list[str], list[str]]:
-    """(agenda proximas 24h, tareas pendientes, correo no leido 12h)."""
+async def _agenda_tasks_mail() -> tuple[list[str], list[str], list[str], list[dict[str, Any]]]:
+    """(agenda proximas 24h, tareas pendientes, correo no leido 12h).
+
+    Google opcional: sin Google conectado se usa el almacen local (eventos y
+    tareas de la BD), igual de funcional.
+    """
     agenda: list[str] = []
     tareas: list[str] = []
     correo: list[str] = []
+    events: list[dict[str, Any]] = []
+    from src.database import db
+
     try:
         from src.services.google_services_manager import google_services
 
-        if not await google_services.initialize() or not google_services.is_ready:
-            return agenda, tareas, correo
-        events = (await google_services.list_calendar_events(days=1, max_results=10)).get(
-            "events", []
-        )
-        for ev in events:
-            start = str(ev.get("start", ""))
-            try:
-                dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                when = dt.strftime("%H:%M")
-            except Exception:
-                when = start
-            agenda.append("%s — %s" % (when, ev.get("title") or "sin titulo"))
-        tasks = (await google_services.list_tasks()).get("tasks", [])
-        tareas = [t.get("title", "") for t in tasks[:10]]
-        mails = (
-            await google_services.search_gmail(query="is:unread newer_than:12h", max_results=6)
-        ).get("messages", [])
-        correo = ["%s (de %s)" % (m.get("subject") or "?", m.get("from") or "?") for m in mails]
+        ready = await google_services.initialize() and google_services.is_ready
+    except Exception:
+        ready = False
+
+    if ready:
+        try:
+            events = (await google_services.list_calendar_events(days=1, max_results=10)).get(
+                "events", []
+            )
+            for ev in events:
+                start = str(ev.get("start", ""))
+                try:
+                    dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                    when = dt.strftime("%H:%M")
+                except Exception:
+                    when = start
+                agenda.append("%s — %s" % (when, ev.get("title") or "sin titulo"))
+            tasks = (await google_services.list_tasks()).get("tasks", [])
+            tareas = [t.get("title", "") for t in tasks[:10]]
+            mails = (
+                await google_services.search_gmail(query="is:unread newer_than:12h", max_results=6)
+            ).get("messages", [])
+            correo = ["%s (de %s)" % (m.get("subject") or "?", m.get("from") or "?") for m in mails]
+            return agenda, tareas, correo, events
+        except Exception as e:
+            logger.warning("Briefing: datos Google no disponibles: %s", str(e)[:150])
+
+    # Modo local (sin Google): eventos y tareas de la BD
+    chat_id = (settings.admin_ids or [0])[0]
+    try:
+        rows = await db.get_upcoming_events(chat_id, limit=10)
+        for r in rows:
+            raw_dt = str(r.get("event_datetime", ""))
+            events.append({"title": r.get("title") or "", "start": raw_dt.replace(" ", "T")})
+            agenda.append("%s — %s" % (raw_dt[11:16], r.get("title") or ""))
     except Exception as e:
-        logger.warning("Briefing: datos Google no disponibles: %s", str(e)[:150])
-    return agenda, tareas, correo
+        logger.warning("Briefing: eventos locales no disponibles: %s", str(e)[:120])
+    try:
+        rows = await db.list_tasks(chat_id)
+        tareas = [r.get("title", "") for r in rows[:10]]
+    except Exception as e:
+        logger.warning("Briefing: tareas locales no disponibles: %s", str(e)[:120])
+    return agenda, tareas, correo, events
+
+
+def _parse_cap_alerts(blob: bytes) -> list[str]:
+    """Extrae avisos activos de un tar.gz CAP de AEMET (sin dependencias).
+
+    Devuelve lineas tipo '🟠 Moderado — Lluvias — Madrid (hasta 20:00)'.
+    """
+    import io
+    import tarfile
+    import xml.etree.ElementTree as ET
+
+    def _tag(elem) -> str:
+        return elem.tag.split("}")[-1]
+
+    def _find_all(root, name):
+        return [e for e in root.iter() if _tag(e) == name]
+
+    severity_icons = {"Moderate": "🟡", "Severe": "🟠", "Extreme": "🔴"}
+    alerts: list[str] = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+            for member in tar.getmembers():
+                if not member.name.lower().endswith(".xml"):
+                    continue
+                handle = tar.extractfile(member)
+                if not handle:
+                    continue
+                root = ET.fromstring(handle.read())
+                for info in _find_all(root, "info"):
+                    severity = ""
+                    event = ""
+                    area = ""
+                    expires = ""
+                    for child in info:
+                        name = _tag(child)
+                        text = (child.text or "").strip()
+                        if name == "severity":
+                            severity = text
+                        elif name == "event":
+                            event = text
+                        elif name == "areaDesc" and not area:
+                            area = text
+                        elif name == "expires":
+                            expires = text
+                    if severity in severity_icons:
+                        when = expires[11:16] if len(expires) > 15 else ""
+                        alerts.append(
+                            "%s %s — %s — %s%s"
+                            % (
+                                severity_icons[severity],
+                                severity,
+                                event or "aviso",
+                                area or "tu zona",
+                                " (hasta %s)" % when if when else "",
+                            )
+                        )
+    except Exception as e:
+        logger.warning("AEMET CAP: no se pudieron parsear los avisos (%s)", str(e)[:120])
+    # Sin duplicados, maximo 3
+    unique: list[str] = []
+    for alert in alerts:
+        if alert not in unique:
+            unique.append(alert)
+    return unique[:3]
+
+
+async def _aemet_alerts() -> list[str]:
+    """Avisos CAP oficiales de AEMET para la zona configurada."""
+    key = (settings.aemet_api_key or "").strip()
+    area = (settings.aemet_area or "").strip()
+    if not key or not area:
+        return []
+    try:
+        import httpx
+
+        url = (
+            "https://opendata.aemet.es/opendata/api/avisos_cap/"
+            "ultimoelaborado/area/%s?api_key=%s" % (area, key)
+        )
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            first = json.loads((await client.get(url)).content.decode("latin-1"))
+            datos = first.get("datos")
+            if not datos:
+                return []
+            blob = (await client.get(datos)).content
+        return _parse_cap_alerts(blob)
+    except Exception as e:
+        logger.warning("AEMET CAP no disponible: %s", str(e)[:120])
+        return []
+
+
+async def _save_briefing_copy(text: str) -> None:
+    """Guarda una copia del briefing en la boveda (historico)."""
+    try:
+        from src.utils.obsidian_manager import overwrite_note
+
+        now = datetime.now(ZoneInfo(settings.timezone))
+        await overwrite_note(
+            "Briefing %s" % now.strftime("%Y-%m-%d"),
+            "# Briefing %s\n\n%s\n" % (now.strftime("%d/%m/%Y"), text),
+            folder="Briefings",
+        )
+    except Exception as e:
+        logger.warning("Briefing: no se pudo guardar la copia en el vault: %s", str(e)[:120])
+
+
+def _is_weekend(now: datetime) -> bool:
+    return now.weekday() >= 5
+
+
+def _urgent_line(events: list[dict[str, Any]], now: datetime) -> str:
+    """Si un evento empieza en menos de 2 h, se encabeza el briefing."""
+    for ev in events:
+        try:
+            start = datetime.fromisoformat(str(ev.get("start", "")).replace("Z", "+00:00"))
+        except Exception:
+            continue
+        hours = (start - now).total_seconds() / 3600.0
+        if 0 <= hours < 2:
+            mins = int(hours * 60)
+            return "⏰ En %d min: %s (%s)" % (mins, ev.get("title"), start.strftime("%H:%M"))
+    return ""
 
 
 # ---------------------------------------------------------------- briefing
@@ -149,10 +299,14 @@ BRIEFING_PROMPT = (
 
 
 async def build_briefing() -> dict[str, Any]:
-    """Briefing ejecutivo listo para n8n (texto + botones URL)."""
-    agenda, tareas, correo = await _agenda_tasks_mail()
+    """Briefing ejecutivo listo para n8n (texto + botones URL/callback)."""
+    agenda, tareas, correo, events = await _agenda_tasks_mail()
     weather = await _weather()
+    alerts = await _aemet_alerts()
     server = await _server_status()
+    now = datetime.now(ZoneInfo(settings.timezone))
+    weekend = _is_weekend(now)
+    urgent = _urgent_line(events, now)
 
     raw = (
         "AGENDA (proximas 24h):\n%s\n\nTAREAS PENDIENTES:\n%s\n\n"
@@ -165,6 +319,17 @@ async def build_briefing() -> dict[str, Any]:
             json.dumps(server, ensure_ascii=False),
         )
     )
+    if alerts:
+        raw = "AVISOS AEMET (prioridad alta):\n%s\n\n%s" % (
+            "\n".join("- " + a for a in alerts),
+            raw,
+        )
+    prompt = BRIEFING_PROMPT % settings.assistant_name
+    if weekend:
+        prompt += (
+            " Es FIN DE SEMANA: modo resumen (maximo 8 lineas; omite el listado "
+            "de correo salvo que sea urgente)."
+        )
     text = ""
     try:
         from src.ollama_client import llm
@@ -172,7 +337,7 @@ async def build_briefing() -> dict[str, Any]:
         text = (
             await llm.chat(
                 messages=[
-                    {"role": "system", "content": BRIEFING_PROMPT % settings.assistant_name},
+                    {"role": "system", "content": prompt},
                     {"role": "user", "content": raw},
                 ],
                 max_tokens=400,
@@ -182,6 +347,12 @@ async def build_briefing() -> dict[str, Any]:
         logger.warning("Briefing: LLM no disponible (%s); uso texto crudo", str(e)[:120])
     if not text:
         text = "☀️ *Briefing de hoy*\n\n" + raw
+    if urgent:
+        text = urgent + "\n\n" + text
+    if alerts:
+        text = "🚨 *Avisos AEMET:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
+
+    await _save_briefing_copy(text)
 
     return {
         "success": True,
@@ -190,10 +361,13 @@ async def build_briefing() -> dict[str, Any]:
             "agenda": len(agenda),
             "tareas": len(tareas),
             "correo": len(correo),
+            "avisos": len(alerts),
+            "finde": weekend,
         },
         "buttons": [
             {"text": "✅ Ver tareas", "url": "https://tasks.google.com/"},
             {"text": "📅 Ver calendario", "url": "https://calendar.google.com/"},
+            {"text": "⏰ Reagendar evento", "callback": "brief_reagendar"},
         ],
     }
 
@@ -292,6 +466,28 @@ async def scan_inbox(hours: int = 2, max_results: int = 8) -> dict[str, Any]:
             already = None
         if already:
             continue
+        # Boton "Enviar respuesta" (2026-09-28): guardamos el borrador con un
+        # token para que el callback del bot lo recupere y lo envie por Gmail.
+        if item.get("borrador"):
+            token = "%s-%s" % (
+                datetime.now().strftime("%H%M%S"),
+                abs(hash(item.get("id") or item.get("subject", ""))) % 100000,
+            )
+            try:
+                await db.kv_set(
+                    "inbox:draft:%s" % token,
+                    json.dumps(
+                        {
+                            "from": item.get("from", ""),
+                            "subject": item.get("subject", ""),
+                            "borrador": item["borrador"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                item["token"] = token
+            except Exception:
+                item["token"] = ""
         urgent.append(item)
         try:
             await db.kv_set(key, "1")
@@ -304,6 +500,240 @@ async def scan_inbox(hours: int = 2, max_results: int = 8) -> dict[str, Any]:
         "urgent_count": len(urgent),
         "items": classified,
     }
+
+
+# ---------------------------------------------------------------- radar IA
+
+RADAR_DEFAULT_FEEDS = (
+    "https://huggingface.co/blog/feed.xml",
+    "https://realpython.com/atom.xml",
+    "https://blog.n8n.io/rss/",
+)
+
+RADAR_PROMPT = (
+    "Eres un filtro tecnologico para un desarrollador con este stack: Python, "
+    "IA local (Ollama), RAG, automatizacion (n8n), Docker y .NET. Recibes "
+    "titulares de repositorios y feeds. Devuelve SOLO un JSON array con "
+    'maximo 3 objetos {"titulo": "...", "por_que": "...", '
+    '"enlace": "..."} con lo mas relevante y PRACTICO. Descarta ruido, '
+    "politica, marketing y noticias sin utilidad practica."
+)
+
+
+def _parse_rss_titles(xml_bytes: bytes, limit: int = 5) -> list[tuple[str, str]]:
+    """Titulos+enlaces de un RSS/Atom (sin dependencias)."""
+    import xml.etree.ElementTree as ET
+
+    out: list[tuple[str, str]] = []
+    try:
+        root = ET.fromstring(xml_bytes)
+    except Exception:
+        return out
+    for entry in root.iter():
+        tag = entry.tag.split("}")[-1]
+        if tag not in ("item", "entry"):
+            continue
+        title = ""
+        link = ""
+        for child in entry:
+            name = child.tag.split("}")[-1]
+            if name == "title":
+                title = (child.text or "").strip()
+            elif name == "link":
+                link = (child.get("href") or child.text or "").strip()
+        if title:
+            out.append((title, link))
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def radar() -> dict[str, Any]:
+    """Radar de IA/software: GitHub + feeds RSS filtrados por el LLM."""
+    import httpx
+
+    raw_lines: list[str] = []
+    try:
+        since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        url = (
+            "https://api.github.com/search/repositories?q=created:>%s+language:python"
+            "&sort=stars&order=desc&per_page=10" % since
+        )
+        async with httpx.AsyncClient(
+            timeout=20.0, headers={"Accept": "application/vnd.github+json"}
+        ) as client:
+            data = (await client.get(url)).json()
+        for repo in data.get("items", [])[:10]:
+            raw_lines.append(
+                "- [GitHub] %s (%s stars): %s — %s"
+                % (
+                    repo.get("full_name", "?"),
+                    repo.get("stargazers_count", 0),
+                    (repo.get("description") or "")[:120],
+                    repo.get("html_url", ""),
+                )
+            )
+    except Exception as e:
+        logger.warning("Radar: GitHub no disponible: %s", str(e)[:120])
+
+    feeds = (settings.radar_feeds or "").strip()
+    feed_list = (
+        [f.strip() for f in feeds.split(",") if f.strip()] if feeds else list(RADAR_DEFAULT_FEEDS)
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            for feed in feed_list[:6]:
+                try:
+                    xml = (await client.get(feed)).content
+                    for title, link in _parse_rss_titles(xml):
+                        raw_lines.append("- [RSS] %s — %s" % (title, link))
+                except Exception as e:
+                    logger.info("Radar: feed %s fallo (%s)", feed, str(e)[:80])
+    except Exception as e:
+        logger.warning("Radar: feeds no disponibles: %s", str(e)[:120])
+
+    if not raw_lines:
+        return {"success": False, "message": "No pude obtener fuentes para el radar."}
+
+    text = ""
+    items: list[dict[str, str]] = []
+    try:
+        from src.ollama_client import llm
+
+        out = await llm.chat(
+            messages=[
+                {"role": "system", "content": RADAR_PROMPT},
+                {"role": "user", "content": "\n".join(raw_lines[:30])},
+            ],
+            max_tokens=500,
+        )
+        start, end = out.find("["), out.rfind("]")
+        if start >= 0 and end > start:
+            items = json.loads(out[start : end + 1])[:3]
+    except Exception as e:
+        logger.warning("Radar: filtro LLM fallo (%s)", str(e)[:120])
+
+    if items:
+        lines = ["🛰 *Radar de IA — lo relevante de hoy*", ""]
+        for item in items:
+            lines.append("*%s*" % item.get("titulo", "?"))
+            if item.get("por_que"):
+                lines.append("_%s_" % item["por_que"])
+            if item.get("enlace"):
+                lines.append(item["enlace"])
+            lines.append("")
+        text = "\n".join(lines).strip()
+    else:
+        text = "🛰 *Radar de IA (sin filtro)*\n\n" + "\n".join(raw_lines[:6])
+
+    await _save_vault_note("Radar IA %s" % datetime.now().strftime("%Y-%m-%d"), text, "Radar")
+    return {"success": True, "text": text, "items": items, "sources": len(raw_lines)}
+
+
+# ---------------------------------------------------------------- infra
+
+
+def _read_status_file(name: str) -> dict[str, Any]:
+    from pathlib import Path
+
+    path = Path(settings.data_dir) / name
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+async def infra_report() -> dict[str, Any]:
+    """Informe de infraestructura: backups, disco, BD, RAG, IA (domingos)."""
+    import shutil
+    from pathlib import Path
+
+    backup = _read_status_file("backup-status.json")
+    drill = _read_status_file("restore-drill-status.json")
+
+    disk = {}
+    try:
+        usage = shutil.disk_usage("/data")
+        disk = {
+            "total_gb": round(usage.total / 1e9, 1),
+            "usado_gb": round(usage.used / 1e9, 1),
+            "libre_gb": round(usage.free / 1e9, 1),
+            "pct": round(usage.used * 100 / usage.total, 1),
+        }
+    except Exception:
+        pass
+
+    db_size = ""
+    try:
+        db_size = "%.1f MB" % (Path(settings.db_path).stat().st_size / 1e6)
+    except Exception:
+        pass
+
+    server = await _server_status()
+    raw = (
+        "BACKUP:\n%s\n\nRESTORE-DRILL:\n%s\n\nDISCO (/data):\n%s\n\n"
+        "TAMANO BD: %s\n\nSERVICIOS:\n%s"
+        % (
+            json.dumps(backup, ensure_ascii=False) or "(sin datos)",
+            json.dumps(drill, ensure_ascii=False) or "(sin datos)",
+            json.dumps(disk, ensure_ascii=False),
+            db_size or "?",
+            json.dumps(server, ensure_ascii=False),
+        )
+    )
+    text = ""
+    try:
+        from src.ollama_client import llm
+
+        text = (
+            await llm.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Eres el asistente de operaciones. Redacta un INFORME "
+                            "SEMANAL DE INFRAESTRUCTURA en espanol, en 6-10 lineas, "
+                            "con negritas de Telegram (*texto*). Incluye: estado de "
+                            "los backups (fecha del ultimo snapshot y resultado de "
+                            "la copia a Drive), resultado del restore-drill, disco "
+                            "libre y servicios (IA/RAG/Google). Si algo falta o "
+                            "fallo, destacalo como ALERTA al principio. HONESTIDAD: "
+                            "si un dato no aparece o pone '(sin datos)', di "
+                            "claramente que no hay datos; NUNCA inventes resultados "
+                            "ni afirmes que algo fue bien sin evidencia."
+                        ),
+                    },
+                    {"role": "user", "content": raw},
+                ],
+                max_tokens=350,
+            )
+        ).strip()
+    except Exception as e:
+        logger.warning("Infra: LLM no disponible (%s)", str(e)[:120])
+    if not text:
+        text = "🖥 *Informe de infraestructura*\n\n" + raw
+
+    # Alertas criticas primero (sin depender del LLM)
+    alerts: list[str] = []
+    if not backup:
+        alerts.append("No hay datos de backup (¿ha corrido el backup alguna vez?)")
+    if disk and disk.get("pct", 0) > 85:
+        alerts.append("Disco /data al %s%%" % disk.get("pct"))
+    if drill.get("integrity") not in (None, "", "ok"):
+        alerts.append("Restore-drill con integridad '%s'" % drill.get("integrity"))
+    if alerts:
+        text = "🚨 *ALERTAS:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
+
+    return {"success": True, "text": text, "backup": backup, "drill": drill, "disk": disk}
+
+
+async def _save_vault_note(title: str, text: str, folder: str) -> None:
+    try:
+        from src.utils.obsidian_manager import overwrite_note
+
+        await overwrite_note(title, text, folder=folder)
+    except Exception as e:
+        logger.warning("No se pudo guardar la nota '%s': %s", title, str(e)[:120])
 
 
 # ---------------------------------------------------------------- captura
