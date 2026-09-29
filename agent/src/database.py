@@ -119,6 +119,22 @@ class DatabaseManager:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS meetings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 0,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'processing',
+                duration_s REAL NOT NULL DEFAULT 0,
+                speakers TEXT NOT NULL DEFAULT '',
+                transcript TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '',
+                tasks TEXT NOT NULL DEFAULT '',
+                note_path TEXT NOT NULL DEFAULT '',
+                audio_path TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -540,6 +556,49 @@ class DatabaseManager:
         await self.execute(
             "UPDATE web_users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
         )
+        await self._conn.commit()
+
+    # ---------- reuniones (Fase 4) ----------
+
+    async def create_meeting(self, user_id: int, title: str) -> int:
+        sql = "INSERT INTO meetings (user_id, title) VALUES (?, ?)"
+        return await self.insert(sql, (user_id, title))
+
+    async def update_meeting(self, meeting_id: int, **campos: Any) -> None:
+        permitidos = (
+            "title",
+            "status",
+            "duration_s",
+            "speakers",
+            "transcript",
+            "summary",
+            "tasks",
+            "note_path",
+            "audio_path",
+        )
+        sets = [("%s = ?" % k) for k in permitidos if k in campos]
+        if not sets:
+            return
+        valores = [campos[k] for k in permitidos if k in campos]
+        valores.append(meeting_id)
+        await self.execute("UPDATE meetings SET %s WHERE id = ?" % ", ".join(sets), tuple(valores))
+        await self._conn.commit()
+
+    async def get_meeting(self, meeting_id: int) -> dict[str, Any] | None:
+        return await self.fetchone("SELECT * FROM meetings WHERE id = ?", (meeting_id,))
+
+    async def list_meetings(
+        self, user_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        if user_id is not None:
+            return await self.fetchall(
+                "SELECT * FROM meetings WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                (user_id, limit),
+            )
+        return await self.fetchall("SELECT * FROM meetings ORDER BY id DESC LIMIT ?", (limit,))
+
+    async def delete_meeting(self, meeting_id: int) -> None:
+        await self.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
         await self._conn.commit()
 
     async def add_alert(

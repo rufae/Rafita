@@ -9,7 +9,27 @@ Telegram (comparten el **Agent Core**). Telegram nunca se desactiva.
 |---|---|
 | **Chat** | Conversación con Rafita (mismas herramientas: correo, tareas, CRM, bóveda…). Historial por usuario. |
 | **Baúl** | CRUD de la bóveda de Obsidian: buscar (nombre/contenido), filtrar por carpeta, leer, crear/editar y borrar notas `.md`. |
+| **Reuniones** | Grabar (micro o pestaña con MediaRecorder), transcribir con Whisper local, separar hablantes, resumir y guardar el acta en el Baúl. |
 | **Llamada** | Sesión de voz en tiempo real (reutiliza la página y el WebSocket de la Fase de voz). |
+
+## Reuniones (tipo NotebookLM)
+
+1. Pulsa **Grabar micro** o **Grabar pestaña** (captura el audio de una pestaña
+   o pantalla compartida; ideal para videollamadas). **Parar** sube el audio.
+2. El servidor procesa en segundo plano: convierte a WAV mono 16 kHz
+   (ffmpeg), transcribe por segmentos (faster-whisper local), **estima los
+   interlocutores** por tono fundamental (heurística ligera: separa voces
+   claramente distintas; no sustituye a una diarización profesional) y genera
+   con el LLM local un **resumen ejecutivo, puntos clave, decisiones y
+   tareas/compromisos**.
+3. El acta queda como nota en `Reuniones/` de la bóveda (con la transcripción
+   completa `[mm:ss] Hablante N: …`) y aparece en la vista **Baúl**.
+4. La vista muestra el progreso y el resultado; puedes borrar la reunión y su
+   audio desde la propia interfaz.
+
+Endpoints: `POST /api/meetings` (multipart `file` + `title`),
+`GET /api/meetings`, `GET /api/meetings/{id}`, `DELETE /api/meetings/{id}`.
+El audio se guarda en `data/meetings/` (máx. 200 MB).
 
 La app es **PWA instalable**: `manifest.webmanifest` + service worker (funciona
 como app en móvil/escritorio). Al ser estática y sin dependencias, es

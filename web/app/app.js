@@ -51,6 +51,7 @@ function setView(view) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   if (view === 'vault') loadNotes();
+  if (view === 'meetings') loadMeetings();
 }
 
 document.querySelectorAll('.tab').forEach((tab) => {
@@ -187,6 +188,133 @@ $('#note-delete').addEventListener('click', async () => {
     $('#note-status').textContent = 'Error: ' + e.message;
   }
 });
+
+/* ---------- reuniones ---------- */
+
+let recorder = null;
+let recordingStream = null;
+let recordChunks = [];
+let pollTimer = null;
+
+async function uploadMeeting(blob) {
+  const form = new FormData();
+  form.append('file', blob, 'reunion.webm');
+  form.append('title', $('#meet-title').value.trim());
+  const resp = await fetch('/api/meetings', {
+    method: 'POST',
+    headers: state.token ? { Authorization: 'Bearer ' + state.token } : {},
+    body: form,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+  return data;
+}
+
+function formatDuration(seconds) {
+  const s = Math.round(seconds || 0);
+  return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+}
+
+async function loadMeetings() {
+  const list = $('#meet-list');
+  list.innerHTML = '<li class="muted">Cargando…</li>';
+  try {
+    const data = await api('/meetings');
+    list.innerHTML = '';
+    if (!data.meetings.length) {
+      list.innerHTML = '<li class="muted">Aún no hay reuniones. Graba una con el botón de arriba.</li>';
+      return;
+    }
+    data.meetings.forEach((m) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="title"></span><span class="muted small"></span>';
+      li.querySelector('.title').textContent = m.title;
+      const estado = m.status === 'done' ? formatDuration(m.duration_s) : m.status;
+      li.querySelector('.small').textContent = `${m.created_at} · ${estado}`;
+      li.addEventListener('click', () => showMeeting(m.id));
+      list.appendChild(li);
+    });
+  } catch (e) {
+    list.innerHTML = `<li class="error">Error: ${e.message}</li>`;
+  }
+}
+
+async function showMeeting(id) {
+  clearInterval(pollTimer);
+  try {
+    const m = await api('/meetings/' + id);
+    $('#meet-detail-title').textContent = m.title;
+    $('#meet-detail-meta').textContent =
+      `${m.created_at} · ${m.status} · ${formatDuration(m.duration_s)}` +
+      (m.speakers ? ` · ${m.speakers}` : '') +
+      (m.note_path ? ' · guardada en el Baúl' : '');
+    $('#meet-transcript').value = m.transcript || '';
+    const box = $('#meet-summary');
+    if (m.status === 'done') {
+      const tareas = (m.tasks_list || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+      box.innerHTML =
+        `<p class="meet-summary-text">${escapeHtml(m.summary || '')}</p>` +
+        (tareas ? `<strong>Tareas y compromisos</strong><ul>${tareas}</ul>` : '');
+      box.classList.remove('muted');
+    } else if (m.status === 'error') {
+      box.textContent = 'No se pudo procesar el audio.';
+    } else {
+      box.textContent = 'Procesando (transcripción y resumen)…';
+      pollTimer = setTimeout(() => showMeeting(id), 5000);
+    }
+    loadMeetings();
+  } catch (e) {
+    $('#meet-summary').textContent = 'Error: ' + e.message;
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+async function toggleRecording(kind) {
+  const status = $('#meet-status');
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop();
+    return;
+  }
+  try {
+    recordingStream =
+      kind === 'mic'
+        ? await navigator.mediaDevices.getUserMedia({ audio: true })
+        : await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+  } catch (e) {
+    status.textContent = 'Permiso denegado: ' + e.message;
+    return;
+  }
+  recordChunks = [];
+  recorder = new MediaRecorder(recordingStream);
+  recorder.ondataavailable = (ev) => { if (ev.data.size) recordChunks.push(ev.data); };
+  recorder.onstop = async () => {
+    recordingStream.getTracks().forEach((t) => t.stop());
+    $('#meet-mic').textContent = '● Grabar micro';
+    $('#meet-tab').textContent = 'Grabar pestaña';
+    status.textContent = 'Subiendo audio…';
+    try {
+      const blob = new Blob(recordChunks, { type: recorder.mimeType || 'audio/webm' });
+      const data = await uploadMeeting(blob);
+      status.textContent = 'Procesando…';
+      $('#meet-title').value = '';
+      showMeeting(data.id);
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  };
+  recorder.start(1000);
+  $('#meet-mic').textContent = kind === 'mic' ? '■ Parar' : '● Grabar micro';
+  $('#meet-tab').textContent = kind === 'tab' ? '■ Parar' : 'Grabar pestaña';
+  status.textContent = 'Grabando…';
+}
+
+$('#meet-mic').addEventListener('click', () => toggleRecording('mic'));
+$('#meet-tab').addEventListener('click', () => toggleRecording('tab'));
 
 /* ---------- llamada ---------- */
 

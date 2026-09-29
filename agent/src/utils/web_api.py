@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from src.config import settings
@@ -301,4 +301,53 @@ async def vault_delete(path: str, _user: dict[str, Any] = Depends(require_user))
         raise HTTPException(status_code=404, detail="Nota no encontrada")
     destino.unlink()
     logger.info("Web: nota borrada %s", destino.name)
+    return {"success": True}
+
+
+# ---------- reuniones (Fase 4) ----------
+
+
+@router.post("/meetings")
+async def meetings_create(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    user: dict[str, Any] = Depends(require_user),
+):
+    from src.services import meeting_service
+
+    datos = await file.read()
+    if not datos:
+        raise HTTPException(status_code=400, detail="Audio vacio")
+    try:
+        resultado = await meeting_service.crear_desde_subida(
+            int(user["id"]), title, file.filename or "audio.webm", datos
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    return resultado
+
+
+@router.get("/meetings")
+async def meetings_list(user: dict[str, Any] = Depends(require_user)):
+    from src.services import meeting_service
+
+    return {"meetings": await meeting_service.listar(int(user["id"]))}
+
+
+@router.get("/meetings/{meeting_id}")
+async def meetings_detail(meeting_id: int, user: dict[str, Any] = Depends(require_user)):
+    from src.services import meeting_service
+
+    detalle = await meeting_service.detalle(meeting_id, int(user["id"]))
+    if not detalle:
+        raise HTTPException(status_code=404, detail="Reunion no encontrada")
+    return detalle
+
+
+@router.delete("/meetings/{meeting_id}")
+async def meetings_delete(meeting_id: int, user: dict[str, Any] = Depends(require_user)):
+    from src.services import meeting_service
+
+    if not await meeting_service.borrar(meeting_id, int(user["id"])):
+        raise HTTPException(status_code=404, detail="Reunion no encontrada")
     return {"success": True}
