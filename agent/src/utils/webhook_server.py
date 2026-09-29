@@ -7,7 +7,8 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.database import db
 from src.logger import logger
@@ -16,8 +17,35 @@ from src.models.schemas import MessageRole
 app = FastAPI(
     title="Rafita Gateway",
     description="Webhook endpoint for external app integrations",
-    version="0.2.0",
+    version="0.3.0",
 )
+
+# API de la web SPA (auth, chat, boveda; Fase 3) — Telegram sigue igual.
+from src.utils.web_api import router as _web_router  # noqa: E402
+
+app.include_router(_web_router)
+
+
+def _mount_web_app() -> None:
+    """Sirve la SPA en /app (si el directorio existe en esta instalacion)."""
+    from pathlib import Path
+
+    for candidate in (
+        Path("/workspace/web/app"),
+        Path(__file__).resolve().parents[3] / "web" / "app",
+    ):
+        if candidate.exists():
+            app.mount("/app", StaticFiles(directory=str(candidate), html=True), name="webapp")
+
+            @app.get("/")
+            async def _root_redirect() -> RedirectResponse:  # pragma: no cover - trivial
+                return RedirectResponse("/app/")
+
+            logger.info("Web SPA montada en /app (%s)", candidate)
+            return
+
+
+_mount_web_app()
 
 _webhook_secret: str | None = None
 _bot_ref = None

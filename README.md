@@ -102,6 +102,16 @@ Rafita detecta tu hardware automáticamente y recomienda el perfil óptimo:
 
 También puedes configurar los modelos manualmente en `.env`.
 
+## Web propia (chat, baúl y llamada)
+
+Además de Telegram, Rafita sirve una **web propia (PWA instalable)** desde el
+gateway: chat con las mismas capacidades, un **baúl** para ver/crear/editar/
+borrar notas de la bóveda y una vista de **llamada** de voz en tiempo real.
+Los dos canales comparten el mismo Agent Core (la vía de Telegram nunca se
+desactiva). Login por **email y contraseña** (JWT) y, opcionalmente, **Sign in
+with Google**. Detalles de despliegue (proxy, puertos y usuarios) en
+[docs/web.md](docs/web.md).
+
 ## Google es opcional
 
 Rafita funciona **sin cuenta de Google**: el calendario, las tareas y los
