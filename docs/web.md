@@ -51,6 +51,8 @@ navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
 3. En `web/app/config.js` pon el origen de voz para que la vista Llamada lo use:
    `window.RAFITA_CONFIG = { callOrigin: "https://voz.rafita.home" };`
    (vacío = mismo host, puerto 8001).
+   `config.js` es **por instalación**: al desplegar código nuevo, exclúyelo del
+   rsync (`--exclude config.js`) o vuelve a ajustarlo después.
 
 > **Importante si el proxy está en Docker**: publicar los puertos en
 > `127.0.0.1` no sirve al proxy (no puede alcanzar la IP LAN del host). O se
@@ -75,14 +77,23 @@ navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
       email@ejemplo.com 'clave-nueva' [--admin]
   ```
 - Registro abierto opcional con `WEB_ALLOW_REGISTRATION=true`.
-- **Sign in with Google (OAuth 2.0, opcional)**: define `GOOGLE_WEB_CLIENT_ID`,
-  `GOOGLE_WEB_CLIENT_SECRET` y `GOOGLE_WEB_REDIRECT_URI`
-  (`https://TU-DOMINIO/api/auth/google/callback`) y añade esa URL como
-  *Authorized redirect URI* en Google Cloud Console. Nota: Google exige un
-  **dominio real**; los dominios internos (`*.home` de la LAN) no son válidos
-  como redirect URI, así que este botón necesita un dominio público
-  (por ejemplo vía túnel). El resto de la app no lo necesita.
+- **Sign in with Google (opcional)**, dos modos:
+  1. **Flujo de dispositivo (recomendado en LAN: `*.home`, `*.local`, IP)**.
+     Crear en Google Cloud Console → *Credenciales* → *Crear ID de cliente
+     OAuth* → tipo **«TVs and Limited Input devices»** y pegar
+     `GOOGLE_WEB_CLIENT_ID` y `GOOGLE_WEB_CLIENT_SECRET` en el `.env`. No
+     necesita redirect URI: la web muestra un código y el enlace
+     `google.com/device`. Los clientes «TV» permiten este flujo sin dominio.
+  2. **Flujo con redirect (dominio público)**. Cliente *Web application* con
+     `https://TU-DOMINIO/api/auth/google/callback` como *Authorized redirect
+     URI* + `GOOGLE_WEB_REDIRECT_URI`. Google rechaza dominios internos
+     (`*.home`) como redirect URI, por eso este modo necesita un dominio real
+     (túnel/DDNS).
   El login por Google crea el usuario automáticamente (el primero es admin).
+
+  Endpoints: `POST /api/auth/google/device/start`, `GET
+  /api/auth/google/device/poll?state=…`, `GET /api/auth/google/start`,
+  `GET /api/auth/google/callback`.
 
 ## API principal
 

@@ -367,6 +367,51 @@ $('#login-form').addEventListener('submit', async (ev) => {
 
 $('#logout').addEventListener('click', logout);
 
+/* Sign in with Google: flujo de dispositivo (funciona en LAN sin redirect
+   URI). Si falla, se cae al flujo clasico con redirect. */
+document.querySelector('.google-btn').addEventListener('click', async (ev) => {
+  ev.preventDefault();
+  const err = $('#login-error');
+  const box = $('#google-device');
+  err.classList.add('hidden');
+  try {
+    const start = await api('/auth/google/device/start', { method: 'POST' });
+    box.classList.remove('hidden');
+    box.innerHTML = '';
+    const p = document.createElement('p');
+    p.innerHTML =
+      'Abre <a href="' + start.verification_url + '" target="_blank" rel="noopener">' +
+      start.verification_url + '</a> e introduce el código:';
+    const code = document.createElement('div');
+    code.className = 'device-code';
+    code.textContent = start.user_code;
+    const espera = document.createElement('p');
+    espera.className = 'muted small';
+    espera.textContent = 'Esperando a que autorices en Google…';
+    box.append(p, code, espera);
+    const intervalo = Math.max(3, start.interval || 5) * 1000;
+    const timer = setInterval(async () => {
+      try {
+        const res = await api('/auth/google/device/poll?state=' + encodeURIComponent(start.state));
+        if (res.status === 'ok') {
+          clearInterval(timer);
+          state.token = res.token;
+          localStorage.setItem(TOKEN_KEY, res.token);
+          enterApp();
+        }
+      } catch (e) {
+        if (/caducad|no encontrada|validar/.test(e.message)) {
+          clearInterval(timer);
+          espera.textContent = 'No se pudo completar: ' + e.message;
+        }
+      }
+    }, intervalo);
+  } catch (e) {
+    // Sin credenciales de dispositivo: probamos el flujo con redirect.
+    location.href = '/api/auth/google/start';
+  }
+});
+
 // Token llegado del callback de Google (/app/#token=...)
 if (location.hash.startsWith('#token=')) {
   state.token = decodeURIComponent(location.hash.slice(7));
