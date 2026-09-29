@@ -354,15 +354,24 @@ class Application:
 
         logger.info("Step 6/9: Starting FastAPI Gateway (port 8000)...")
         try:
-            from src.utils.security_manager import get_or_create_webhook_secret
+            from src.utils.security_manager import (
+                get_or_create_web_auth_secret,
+                get_or_create_webhook_secret,
+            )
+            from src.utils.web_auth import bootstrap_admin
             from src.utils.webhook_server import configure_gateway, start_gateway_server
 
             webhook_secret = get_or_create_webhook_secret()
             configure_gateway(webhook_secret, bot_ref=bot)
+            web_auth_secret = get_or_create_web_auth_secret()
+            if web_auth_secret:
+                settings.web_auth_secret = web_auth_secret
+            await bootstrap_admin()
             self._gateway_task = asyncio.create_task(start_gateway_server(port=8000))
             logger.info(
-                "Gateway started on port 8000 (webhook auth: %s)",
+                "Gateway started on port 8000 (webhook auth: %s, web login: %s)",
                 "enabled" if webhook_secret else "DISABLED - webhooks rejected",
+                "enabled" if web_auth_secret else "disabled",
             )
         except Exception as e:
             logger.warning("Gateway start skipped: %s", e)
