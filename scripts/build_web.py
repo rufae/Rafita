@@ -3,7 +3,7 @@
 
 Sin frameworks ni Node: usa `rjsmin` y `csscompressor` (Python puro).
 Genera `web/app-dist/` con:
-  - `app-<hash8>.js`, `styles-<hash8>.css`, `tokens-<hash8>.css` (minificados,
+  - `app-<hash8>.js`, `styles-<hash8>.css`, `design-tokens-<hash8>.css` (minificados,
     hash del contenido en el nombre → cache inmutable sin caducar).
   - `index.html` con las referencias reescritas a esos nombres.
   - `sw.js` con el SHELL actualizado (mismos nombres hasheados) y nombre de
@@ -64,7 +64,7 @@ def build(destino: Path = DIST) -> dict[str, str]:
 
     # 1) minificar JS/CSS con hash de contenido
     hasheados: dict[str, str] = {}  # nombre origen -> nombre destino
-    for nombre, modo in (("app.js", "js"), ("styles.css", "css"), ("tokens.css", "css")):
+    for nombre, modo in (("app.js", "js"), ("styles.css", "css"), ("design-tokens.css", "css")):
         fuente = originales[nombre].read_text(encoding="utf-8")
         comprimido = _min_js(fuente) if modo == "js" else _min_css(fuente)
         datos = comprimido.encode("utf-8")

@@ -5,196 +5,370 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="description" content="Llamada de voz en tiempo real con Rafita, tu asistente de IA local: micrófono, transcripción y respuestas habladas.">
 <title>Llamar a Rafita</title>
-<link rel="stylesheet" href="tokens.css">
+<link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+<link rel="stylesheet" href="design-tokens.css">
 <style>
-  :root {
-    /* Decorativos propios de la llamada; los colores de texto/marca vienen
-       de tokens.css (fuente unica, Fase 3). */
-    --bg-1: #070b18;
-    --bg-2: #0d1430;
-    --glass: rgba(22, 30, 56, 0.62);
-    --glass-border: rgba(148, 163, 184, 0.16);
-    --user-1: var(--brand-500);
-    --user-2: var(--indigo-500);
-    --rafita-1: var(--violet-500);
-    --rafita-2: #22d3ee;
-    --ok: #34d399;
-    --warn: #fbbf24;
-    --err: var(--danger);
-  }
-  /* Fase 3.2: la pagina de llamada respeta prefers-color-scheme (antes era
-     oscuro fijo por omision). Decision: coherencia de producto con la SPA. */
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg-1: #e7edf7;
-      --bg-2: #d8e2f2;
-      --glass: rgba(255, 255, 255, 0.72);
-      --glass-border: rgba(15, 23, 42, 0.12);
-      --ok: #16a34a;
-      --warn: #b45309;
-    }
-    body {
-      background: radial-gradient(1200px 800px at 20% -10%, #ffffff 0%, var(--bg-2) 45%, var(--bg-1) 100%);
-    }
-    .status { background: rgba(255, 255, 255, 0.65); }
-    .ctl { background: rgba(255, 255, 255, 0.7); }
-    .ctl.ghost { background: rgba(255, 255, 255, 0.45); }
-    .settings input[type="text"] { background: rgba(255, 255, 255, 0.7); }
-    .mini { background: rgba(255, 255, 255, 0.6); }
-    .transcript { background: rgba(255, 255, 255, 0.6); }
-    .log { color: var(--muted); }
-    .transcript .tu { color: #0369a1; }
-    .transcript .rafita { color: #4f46e5; }
-    .orb .core { box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08) inset, 0 14px 40px rgba(15, 23, 42, 0.18); }
-  }
+  /* ============================================================
+     Rafita — llamada
+     Dos presencias conectadas por un hilo: formas orgánicas que
+     respiran, escuchan, piensan y hablan. Sin orbes luminosos,
+     sin cristal, sin degradados radiales.
+     ============================================================ */
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; }
+  html, body { min-height: 100%; }
+
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    background: radial-gradient(1200px 800px at 20% -10%, #16204a 0%, var(--bg-2) 45%, var(--bg-1) 100%);
-    color: var(--text);
-    display: flex; align-items: center; justify-content: center;
-    padding: 18px; overflow-x: hidden;
+    font-family: var(--font-ui);
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+    color: var(--ink);
+    background-color: var(--paper);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    display: flex;
+    justify-content: center;
+    padding: var(--sp-8) var(--sp-5) var(--sp-10);
   }
-  .bg-orb {
-    position: fixed; border-radius: 50%; filter: blur(90px); opacity: 0.28;
-    pointer-events: none; z-index: 0; animation: drift 18s ease-in-out infinite alternate;
-  }
-  .bg-orb.a { width: 380px; height: 380px; background: var(--user-2); top: -120px; left: -100px; }
-  .bg-orb.b { width: 420px; height: 420px; background: var(--rafita-1); bottom: -160px; right: -120px; animation-delay: -6s; }
-  @keyframes drift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(40px,30px,0) scale(1.12); } }
 
-  .shell {
-    position: relative; z-index: 1;
-    width: min(520px, 100%);
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: 28px;
-    padding: 26px 24px 20px;
-    backdrop-filter: blur(22px) saturate(140%);
-    -webkit-backdrop-filter: blur(22px) saturate(140%);
-    box-shadow: 0 30px 80px rgba(2, 6, 23, 0.65), inset 0 1px 0 rgba(255,255,255,0.06);
-  }
-  .brand { display: flex; align-items: baseline; gap: 10px; justify-content: center; margin-bottom: 4px; }
-  .brand h1 { font-size: 26px; letter-spacing: 0.4px; font-weight: 700;
-    background: linear-gradient(92deg, var(--user-1), var(--rafita-1));
-    -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .brand .sub { color: var(--muted); font-size: 12px; }
-
-  .stage { display: flex; align-items: center; justify-content: center; gap: clamp(14px, 6vw, 42px); margin: 22px 0 10px; }
-  .orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  .orb {
-    --level: 0;
-    width: clamp(96px, 30vw, 132px); height: clamp(96px, 30vw, 132px);
-    border-radius: 50%; position: relative; display: grid; place-items: center;
-    transition: box-shadow 0.35s ease, opacity 0.35s ease;
-  }
-  .orb .core {
-    width: 100%; height: 100%; border-radius: 50%;
-    transform: scale(calc(0.86 + var(--level) * 0.22));
-    transition: transform 0.09s linear;
-    background:
-      radial-gradient(circle at 32% 28%, rgba(255,255,255,0.55), rgba(255,255,255,0) 42%),
-      radial-gradient(circle at 50% 60%, var(--c1), var(--c2) 72%);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 14px 40px rgba(0,0,0,0.45);
-  }
-  .orb .ring {
-    position: absolute; inset: -8px; border-radius: 50%;
-    border: 2px solid var(--c1); opacity: calc(0.18 + var(--level) * 0.55);
-    transform: scale(calc(1 + var(--level) * 0.16));
-    transition: transform 0.09s linear, opacity 0.15s linear;
-  }
-  .orb .pulse {
-    position: absolute; inset: -8px; border-radius: 50%;
-    border: 2px solid var(--c1); opacity: 0; pointer-events: none;
-  }
-  .orb.active .pulse { animation: pulseRing 1.6s ease-out infinite; }
-  @keyframes pulseRing {
-    0% { transform: scale(0.96); opacity: 0.55; }
-    100% { transform: scale(1.35); opacity: 0; }
-  }
-  .orb.user { --c1: var(--user-1); --c2: var(--user-2); }
-  .orb.rafita { --c1: var(--rafita-1); --c2: var(--rafita-2); }
-  .orb.idle .core { animation: breathe 4.2s ease-in-out infinite; }
-  @keyframes breathe { 0%,100% { transform: scale(0.88); } 50% { transform: scale(0.94); } }
-  .orb-label { font-size: 12px; color: var(--muted); letter-spacing: 0.6px; text-transform: uppercase; }
-  .orb-wrap.talking .orb-label { color: var(--text); }
-
-  .status {
-    display: flex; align-items: center; justify-content: center; gap: 9px;
-    margin: 6px auto 16px; padding: 9px 18px; width: fit-content; max-width: 100%;
-    border-radius: 999px; font-size: 13px; color: var(--muted);
-    background: rgba(15, 23, 42, 0.55); border: 1px solid var(--glass-border);
-  }
-  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .status.listening .dot { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
-  .status.processing .dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: blink 1s infinite; }
-  .status.speaking .dot { background: var(--user-1); box-shadow: 0 0 12px var(--user-1); }
-  .status.error .dot { background: var(--err); box-shadow: 0 0 12px var(--err); }
-  .status.reconnecting .dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: blink 0.7s infinite; }
-  @keyframes blink { 50% { opacity: 0.35; } }
-
-  .controls { display: flex; gap: 10px; justify-content: center; align-items: stretch; flex-wrap: wrap; }
-  .ctl {
-    border: 1px solid var(--glass-border); background: rgba(30, 41, 59, 0.7);
-    color: var(--text); font-size: 14px; font-weight: 600;
-    padding: 13px 22px; border-radius: 16px; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px;
-    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s;
-  }
-  .ctl:hover { transform: translateY(-1px); }
-  .ctl:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
-  .ctl.primary { background: linear-gradient(135deg, #059669, #10b981); border-color: transparent; box-shadow: 0 10px 30px rgba(16,185,129,0.25); }
-  .ctl.hangup { background: linear-gradient(135deg, #b91c1c, #ef4444); border-color: transparent; box-shadow: 0 10px 30px rgba(239,68,68,0.3); }
-  .ctl.stop { background: linear-gradient(135deg, #7c3aed, #a855f7); border-color: transparent; }
-  .ctl.ghost { background: rgba(30, 41, 59, 0.45); }
-  .ctl.pressed { background: linear-gradient(135deg, #065f46, #10b981); }
+  .sprite { display: none; }
+  .icon { width: 16px; height: 16px; vertical-align: -2px; }
+  .glyph { width: 22px; height: 22px; display: block; }
   .hidden { display: none !important; }
-
-  .settings { display: flex; flex-wrap: wrap; gap: 10px 14px; justify-content: center; align-items: center; margin-top: 16px; font-size: 12px; color: var(--muted); }
-  .settings label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-  .settings input[type="text"] {
-    background: rgba(15, 23, 42, 0.7); border: 1px solid var(--glass-border);
-    color: var(--text); padding: 7px 11px; border-radius: 10px; font-size: 12px; width: 170px;
-  }
-  .mini {
-    background: rgba(30, 41, 59, 0.6); border: 1px solid var(--glass-border);
-    color: var(--muted); padding: 7px 12px; border-radius: 10px; font-size: 12px; cursor: pointer;
-  }
-  .mini:hover { color: var(--text); }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
-  #debugControls { display: inline-flex; gap: 10px 14px; flex-wrap: wrap; align-items: center; }
 
-  .transcript {
-    display: none; margin-top: 16px; padding: 14px 16px;
-    background: rgba(10, 16, 34, 0.6); border: 1px solid var(--glass-border);
-    border-radius: 16px; max-height: 190px; overflow-y: auto; font-size: 13px; line-height: 1.5;
+  .shell {
+    width: min(560px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
   }
-  .transcript .tu { color: #7dd3fc; margin-bottom: 3px; }
-  .transcript .rafita { color: #c4b5fd; margin-bottom: 11px; }
-  .log { color: var(--muted); font-size: 11px; margin-top: 10px; max-height: 84px; overflow-y: auto; padding: 0 4px; }
+
+  /* ---------- cabecera ---------- */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding-bottom: var(--sp-4);
+    border-bottom: var(--border);
+  }
+  .brand .mark {
+    display: grid; place-items: center;
+    width: 34px; height: 34px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+  }
+  .brand h1 {
+    font-family: var(--font-display);
+    font-size: var(--fs-h1);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--ls-display);
+  }
+  .brand .sub {
+    margin-left: auto;
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- escenario: dos presencias y un hilo ---------- */
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-8) 0 var(--sp-6);
+  }
+
+  .orb-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .orb {
+    --level: 0;
+    position: relative;
+    width: clamp(104px, 30vw, 132px);
+    height: clamp(104px, 30vw, 132px);
+    display: grid;
+    place-items: center;
+  }
+
+  /* la presencia: forma orgánica que respira y responde al nivel de voz */
+  .blob {
+    position: absolute;
+    inset: 8%;
+    display: grid;
+    place-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    transform: scale(calc(1 + var(--level) * 0.12));
+    transition: transform var(--t-instant) linear, background-color var(--t-base) var(--ease-out);
+    animation: morph var(--t-breath) var(--ease-inout) infinite alternate;
+    border-radius: 42% 58% 55% 45% / 47% 42% 58% 53%;
+  }
+  .orb.user .blob { background: var(--secondary-soft); }
+  .orb.rafita .blob { background: var(--accent-soft); animation-delay: -2.6s; }
+  .orb.user .blob .glyph { color: var(--secondary); }
+  .orb.rafita .blob .glyph { color: var(--accent); }
+
+  @keyframes morph {
+    0% { border-radius: 42% 58% 55% 45% / 47% 42% 58% 53%; }
+    50% { border-radius: 52% 48% 44% 56% / 55% 52% 48% 45%; }
+    100% { border-radius: 46% 54% 58% 42% / 44% 56% 44% 56%; }
+  }
+
+  /* anillo de tinta: trazo discontinuo, como dibujado a mano */
+  .ink-ring {
+    position: absolute;
+    inset: 0;
+    border: 1px dashed var(--line-strong);
+    border-radius: 50%;
+    opacity: 0.65;
+    animation: turn 42s linear infinite;
+  }
+  .orb.rafita .ink-ring { animation-direction: reverse; animation-duration: 56s; }
+  @keyframes turn { to { transform: rotate(1turn); } }
+
+  .halo {
+    position: absolute;
+    inset: -12%;
+    border-radius: 50%;
+    border: 1px solid transparent;
+    pointer-events: none;
+  }
+  .orb.user.active .halo { border-color: var(--secondary); animation: halo var(--t-slow) var(--ease-out) infinite; }
+  .orb.rafita.active .halo { border-color: var(--accent); animation: halo var(--t-slow) var(--ease-out) infinite; }
+  @keyframes halo {
+    0% { transform: scale(0.96); opacity: 0.6; }
+    100% { transform: scale(1.12); opacity: 0; }
+  }
+  .orb.active .blob { animation-duration: 2600ms; }
+
+  /* pensamiento: particulas minimas contenidas */
+  .particle {
+    position: absolute;
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+    top: 50%; left: 50%;
+  }
+  body:has(#status.processing) .orb.rafita .particle {
+    opacity: 0.85;
+    animation: orbit 2400ms linear infinite;
+  }
+  body:has(#status.processing) .orb.rafita .particle:nth-child(2) { animation-delay: -800ms; }
+  body:has(#status.processing) .orb.rafita .particle:nth-child(3) { animation-delay: -1600ms; }
+  @keyframes orbit {
+    from { transform: rotate(0deg) translateX(22px); }
+    to { transform: rotate(360deg) translateX(22px); }
+  }
+
+  .orb-label {
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .orb-wrap.talking .orb-label { color: var(--ink); }
+
+  /* el hilo: la conexión entre las dos presencias */
+  .thread {
+    width: clamp(44px, 11vw, 110px);
+    height: 44px;
+    overflow: visible;
+  }
+  .thread path {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-dasharray: 2 8;
+    animation: flow 5.5s linear infinite;
+  }
+  @keyframes flow { to { stroke-dashoffset: -60; } }
+  body:has(#status.listening) .thread path { stroke: var(--secondary); animation-duration: 2.8s; }
+  body:has(#status.speaking) .thread path { stroke: var(--accent); animation-duration: 1.8s; }
+  body:has(#status.processing) .thread path { stroke: var(--accent); animation-duration: 4.5s; }
+  body:has(#status.reconnecting) .thread path { opacity: 0.4; animation-duration: 8s; }
+
+  /* ---------- estado ---------- */
+  .status {
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
+    padding: var(--sp-3) 0;
+    border-top: var(--border);
+    border-bottom: var(--border);
+    font-size: var(--fs-sm);
+    color: var(--ink-soft);
+    text-align: center;
+  }
+  .status .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-faint);
+    transition: background-color var(--t-base) var(--ease-out);
+  }
+  .status.listening .dot { background: var(--secondary); }
+  .status.processing .dot { background: var(--warn); }
+  .status.speaking .dot { background: var(--accent); }
+  .status.reconnecting .dot { background: var(--warn); animation: blink 1.1s steps(2, start) infinite; }
+  .status.error .dot { background: var(--danger); }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  /* ---------- controles: sistema de botones del diseño ---------- */
+  .controls { display: flex; gap: var(--sp-3); justify-content: center; flex-wrap: wrap; }
+  .ctl {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    padding: 10px 18px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink);
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium);
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  }
+  .ctl:hover { border-color: var(--ink-faint); background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .ctl:active { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+  .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ctl:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ctl.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+  .ctl.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+  .ctl.hangup { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--danger); }
+  .ctl.stop { background: transparent; border-color: var(--line-strong); color: var(--ink-soft); }
+  .ctl.ghost { border-color: transparent; color: var(--ink-soft); }
+  .ctl.ghost:hover { border-color: var(--line-strong); color: var(--ink); }
+  .ctl.pressed { background: var(--secondary-soft); border-color: var(--secondary); color: var(--secondary); }
+
+  /* ---------- ajustes ---------- */
+  .settings {
+    display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5);
+    justify-content: center; align-items: center;
+    padding-top: var(--sp-4);
+    border-top: var(--border);
+    font-size: var(--fs-caption);
+    color: var(--ink-soft);
+  }
+  .settings label { display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; }
+  .settings input[type="checkbox"] { accent-color: var(--accent); }
+  #debugControls { display: inline-flex; gap: var(--sp-3); flex-wrap: wrap; align-items: center; }
+  .settings input[type="text"] {
+    font: inherit; font-size: var(--fs-caption);
+    padding: 6px 10px; width: 170px;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+  }
+  .mini {
+    font: inherit; font-size: var(--fs-caption);
+    padding: 6px 11px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: transparent; color: var(--ink-soft); cursor: pointer;
+  }
+  .mini:hover { border-color: var(--line-strong); color: var(--ink); }
+
+  /* ---------- transcripción y registro ---------- */
+  .transcript {
+    display: none;
+    padding: var(--sp-4);
+    border: var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    max-height: 200px; overflow-y: auto;
+    font-size: var(--fs-sm); line-height: var(--lh-prose);
+  }
+  .transcript .tu,
+  .transcript .rafita { margin-bottom: var(--sp-3); }
+  .transcript .tu { color: var(--secondary); }
+  .transcript .rafita { color: var(--ink); font-family: var(--font-display); }
+  .transcript .tu strong,
+  .transcript .rafita strong {
+    display: block;
+    font-family: var(--font-ui);
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: var(--fw-medium);
+  }
+  .log {
+    font-family: var(--font-mono);
+    font-size: var(--fs-caption);
+    color: var(--ink-faint);
+    max-height: 88px; overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 520px) {
+    body { padding: var(--sp-5) var(--sp-4) var(--sp-8); }
+    .stage { gap: 0; }
+    .orb { width: clamp(92px, 26vw, 116px); height: clamp(92px, 26vw, 116px); }
+    .thread { width: 36px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 </style>
 </head>
 <body>
-<div class="bg-orb a"></div>
-<div class="bg-orb b"></div>
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-spark" viewBox="0 0 24 24">
+    <path d="M12 3c.6 3.9 1.9 5.7 5.6 6.6-3.7.9-5 2.7-5.6 6.6-.6-3.9-1.9-5.7-5.6-6.6C10.1 8.7 11.4 6.9 12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-user" viewBox="0 0 24 24">
+    <circle cx="12" cy="8.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M5.5 20a6.5 6.5 0 0 1 13 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24">
+    <path d="M6.2 3.8h3l1.6 4-2 1.6a12.5 12.5 0 0 0 5.8 5.8l1.6-2 4 1.6v3c0 .9-.8 1.6-1.7 1.5C10.9 18.6 5.4 13.1 4.7 5.5c-.1-.9.6-1.7 1.5-1.7Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24">
+    <rect x="7" y="7" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  </symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24">
+    <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+</svg>
 
 <main class="shell">
   <div class="brand">
+    <span class="mark"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg></span>
     <h1>Rafita</h1>
-    <span class="sub">Llamada de voz · IA local</span>
+    <span class="sub">Voz en directo</span>
   </div>
 
-  <section class="stage">
+  <section class="stage" aria-label="Presencias de la llamada">
     <div class="orb-wrap" id="userWrap">
-      <div class="orb user idle" id="userOrb"><div class="ring"></div><div class="pulse"></div><div class="core"></div></div>
+      <div class="orb user idle" id="userOrb">
+        <span class="halo"></span>
+        <span class="blob"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-user"/></svg></span>
+        <span class="ink-ring"></span>
+      </div>
       <span class="orb-label">Tú</span>
     </div>
+    <svg class="thread" viewBox="0 0 110 44" aria-hidden="true" preserveAspectRatio="none">
+      <path d="M2 34 C 30 12, 80 12, 108 34" />
+    </svg>
     <div class="orb-wrap" id="rafitaWrap">
-      <div class="orb rafita idle" id="rafitaOrb"><div class="ring"></div><div class="pulse"></div><div class="core"></div></div>
+      <div class="orb rafita idle" id="rafitaOrb">
+        <span class="halo"></span>
+        <span class="blob">
+          <span class="particle"></span><span class="particle"></span><span class="particle"></span>
+          <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg>
+        </span>
+        <span class="ink-ring"></span>
+      </div>
       <span class="orb-label">Rafita</span>
     </div>
   </section>
@@ -202,9 +376,9 @@
   <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"><span class="dot"></span><span id="statusText">Presiona Iniciar para llamar</span></div>
 
   <div class="controls">
-    <button id="callBtn" class="ctl primary" aria-label="Iniciar llamada" onclick="toggleCall()">📞 Iniciar</button>
-    <button id="stopBtn" class="ctl stop hidden" aria-label="Parar de hablar" onclick="stopSpeaking()">⏹ Parar</button>
-    <button id="pttBtn" class="ctl ghost" aria-label="Mantener pulsado para hablar" aria-pressed="false" disabled>🎤 Mantener</button>
+    <button id="callBtn" class="ctl primary" aria-label="Iniciar llamada" onclick="toggleCall()"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-phone"/></svg> Iniciar</button>
+    <button id="stopBtn" class="ctl stop hidden" aria-label="Parar de hablar" onclick="stopSpeaking()"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-stop"/></svg> Parar</button>
+    <button id="pttBtn" class="ctl ghost" aria-label="Mantener pulsado para hablar" aria-pressed="false" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mic"/></svg> Mantener</button>
   </div>
 
   <div class="settings">
@@ -228,6 +402,8 @@
 // reproduccion gapless, barge-in por voz + boton Parar, UI con
 // dos orbes animados (nivel real de micro y de la voz de Rafita).
 // ============================================================
+
+const ICONO_TEL = '<svg class="icon"><use href="#i-phone"/></svg>';
 
 function getApiBase() {
   const custom = document.getElementById('serverUrl').value.trim();
@@ -718,21 +894,21 @@ async function toggleCall() {
     if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} ws = null; }
     await endCall();
     pttBtn.disabled = true;
-    callBtn.innerHTML = '📞 Iniciar';
+    callBtn.innerHTML = ICONO_TEL + ' Iniciar';
     callBtn.className = 'ctl primary';
     callBtn.setAttribute('aria-label', 'Iniciar llamada');
     setStatus(STATUS.IDLE, 'Llamada finalizada');
     callBtn.disabled = false;
   } else {
     callBtn.disabled = true;
-    callBtn.innerHTML = '⏳ Conectando...';
+    callBtn.innerHTML = 'Conectando…';
     const ok = await startCall();
     if (ok) {
-      callBtn.innerHTML = '📞 Colgar';
+      callBtn.innerHTML = ICONO_TEL + ' Colgar';
       callBtn.className = 'ctl hangup';
       callBtn.setAttribute('aria-label', 'Colgar llamada');
     } else {
-      callBtn.innerHTML = '📞 Iniciar';
+      callBtn.innerHTML = ICONO_TEL + ' Iniciar';
       callBtn.className = 'ctl primary';
     }
     callBtn.disabled = false;

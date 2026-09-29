@@ -1,55 +1,94 @@
-# Diseño web de Rafita — brief y decisiones (Fase 3, 2026-09-29)
+# Diseño web de Rafita — identidad y sistema
 
-## Referencias (nivel de producto, sin copiar interfaces)
+> Rediseño visual completo (2026-09-29). Sustituye por completo la identidad
+> anterior (navy + cian, glass, orbes radiales).
 
-| Referencia | Qué se toma prestado |
-|---|---|
-| **Linear** | Tipografía compacta y consistente, listas con jerarquía clara, acentos vivos sobre base oscura, estados vacíos con intención. |
-| **Raycast** | Cristal sutil (`glass`) sobre gradientes calmados, degradados de marca en elementos de identidad, densidad alta sin ruido. |
-| **Things / Notion** | Estados vacíos con icono/ilustración + llamada a la acción; skeletons discretos en cargas; micro-animaciones de entrada (no decorativas). |
+## Dirección
 
-## Identidad «Rafita»
+**Editorial + artesanal + tecnológica + minimalista.** Rafita es un asistente
+privado que vive en el servidor del usuario: la interfaz se trata como un
+**cuaderno de campo** — papel cálido, tinta, terracota — no como un panel de
+servidor ni un dashboard SaaS.
 
-Asistente personal: cálido en el trato, técnico por dentro. La identidad visual
-ya existente (base azul pizarra + acento cian, orbes de la llamada) se refina,
-no se reinventa.
+Referencias conceptuales (sin copiar): el detalle y la jerarquía de Linear, la
+personalidad de las interfaces editoriales modernas, la claridad de Obsidian.
 
-- **Paleta**: base `slate` (azul pizarra) + acento **cian→índigo** (degradado de
-  marca), verde para acción/voz, coral suave para errores. Semántica en
-  tokens: `--bg/--panel/--panel-2/--text/--muted/--accent/--accent-2/
-  --ok/--warn/--danger`.
-- **Tipografía**: pila del sistema (sin fuentes externas: la app debe funcionar
-  offline). Escala 12/14/16/20/28 (razón ≈1.25), pesos 400/600/700,
-  `font-feature-settings: "tnum"` en cifras, `letter-spacing` negativo en
-  títulos.
-- **Espaciado**: escala 4/8/12/16/24/32/48 (`--sp-1…--sp-12`).
-- **Radios**: 8/12/20/píldora. **Sombras**: 3 niveles con alfa consistente
-  (`--shadow-sm/md/lg`) + `--glow` para foco.
-- **Movimiento**: `--ease: cubic-bezier(.2,.7,.3,1)`, 120-200 ms. Solo
-  micro-interacciones con propósito: elevación en hover, indicador de pestaña,
-  entrada de burbujas/modal, shimmer del skeleton.
+## Sistema de diseño (fuente única)
 
-## Decisiones explícitas
+`web/app/design-tokens.css` define **todo** el sistema y lo consumen la SPA y
+la página de llamada (esta última lo carga desde su propio origen:
+`GET /design-tokens.css` del servidor de voz):
 
-1. **Tema (3.2)**: **ambas superficies respetan `prefers-color-scheme`**. La
-   página de llamada era oscuro fijo por omisión; ahora consume los tokens
-   compartidos (oscuro por defecto y claro en su `@media`). Decisión: coherencia
-   de producto por encima del «look cinematográfico» fijo; el degradado y los
-   orbes se adaptan al tema.
-2. **Tokens únicos (3.1)**: `web/app/tokens.css` es la **fuente única**
-   (color, tipografía, espaciado, radios, sombras, movimiento). La SPA lo
-   sirve en `/app/tokens.css`; la página de llamada lo consume desde su propio
-   origen (el servidor de voz publica `/tokens.css`). `call_rafita.html`
-   sigue siendo un fichero aparte, pero ya no duplica la paleta.
-3. **call_rafita.html fuera de la PWA instalable (3.5)**: vive en otro origen
-   (`voz.rafita.home`), fuera del `scope` del manifest; la vista Llamada de la
-   SPA lo embebe. Se documenta como decisión (no es un accidente).
-4. **Estados vacíos/carga (3.4)**: skeletons con shimmer en las tres listas y
-   estados vacíos con icono SVG + CTA real (no solo texto gris).
+- **Color** (claro): papel marfil `--paper #f5efe3`, superficie `--surface`,
+  beige `--surface-2/3`, tinta carbón `--ink #2a251e`, tinta suave/fina,
+  **terracota** `--accent #a94f2b`, salvia `--secondary #566a48`, petróleo
+  `--info` (solo informativo), y estados `--ok/--warn/--danger` maduros.
+- **Color** (oscuro): carbón cálido `--paper #191611` con superficies
+  diferenciadas, texto marfil, acento terracota claro — **no es una inversión**.
+- **Tipografía**: dos familias. Identidad en **serif editorial**
+  (`--font-display`: Iowan/Palatino/Georgia) para wordmark, títulos, mensajes
+  de Rafita y el editor del Baúl (lectura larga); **sans humanista**
+  (`--font-ui`: Avenir/Segoe) para la interfaz; `--font-mono` para datos.
+  Escala: display/h1/h2/h3/body/sm/label/caption con interlineados y
+  `letter-spacing` propios.
+- **Espaciado** escala 4 (`--sp-1…--sp-20`), **radios** 3/5/8/12/píldora,
+  **bordes** `--line/--line-strong`, **sombras** muy suaves (`--shadow-1/2/lift`),
+  **z-index** (`--z-sticky/overlay/modal/toast`), **movimiento**
+  (`--t-instant/fast/base/slow/breath` + `--ease-out/inout/spring`),
+  **breakpoints** de referencia (640/900/1200).
+- `prefers-reduced-motion` pone todas las duraciones a 0 y desactiva
+  animaciones; `prefers-color-scheme` elige el tema completo.
 
-## Mockup
+## Composición (no solo color)
 
-`web/mockup/diseno.html` (fichero de diseño, no se sirve en producción) con el
-estado propuesto: barra con marca, pestañas con indicador, lista con skeleton,
-estado vacío con CTA, burbujas de chat, botones y tarjeta modal. Se genera su
-captura como referencia antes de aplicar los cambios a la app real.
+- **Sin tarjetas flotantes ni cristal**: superficies planas, **líneas finas**
+  como separadores, sombras casi imperceptibles y espacio negativo.
+- **Masthead** con wordmark serif + marca (glyph) y pestañas como
+  **navegación subrayada** (el activo lleva un filete terracota), no píldoras.
+- **Login asimétrico**: columna editorial (marca, tesis del producto, líneas
+  de cuaderno como motivo gráfico) + columna de acceso; en móvil se apila.
+- **Chat**: Rafita = fila editorial con **marca propia** (glyph terracota),
+  nombre en serif y hora; el usuario = bloque derecho con tinte terracota
+  suave; indicador de escritura con tres puntos orgánicos. Nada de
+  "burbuja azul / burbuja gris".
+- **Baúl** como herramienta editorial: lista con títulos en serif y metadatos
+  en versalitas, editor con **cuerpo en serif** para lectura larga y ruta en
+  monoespaciada.
+- **Botones**: un sistema (`primary/secondary/tertiary/ghost/danger/icon`,
+  tamaño `sm`) con estados normal/hover/active/focus/disabled/loading. El
+  hover cambia color/borde (no `translateY`).
+- **Iconografía**: sprite SVG propio (trazo 1.5, mismo lenguaje) para
+  navegación, acciones y estados; el glyph de marca (`i-spark`) es el logo,
+  el avatar de Rafita y el favicon. Wordmark, marca, avatar y favicon tienen
+  tratamientos diferenciados.
+- **Grano de papel** sutil (SVG feTurbulence al 3,5%) como textura de fondo.
+
+## Llamada: dos presencias conectadas
+
+Los orbes radiales desaparecieron. La escena son **dos presencias orgánicas
+unidas por un hilo**:
+
+- Cada presencia es una forma que **respira** (morfología de radios animada),
+  con un **anillo de tinta discontinuo** girando lentamente y un halo que
+  pulsa solo cuando está activa.
+- Estados con identidad propia: **idle** (quietud), **listening** (la
+  presencia del usuario crece con el nivel real del micro y el hilo fluye
+  hacia Rafita en salvia), **thinking** (partículas mínimas orbitando dentro
+  de la presencia de Rafita y el hilo en terracota), **speaking** (la
+  presencia de Rafita se deforma con el nivel real de su voz y el hilo fluye
+  rápido), **reconnecting** (hilo atenuado y lento).
+- El nivel de audio sigue viniendo del `--level` real (analizadores);
+  no hay "audio visualizer": son presencias, no barras.
+
+## Verificación
+
+- **axe-core**: 0 violaciones en login/chat/baúl/reuniones/llamada, en claro
+  y oscuro, y en la página de llamada.
+- **Contraste** (medido desde tokens): tinta 13-14:1, tinta suave 5,2-6,7:1,
+  captions 5,0-4,9:1, acento 4,8-6,2:1, texto sobre acento 5,1-5,9:1,
+  peligro 6,0-6,7:1 — todo ≥ 4,5:1.
+- **Sin scroll horizontal** en 390 px (login, chat, baúl, llamada).
+- **E2E real**: login → chat con respuesta del cerebro → crear/abrir/borrar
+  nota del Baúl → 9/9 tests.
+
+Capturas reales de todas las vistas en `docs/web-screenshots/`.
