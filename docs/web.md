@@ -61,9 +61,12 @@ navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
 > `http://rafita-agent-core:8000` como upstream. Síntoma típico: NPM marca el
 > host «Online» pero responde **502**.
 >
-> **PWA**: el service worker y la instalación requieren **contexto seguro**
-> (HTTPS). Con `HTTP Only` en NPM la web funciona, pero no se podrá instalar
-> como app hasta habilitar un certificado (self-signed o dominio real).
+> **PWA y micrófono**: el service worker, la instalación como app **y el
+> micrófono de la llamada** requieren **contexto seguro (HTTPS o localhost)**.
+> Con `HTTP Only` en NPM la web funciona pero el navegador no expone
+> `navigator.mediaDevices` (la página lo avisa con un mensaje claro). Para
+> usar la llamada desde otros dispositivos habilita SSL en NPM (self-signed o
+> dominio real); el resto de la app no lo necesita.
 
 ## Usuarios y autenticación
 
