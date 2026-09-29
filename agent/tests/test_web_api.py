@@ -1,5 +1,8 @@
 """Tests de la API web (Fase 3): login, chat, boveda y llamada."""
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 import src.database as database
@@ -40,9 +43,9 @@ class _FakeDB:
     async def list_web_users(self):
         return list(self.users.values())
 
-    async def get_chat_history(self, chat_id, limit=30):
+    async def get_chat_history(self, chat_id, limit=30, offset=0):
         # Igual que la BD real: mas reciente primero.
-        return [
+        filas = [
             {
                 "id": 2,
                 "chat_id": chat_id,
@@ -57,7 +60,8 @@ class _FakeDB:
                 "content": "hola",
                 "created_at": "2026-09-29",
             },
-        ][:limit]
+        ]
+        return filas[offset : offset + limit]
 
 
 def _cliente(monkeypatch, tmp_path):
@@ -367,3 +371,75 @@ def test_tokens_css_servido_por_el_servidor_de_voz():
     assert resp.status_code == 200
     assert "--font-sans" in resp.text
     assert resp.headers.get("content-type", "").startswith("text/css")
+
+
+def test_vault_notes_paginacion(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+    for i in range(5):
+        client.post(
+            "/api/vault/note",
+            json={"path": "00-Inbox/pag-%d.md" % i, "content": "cuerpo %d" % i},
+            headers=headers,
+        )
+    p1 = client.get("/api/vault/notes?limit=2&offset=0", headers=headers).json()
+    p2 = client.get("/api/vault/notes?limit=2&offset=2", headers=headers).json()
+    p3 = client.get("/api/vault/notes?limit=2&offset=4", headers=headers).json()
+    assert p1["total"] == 5 and len(p1["notes"]) == 2
+    assert p2["total"] == 5 and len(p2["notes"]) == 2
+    assert p3["total"] == 5 and len(p3["notes"]) == 1
+    rutas1 = {n["path"] for n in p1["notes"]}
+    rutas2 = {n["path"] for n in p2["notes"]}
+    assert not rutas1 & rutas2  # paginas sin solaparse
+    assert p1["offset"] == 0 and p2["offset"] == 2
+
+
+def test_chat_history_offset(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+    p1 = client.get("/api/chat/history?limit=1&offset=0", headers=headers).json()
+    p2 = client.get("/api/chat/history?limit=1&offset=1", headers=headers).json()
+    assert len(p1["messages"]) == 1 and p1["messages"][0]["content"] == "buenas"
+    assert len(p2["messages"]) == 1 and p2["messages"][0]["content"] == "hola"
+
+
+def test_build_web_minifica_y_hashea(tmp_path):
+    """Build minimo (Fase 4.2): minifica, hashea y reescribe referencias."""
+    import importlib.util
+
+    pytest.importorskip("rjsmin")
+    spec = importlib.util.spec_from_file_location(
+        "build_web", str(Path(__file__).resolve().parents[2] / "scripts" / "build_web.py")
+    )
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    salida = tmp_path / "app-dist"
+    hasheados = modulo.build(salida)
+    assert set(hasheados) == {"app.js", "styles.css", "tokens.css"}
+    for nombre, destino in hasheados.items():
+        assert (salida / destino).exists()
+        assert destino != nombre  # lleva hash
+        origen = (Path(__file__).resolve().parents[2] / "web" / "app" / nombre).stat().st_size
+        assert (salida / destino).stat().st_size <= origen
+    html = (salida / "index.html").read_text(encoding="utf-8")
+    for destino in hasheados.values():
+        assert destino in html
+    assert 'src="config.js"' in html  # editable por instalacion, sin hashear
+    sw = (salida / "sw.js").read_text(encoding="utf-8")
+    assert "rafita-shell-" in sw
+    for destino in hasheados.values():
+        assert destino in sw
+    assert (salida / "manifest.webmanifest").exists()
+    assert (salida / "icons" / "icon-192.png").exists()

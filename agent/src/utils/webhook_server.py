@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import re
 import time
 from typing import Any
 
@@ -28,10 +29,13 @@ app.include_router(_web_router)
 
 
 def _mount_web_app() -> None:
-    """Sirve la SPA en /app (si el directorio existe en esta instalacion)."""
+    """Sirve la SPA en /app: build de produccion (web/app-dist) si existe y,
+    si no, los sources (web/app) para desarrollo."""
     from pathlib import Path
 
     for candidate in (
+        Path("/workspace/web/app-dist"),
+        Path(__file__).resolve().parents[3] / "web" / "app-dist",
         Path("/workspace/web/app"),
         Path(__file__).resolve().parents[3] / "web" / "app",
     ):
@@ -71,6 +75,16 @@ async def _security_headers(request: Request, call_next):
         "microphone=(%s), camera=(), geolocation=()" % microfonos,
     )
     path = request.url.path
+    if path.startswith("/app"):
+        # Cache (Fase 4): los assets con hash del build son inmutables;
+        # config.js es editable por instalacion y no se cachea nunca.
+        nombre = path.rsplit("/", 1)[-1]
+        if nombre == "config.js":
+            response.headers.setdefault("Cache-Control", "no-store")
+        elif _HASH_ASSET_RE.search(nombre):
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            response.headers.setdefault("Cache-Control", "no-cache")
     if path == "/" or path.startswith("/app"):
         response.headers.setdefault(
             "Content-Security-Policy",
@@ -81,6 +95,9 @@ async def _security_headers(request: Request, call_next):
         )
     return response
 
+
+# Assets con hash de contenido del build (app-<hash8>.js, styles-<hash8>.css...).
+_HASH_ASSET_RE = re.compile(r"-[0-9a-f]{8}\.(?:js|css)$")
 
 _webhook_secret: str | None = None
 _bot_ref = None

@@ -357,3 +357,68 @@ verificado con axe-core contra el servidor real.
 `ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP con
 `tokens.css` servido por ambos orígenes; axe sin regresión (0/0/0/0) y
 contraste ≥5.71:1 en ambos temas.
+
+---
+
+## FASE 4 — Rendimiento y calidad técnica (2026-09-29)
+
+### 4.4 Auditoría Lighthouse completa (ANTES → DESPUÉS)
+Herramienta: **Lighthouse 13.5.0** (Node 20 + chrome-headless-shell real).
+
+| Superficie | Rendimiento | Accesibilidad | Buenas prácticas | SEO |
+|---|---|---|---|---|
+| SPA | 100 → **100** | 100 → **100** | 78 → **78** | 100 → **100** |
+| Página de llamada | 100 → **100** | 100 → **100** | 78 → **78** | 90 → **100** |
+
+- **SEO de la llamada 90→100**: añadido `<meta name="description">`.
+- **Buenas prácticas 78**: el único fallo restante es `is-on-https` +
+  `redirects-http` (despliegue en HTTP; la habilitación de SSL en NPM lo
+  lleva a 100 — decisión de infraestructura documentada en `docs/web.md`).
+
+### 4.1 Audio de la llamada: PCM vs Opus — EVALUADO + DECISIÓN DOCUMENTADA
+- **Evaluación**: PCM Int16 16 kHz mono = ~32 KB/s (1,9 MB/min) frente a
+  Opus 24 kbps ≈3 KB/s (10× menos). Opus exige `MediaRecorder`/WebCodecs
+  (+100-300 ms por trozo y CPU en el hilo principal) y **decodificar en el
+  servidor** (ffmpeg por trozo = la latencia que se eliminó a propósito en
+  2026-09-27, o un decodificador streaming).
+- **Decisión**: se **mantiene PCM por latencia** (turnos de 4-11 s; 0,26
+  Mbit/s no es el cuello de botella en LAN/Tailnet). Documentado en
+  `docs/web.md` con el camino futuro (`CALL_AUDIO_CODEC=opus`). No es omisión:
+  el trade-off está cuantificado.
+
+### 4.2 Build mínimo: minificación + cache-busting — IMPLEMENTADO (decisión documentada)
+- **Cambio**: `scripts/build_web.py` (Python puro: `rjsmin` + `csscompressor`,
+  **sin Node/Vite** — decisión documentada: para 3 ficheros no compensa).
+  Genera `web/app-dist/` con `app-<hash8>.js`/`styles-<hash8>.css`/
+  `tokens-<hash8>.css` (caché `immutable` un año), `index.html`/`sw.js`
+  reescritos (SHELL hasheado, `CACHE=rafita-shell-<hash>`) y `config.js` sin
+  hashear con `Cache-Control: no-store` (editable por instalación). El gateway
+  sirve `app-dist/` (producción) o `app/` (desarrollo).
+- **Evidencia (tamaños reales)**: `app.js 22236→17319 (78%)`,
+  `styles.css 8680→6984 (80%)`, `tokens.css 2025→1156 (57%)`. Cabeceras
+  verificadas: `public, max-age=31536000, immutable` en el JS hasheado y
+  `no-store` en `config.js`. Test automatizado (`test_build_web_minifica_y_hashea`).
+- **Proceso**: el primer deploy dejó `app-dist/config.js` fuera (mi
+  `--exclude config.js` de rsync lo excluía también del build) → el navegador
+  recibía JSON en un `<script>` y Lighthouse lo penalizó (74). Detectado por
+  Lighthouse/console; corregido inyectando el `config.js` real de la
+  instalación en `app-dist/` (build en el HP con la fuente local) y con la
+  caché `no-store` correspondiente.
+
+### 4.3 Paginación real (notas y chat) — IMPLEMENTADO
+- **Cambio**: `/api/vault/notes` con `offset`/`limit` y `total` real; DB
+  `get_chat_history(limit, offset)`; cliente con botón **«Cargar más (N
+  restantes)»** en el Baúl (páginas de 50, append) y **«Cargar mensajes
+  anteriores»** en el chat (offset, insertados arriba en orden cronológico).
+- **Evidencia (Playwright, 52 notas de prueba)**: primera página `51` filas
+  (50 notas + botón `Cargar más (2 restantes)`) → al pulsar `52` (crece: True).
+  Tests del endpoint: páginas sin solaparse, `total` constante, offsets
+  correctos. Limpieza posterior verificada.
+- **Proceso**: `debounce` reenviaba el evento como parámetro `acumular`
+  (truthy) y desactivaba la paginación; lo delató el test real y se fijó con
+  `acumular === true` (test futuro blindado).
+
+### Gate de la Fase 4
+`ruff`/`mypy` limpios; **1.316 tests** (3 nuevos: build, paginación de notas,
+offset de chat); Lighthouse sin regresiones y con el único limitador restante
+(HTTPS) documentado.
