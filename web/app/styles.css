@@ -23,7 +23,7 @@ body {
   color: var(--ink);
   background-color: var(--paper);
   /* Grano de papel: extremadamente sutil, nunca decoración protagonista. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='2'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='140'%20height='140'%20filter='url(%23n)'%20opacity='0.035'/%3E%3C/svg%3E");
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -651,18 +651,28 @@ textarea:hover {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: 0;
   padding: var(--sp-2) 0 var(--sp-4);
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
 .bubble {
-  max-width: min(72ch, 82%);
+  max-width: min(72ch, 88%);
   font-size: var(--fs-body);
   line-height: var(--lh-prose);
+  margin-top: var(--sp-5);
 }
 
-/* Rafita: fila editorial con marca, nombre en serif y hora */
-.bubble.bot {
+/* mismo emisor seguido: pegados; turnos distintos: con aire */
+.bubble.continuacion {
+  margin-top: var(--sp-1);
+}
+
+/* Rafita: avatar + burbuja, mismo componente que el usuario */
+.bubble.bot,
+.bubble.typing {
   display: grid;
   grid-template-columns: 30px 1fr;
   gap: var(--sp-3);
@@ -670,15 +680,24 @@ textarea:hover {
   animation: message-in var(--t-base) var(--ease-out);
 }
 
-.bubble.bot::before {
+.bubble.bot > div,
+.bubble.typing > div {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) var(--radius) var(--radius-xs);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.bubble.bot::before,
+.bubble.typing::before {
   content: '';
   width: 30px;
   height: 30px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background-color: var(--accent);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3c.6 3.9 1.9 5.7 5.6 6.6-3.7.9-5 2.7-5.6 6.6-.6-3.9-1.9-5.7-5.6-6.6C10.1 8.7 11.4 6.9 12 3Z' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3c.6 3.9 1.9 5.7 5.6 6.6-3.7.9-5 2.7-5.6 6.6-.6-3.9-1.9-5.7-5.6-6.6C10.1 8.7 11.4 6.9 12 3Z' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%203c.6%203.9%201.9%205.7%205.6%206.6-3.7.9-5%202.7-5.6%206.6-.6-3.9-1.9-5.7-5.6-6.6C10.1%208.7%2011.4%206.9%2012%203Z'%20fill='none'%20stroke='black'%20stroke-width='1.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%203c.6%203.9%201.9%205.7%205.6%206.6-3.7.9-5%202.7-5.6%206.6-.6-3.9-1.9-5.7-5.6-6.6C10.1%208.7%2011.4%206.9%2012%203Z'%20fill='none'%20stroke='black'%20stroke-width='1.5'/%3E%3C/svg%3E");
   -webkit-mask-size: 17px;
   mask-size: 17px;
   -webkit-mask-position: center;
@@ -697,10 +716,19 @@ textarea:hover {
   margin-bottom: 2px;
 }
 
+/* en un grupo, el avatar y el nombre solo salen en el primer mensaje */
+.bubble.bot.continuacion::before {
+  visibility: hidden;
+}
+
+.bubble.bot.continuacion .who {
+  display: none;
+}
+
 .bubble.bot .time {
   display: block;
   font-size: var(--fs-caption);
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   margin-top: var(--sp-1);
 }
 
@@ -708,7 +736,7 @@ textarea:hover {
 .bubble.user .time {
   display: block;
   font-size: var(--fs-caption);
-  color: color-mix(in srgb, var(--accent) 45%, var(--ink));
+  color: var(--ink);
   margin-top: var(--sp-1);
 }
 
@@ -741,32 +769,53 @@ textarea:hover {
   padding: 1px 5px;
 }
 
-/* indicador de escritura: tres puntos orgánicos */
-.bubble.typing {
+.bubble .tabla-scroll {
+  overflow-x: auto;
+  margin: var(--sp-2) 0;
+}
+
+.bubble table {
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  min-width: 320px;
+}
+
+.bubble th,
+.bubble td {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bubble th {
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+}
+
+/* indicador de escritura: misma burbuja, con puntos animados */
+.bubble.typing .typing-dots {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: var(--sp-3) var(--sp-4);
-  border: var(--border);
-  border-radius: var(--radius);
-  align-self: flex-start;
-  color: var(--ink-faint);
-  font-size: var(--fs-caption);
+  min-height: 24px;
 }
 
-.bubble.typing::before,
-.bubble.typing::after,
 .bubble.typing .dot {
-  content: '';
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: var(--accent);
   animation: typing var(--t-slow) var(--ease-inout) infinite;
 }
 
-.bubble.typing::after {
-  animation-delay: calc(var(--t-slow) / 2);
+.bubble.typing .dot:nth-child(2) {
+  animation-delay: calc(var(--t-slow) / 3);
+}
+
+.bubble.typing .dot:nth-child(3) {
+  animation-delay: calc(var(--t-slow) / 1.5);
 }
 
 @keyframes typing {
@@ -785,8 +834,15 @@ textarea:hover {
   display: flex;
   gap: var(--sp-3);
   align-items: center;
-  padding-top: var(--sp-4);
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  background: var(--paper);
   border-top: var(--border);
+  padding: var(--sp-4) 0 var(--sp-3);
 }
 
 .composer input {
