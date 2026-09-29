@@ -42,8 +42,19 @@ empaquetable con Capacitor/Tauri apuntando a la URL o a los ficheros.
 | Gateway + SPA + API | 8000 | `127.0.0.1:8010` |
 | Servidor de voz (llamada) | 8001 | `127.0.0.1:8001` |
 
-Los puertos están publicados **solo en localhost**; el acceso desde el
-navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
+**Recomendado: HTTPS con Tailscale** (certificado válido, sin avisos, y el
+micrófono/PWA funcionan). En el HP:
+
+```bash
+sudo tailscale serve --bg --https=443  http://127.0.0.1:8010   # SPA
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:8001   # llamada
+```
+
+Queda `https://<maquina>.<tailnet>.ts.net/` para la SPA y
+`https://<maquina>.<tailnet>.ts.net:8443/` para la voz (la SPA elige sola ese
+origen cuando se sirve por HTTPS). Si prefieres un proxy en la LAN, los puertos
+están publicados **solo en localhost**; el acceso se hace con Nginx Proxy
+Manager. Ejemplo:
 
 1. NPM → Proxy Host `rafita.home` → `http://127.0.0.1:8010` (la SPA y la API).
 2. NPM → Proxy Host `voz.rafita.home` → `http://127.0.0.1:8001` con

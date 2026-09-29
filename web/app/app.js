@@ -695,6 +695,19 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
   const err = $('#login-error');
   const box = $('#google-device');
   err.classList.add('hidden');
+  // Si la instalacion no tiene Google configurado, se explica (nada de JSON).
+  let estadoGoogle = { configured: true };
+  try {
+    estadoGoogle = await api('/auth/google/status');
+  } catch (_e) {
+    /* si no se puede consultar, se intenta igualmente */
+  }
+  if (estadoGoogle && estadoGoogle.configured === false) {
+    err.textContent =
+      'El acceso con Google no está configurado en esta instalación. Entra con tu correo y contraseña (o define GOOGLE_WEB_CLIENT_ID y GOOGLE_WEB_CLIENT_SECRET).';
+    err.classList.remove('hidden');
+    return;
+  }
   try {
     const start = await api('/auth/google/device/start', { method: 'POST' });
     box.classList.remove('hidden');
@@ -731,10 +744,28 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
       }
     }, intervalo);
   } catch (_e) {
-    // Sin credenciales de dispositivo: probamos el flujo con redirect.
+    // Sin flujo de dispositivo (p. ej. cliente web): flujo con redirect; sus
+    // errores vuelven aqui como #google-error y se explican.
     location.href = '/api/auth/google/start';
   }
 });
+
+// Avisos del acceso con Google que vuelven como fragmento.
+const errorGoogle = location.hash.match(/#google-error=([a-z_]+)/);
+if (errorGoogle) {
+  const mensajesGoogle = {
+    no_config:
+      'El acceso con Google no está configurado en esta instalación. Entra con tu correo y contraseña.',
+    denied: 'Has cancelado el acceso con Google. Puedes intentarlo de nuevo.',
+    state: 'La sesión de Google caducó antes de volver. Inténtalo otra vez.',
+    google: 'Google no pudo validar tu cuenta. Inténtalo de nuevo.',
+  };
+  const aviso = document.getElementById('login-error');
+  aviso.textContent =
+    mensajesGoogle[errorGoogle[1]] || 'No se pudo completar el acceso con Google.';
+  aviso.classList.remove('hidden');
+  history.replaceState(null, '', '/app/');
+}
 
 // Token llegado del callback de Google (/app/#token=...)
 if (location.hash.startsWith('#token=')) {
