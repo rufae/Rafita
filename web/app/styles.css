@@ -697,11 +697,18 @@ textarea:hover {
   margin-bottom: 2px;
 }
 
-.bubble.bot .time,
-.bubble.user .time {
+.bubble.bot .time {
   display: block;
   font-size: var(--fs-caption);
   color: var(--ink-faint);
+  margin-top: var(--sp-1);
+}
+
+/* sobre el tinte terracota la hora necesita mas peso para pasar AA */
+.bubble.user .time {
+  display: block;
+  font-size: var(--fs-caption);
+  color: color-mix(in srgb, var(--accent) 45%, var(--ink));
   margin-top: var(--sp-1);
 }
 
@@ -1148,9 +1155,16 @@ textarea:hover {
 
   .tabs {
     order: 3;
+    flex: 0 0 100%;
     width: 100%;
+    min-width: 0;
     gap: var(--sp-5);
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .session {
@@ -1201,14 +1215,50 @@ textarea:hover {
 
   .bubble {
     max-width: 94%;
+    overflow-wrap: anywhere;
   }
 
   .section-head {
     align-items: flex-start;
   }
 
+  .btn {
+    padding: 11px 16px;
+  }
+
+  .btn-sm {
+    padding: 9px 12px;
+    font-size: var(--fs-sm);
+  }
+
+  /* formularios y acciones a ancho completo: nada aplastado en el movil */
   .vault-toolbar {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vault-toolbar .field-inline,
+  .vault-toolbar .btn,
+  .vault-toolbar input {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .tabs {
+    gap: var(--sp-3);
+  }
+
+  .note-list li {
+    padding: var(--sp-4) var(--sp-3);
+  }
+
+  .editor-actions {
+    width: 100%;
+  }
+
+  .editor-actions .btn {
+    flex: 1;
   }
 }
 
