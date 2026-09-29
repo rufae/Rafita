@@ -116,3 +116,30 @@ navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
 - La API exige `Authorization: Bearer <token>`; el Baúl valida rutas con
   `resolve_within` (nada de `..`, simlinks fuera o rutas ocultas).
 - Los webhooks de n8n siguen con HMAC y **Telegram sigue funcionando igual**.
+
+## Rendimiento de la llamada (decisión consciente, Fase 4)
+
+**Audio PCM sin comprimir por WebSocket.** Un micrófono de 16 kHz mono Int16
+son ~32 KB/s (≈1,9 MB/min) de enlace continuo mientras se habla. Codificar a
+Opus (~3 KB/s a 24 kbps, ~10× menos) exigiría:
+- en el navegador: `MediaRecorder`/WebCodecs con latencia adicional de
+  ~100-300 ms por troceo y CPU de codificación en el hilo principal;
+- en el servidor: decodificar cada trozo (ffmpeg por trozo — justo lo que se
+  eliminó en la optimización de latencia de 2026-09-27 — o un decodificador
+  en streaming).
+
+**Decisión**: se mantiene PCM por **latencia** (el objetivo son turnos de
+4-11 s y la red local/Tailnet no es el cuello de botella; 32 KB/s ≈ 0,26
+Mbit/s). No es una omisión: el trade-off está cuantificado. Si en el futuro se
+necesita comprimir (móvil fuera de casa con datos limitados), el camino es
+`MediaRecorder` + `audio/webm;codecs=opus` en el cliente y un decodificador
+Opus en streaming en el servidor (`CALL_AUDIO_CODEC=opus`).
+
+**Build de la web (decisión consciente)**: build mínimo en Python
+(`scripts/build_web.py`, `rjsmin` + `csscompressor`) que minifica y añade
+**cache-busting por hash de contenido** (`app-<hash8>.js`…, caché inmutable),
+reescribe `index.html`/`sw.js` y genera `web/app-dist/`. El gateway sirve
+`web/app-dist/` (producción) o `web/app/` (desarrollo). `config.js` queda sin
+hashear y se sirve con `Cache-Control: no-store` (editable por instalación).
+No se adopta Vite/esbuild: añadir Node al pipeline para 3 ficheros no
+compensa; si la app crece, el build script es el punto de inserción natural.
