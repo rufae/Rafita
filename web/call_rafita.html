@@ -148,7 +148,7 @@
   }
   .transcript .tu { color: #7dd3fc; margin-bottom: 3px; }
   .transcript .rafita { color: #c4b5fd; margin-bottom: 11px; }
-  .log { color: #5b6b8c; font-size: 11px; margin-top: 10px; max-height: 84px; overflow-y: auto; padding: 0 4px; }
+  .log { color: #7b8bb0; font-size: 11px; margin-top: 10px; max-height: 84px; overflow-y: auto; padding: 0 4px; }
 </style>
 </head>
 <body>
@@ -172,12 +172,12 @@
     </div>
   </section>
 
-  <div id="status" class="status"><span class="dot"></span><span id="statusText">Presiona Iniciar para llamar</span></div>
+  <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"><span class="dot"></span><span id="statusText">Presiona Iniciar para llamar</span></div>
 
   <div class="controls">
-    <button id="callBtn" class="ctl primary" onclick="toggleCall()">📞 Iniciar</button>
-    <button id="stopBtn" class="ctl stop hidden" onclick="stopSpeaking()">⏹ Parar</button>
-    <button id="pttBtn" class="ctl ghost" disabled>🎤 Mantener</button>
+    <button id="callBtn" class="ctl primary" aria-label="Iniciar llamada" onclick="toggleCall()">📞 Iniciar</button>
+    <button id="stopBtn" class="ctl stop hidden" aria-label="Parar de hablar" onclick="stopSpeaking()">⏹ Parar</button>
+    <button id="pttBtn" class="ctl ghost" aria-label="Mantener pulsado para hablar" aria-pressed="false" disabled>🎤 Mantener</button>
   </div>
 
   <div class="settings">
@@ -647,6 +647,7 @@ function pttDown(e) {
   if (e) e.preventDefault();
   pttActive = true;
   pttBtn.classList.add('pressed');
+  pttBtn.setAttribute('aria-pressed', 'true');
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'ptt_start' }));
   }
@@ -656,6 +657,7 @@ function pttUp(e) {
   if (e) e.preventDefault();
   pttActive = false;
   pttBtn.classList.remove('pressed');
+  pttBtn.setAttribute('aria-pressed', 'false');
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'end_speech' }));
   }
@@ -691,6 +693,7 @@ async function toggleCall() {
     pttBtn.disabled = true;
     callBtn.innerHTML = '📞 Iniciar';
     callBtn.className = 'ctl primary';
+    callBtn.setAttribute('aria-label', 'Iniciar llamada');
     setStatus(STATUS.IDLE, 'Llamada finalizada');
     callBtn.disabled = false;
   } else {
@@ -700,6 +703,7 @@ async function toggleCall() {
     if (ok) {
       callBtn.innerHTML = '📞 Colgar';
       callBtn.className = 'ctl hangup';
+      callBtn.setAttribute('aria-label', 'Colgar llamada');
     } else {
       callBtn.innerHTML = '📞 Iniciar';
       callBtn.className = 'ctl primary';

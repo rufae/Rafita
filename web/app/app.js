@@ -92,11 +92,32 @@ async function enterApp() {
 
 function setView(view) {
   state.view = view;
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
+  document.querySelectorAll('.tab').forEach((t) => {
+    const seleccionada = t.dataset.view === view;
+    t.classList.toggle('active', seleccionada);
+    t.setAttribute('aria-selected', seleccionada ? 'true' : 'false');
+    t.tabIndex = seleccionada ? 0 : -1;
+  });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
   if (view === 'vault') loadNotes();
   if (view === 'meetings') loadMeetings();
 }
+
+// Navegación de pestañas con teclado (patrón WAI-ARIA tabs).
+document.querySelector('.tabs').addEventListener('keydown', (ev) => {
+  const tabs = [...document.querySelectorAll('.tab')];
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  let destino = null;
+  if (ev.key === 'ArrowRight') destino = (i + 1) % tabs.length;
+  else if (ev.key === 'ArrowLeft') destino = (i - 1 + tabs.length) % tabs.length;
+  else if (ev.key === 'Home') destino = 0;
+  else if (ev.key === 'End') destino = tabs.length - 1;
+  if (destino === null) return;
+  ev.preventDefault();
+  tabs[destino].focus();
+  setView(tabs[destino].dataset.view);
+});
 
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => setView(tab.dataset.view));
