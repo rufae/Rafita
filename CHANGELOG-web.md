@@ -204,3 +204,79 @@ desplegado en el HP y verificado contra el servidor real.
 ### Gate de la Fase 1
 `ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP
 (`mostrarModal`, `WORKLET_CODE`, `programarReconexion` verificados servidos).
+
+---
+
+## FASE 2 — Accesibilidad real (2026-09-29)
+
+Herramienta: **axe-core 4.10.3** (DevTools) en Chromium real + cálculo de
+contraste WCAG desde tokens (`getComputedStyle`). Puntuación antes/después:
+
+| Superficie/vista | axe ANTES | axe DESPUÉS |
+|---|---|---|
+| login | 2 (`landmark-one-main`, `region`×7) | **0** |
+| chat | 2 (`page-has-heading-one`, `region`×3) | **0** |
+| baúl | 4 (`color-contrast` **serious**, `scrollable-region-focusable` **serious**, `page-has-heading-one`, `region`×3) | **0** |
+| reuniones | 3 (`color-contrast` **serious**×2, `page-has-heading-one`, `region`×3) | **0** |
+| llamada (vista) | 3 (`color-contrast` **serious**×2, `page-has-heading-one`, `region`×3) | **0** |
+| página de llamada | 0 | **0** |
+| **Total** | **14 violaciones (6 serious)** | **0** |
+
+### 2.1 Pestañas con semántica WAI-ARIA completa — IMPLEMENTADO
+- **Hallazgo**: `role="tab"` suelto, sin `aria-selected`, `aria-controls`,
+  `tabindex` gestionado ni navegación por flechas.
+- **Cambio** (`web/app/index.html`, `app.js`): `tablist` con `aria-label`,
+  pestañas con `id`/`aria-controls`/`aria-selected`/roving `tabindex`
+  (activa 0, resto -1), paneles `role="tabpanel"` +
+  `aria-labelledby` + `tabindex="0"`, y teclado completo (←/→/Home/End)
+  en el patrón WAI-ARIA tabs.
+- **Evidencia (Playwright, solo teclado)**: `ArrowRight` → `tab-vault`
+  (`aria-selected=true`, vista `view-vault` visible); `End` → `tab-call`;
+  `Home` → `tab-chat` con `tabIndex 0` (activa) / `-1` (inactiva).
+
+### 2.2 Estado de la llamada sin `aria-live` — IMPLEMENTADO
+- **Cambio** (`web/call_rafita.html`): `#status` con `role="status"`,
+  `aria-live="polite"` y `aria-atomic="true"` (el lector de pantalla anuncia
+  "Escuchando…", "Pensando…", "Hablando…", "Reconectando…").
+- **Evidencia**: `aria-live en #status: polite | role: status`.
+
+### 2.3 Botones con emoji: `aria-label` y `aria-pressed` — IMPLEMENTADO
+- **Cambio** (`web/call_rafita.html`): `aria-label` en los tres botones
+  ("Iniciar llamada"/"Colgar llamada" dinámico, "Parar de hablar",
+  "Mantener pulsado para hablar") y `aria-pressed` en el push-to-talk
+  (se actualiza en `pttDown`/`pttUp`, no solo la clase CSS).
+- **Evidencia (llamada activa, micro falso)**: `PTT presionado: true` →
+  `PTT soltado: false`; labels: `callBtn=Iniciar llamada, stopBtn=Parar de
+  hablar, pttBtn=Mantener pulsado para hablar`.
+
+### 2.4 Contraste WCAG AA medido y corregido — IMPLEMENTADO
+- **Hallazgos (axe, tema claro)**: `#note-delete` **3.76:1** (min 4.5),
+  `#meet-tab`/`p` **4.34:1**, `#meet-summary` **3.86:1**; y en tokens oscuros
+  `--danger` 3.71:1 sobre `--panel` + `.log` de la página de llamada 3.2:1.
+- **Cambio** (`web/app/styles.css`, `web/call_rafita.html`): `--muted` claro
+  `#64748b` → `#4e5a72`; `--danger` por tema (`#f87171` oscuro / `#b91c1c`
+  claro); `.log` `#5b6b8c` → `#7b8bb0`.
+- **Evidencia (cálculo de tokens, ambos temas)** — todo ≥ 4.5:1:
+  `--muted` sobre `--bg`/`--panel`/`--panel-2`: 4.89-6.96:1 (oscuro) y
+  5.62-6.93:1 (claro); `--danger`: 5.29-6.47:1; `--text`: 14.48-16.30:1.
+  Página de llamada: `.log` 5.6:1 (aprox. sobre el degradado; axe no puede
+  evaluar degradados).
+
+### 2.5 Formularios sin `<label>` asociado — IMPLEMENTADO
+- **Cambio** (`web/app/index.html`, `styles.css`): `<label class="sr-only">`
+  asociado por `for` en búsqueda del Baúl, carpeta, ruta de nota, título de
+  reunión y chat (la página de llamada ya lo tenía desde la Fase 0).
+- **Evidencia**: `2.5 inputs sin label asociado: []`.
+
+### Bonus (hallazgos de axe, corregidos en el mismo loop)
+- `page-has-heading-one` → `<h1 class="sr-only">Rafita</h1>` en la app.
+- `landmark-one-main`/`region` → `#login` pasa a `<main>`, `<header>` con
+  `role="banner"` (está dentro de un `<section>` y perdía su rol) y el modal
+  se movió dentro de `<main>`.
+- `heading-order` (h3 sin h2) → `#meet-detail-title` y `#modal-titulo` a `h2`.
+- `scrollable-region-focusable` → listas de notas/reuniones con `tabindex="0"`
+  (scroll con teclado).
+
+### Gate de la Fase 2
+`ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP y
+verificado con axe-core contra el servidor real.
