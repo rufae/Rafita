@@ -450,6 +450,20 @@ function authHeaders() {
   return authToken ? { 'X-Call-Token': authToken } : {};
 }
 
+// Mensajes para el usuario: nunca un codigo HTTP en crudo.
+function mensajeHttp(status) {
+  if (status === 401 || status === 403) {
+    return 'No autorizado: abre la llamada desde la pestaña Llamar de Rafita.';
+  }
+  if (status === 404) {
+    return 'La sesión de llamada ya no existe. Vuelve a iniciarla desde Rafita.';
+  }
+  if (status >= 500) {
+    return 'El servidor de voz no está disponible ahora mismo. Inténtalo en un momento.';
+  }
+  return 'No se pudo iniciar la llamada. Inténtalo de nuevo.';
+}
+
 const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', RECONNECTING: 'reconnecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
 
 // Fetch con timeout (Fase 1.3): una peticion colgada no deja la UI muerta.
@@ -698,12 +712,15 @@ async function startCall() {
       headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
       body: JSON.stringify({}),
     }, 10000);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    if (!resp.ok) throw new Error(mensajeHttp(resp.status));
     const data = await resp.json();
     sessionId = data.session_id;
     log('Sesión: ' + sessionId.slice(0, 8) + '...');
   } catch (e) {
-    setStatus(STATUS.ERROR, 'Error al iniciar: ' + e.message);
+    const mensaje = e && e.name === 'TypeError'
+      ? 'No se pudo conectar con el servidor de voz. Comprueba tu conexión.'
+      : e.message;
+    setStatus(STATUS.ERROR, mensaje);
     return false;
   }
 
@@ -967,6 +984,12 @@ requestAnimationFrame(animationLoop);
 if (new URLSearchParams(window.location.search).get('debug') === '1') {
   const dbg = document.getElementById('debugControls');
   if (dbg) dbg.classList.remove('hidden');
+}
+
+// Sin token no se puede autorizar la llamada: se explica en vez de fallar.
+if (!authToken) {
+  setStatus(STATUS.ERROR, 'Abre esta página desde la pestaña Llamar de Rafita para autorizar el micrófono.');
+  log('Sin token de acceso: entra por la pestaña Llamar de Rafita.');
 }
 
 async function testTTS() {

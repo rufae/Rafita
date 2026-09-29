@@ -58,16 +58,35 @@ function mostrarAviso(mensaje) {
   return mostrarModal({ mensaje, confirmar: 'Entendido' });
 }
 
+// Mensajes para el usuario: nunca un codigo HTTP en crudo.
+let mensajeSesion = '';
+
 async function api(path, options = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
-  const resp = await fetchConTimeout(`/api${path}`, Object.assign({}, options, { headers }), 10000);
-  if (resp.status === 401) {
-    logout();
-    throw new Error('sesión caducada');
+  let resp;
+  try {
+    resp = await fetchConTimeout(`/api${path}`, Object.assign({}, options, { headers }), 10000);
+  } catch (e) {
+    if (e && e.name === 'TypeError') {
+      throw new Error('No se pudo conectar con el servidor. Comprueba tu conexión.');
+    }
+    throw e;
   }
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
+  if (resp.status === 401) {
+    mensajeSesion = 'Tu sesión ha caducado. Vuelve a entrar.';
+    logout();
+    throw new Error(mensajeSesion);
+  }
+  if (!resp.ok) {
+    if (resp.status >= 500) {
+      throw new Error(
+        'El servidor no pudo completar la petición. Inténtalo de nuevo en un momento.',
+      );
+    }
+    throw new Error(data.detail || data.error || 'No se pudo completar la operación.');
+  }
   return data;
 }
 
@@ -75,6 +94,12 @@ function logout() {
   state.token = '';
   localStorage.removeItem(TOKEN_KEY);
   show('login');
+  if (mensajeSesion) {
+    const aviso = document.getElementById('login-error');
+    aviso.textContent = mensajeSesion;
+    aviso.classList.remove('hidden');
+    mensajeSesion = '';
+  }
 }
 
 async function enterApp() {
@@ -581,7 +606,14 @@ $('#call-start').addEventListener('click', async () => {
   try {
     const data = await api('/call/token');
     const cfg = window.RAFITA_CONFIG || {};
-    const origin = cfg.callOrigin || `${location.protocol}//${location.hostname}:8001`;
+    // Origen de voz: si la SPA va por HTTPS (p. ej. Tailscale) la voz vive en
+    // el mismo host en :8443; por HTTP en LAN se usa :8001. config.js puede
+    // forzarlo con callOrigin.
+    const origin =
+      cfg.callOrigin ||
+      (location.protocol === 'https:'
+        ? `${location.protocol}//${location.hostname}:8443`
+        : `${location.protocol}//${location.hostname}:8001`);
     const frame = $('#call-frame');
     // El token NO va en la URL: se pasa por postMessage al cargar (Fase 0.2).
     frame.onload = () => {

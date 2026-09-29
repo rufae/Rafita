@@ -539,3 +539,56 @@ almacenamiento, navegación, WebSocket, audio, vault y lógica intactos**
   capturas del manifest (`icons/shot-*.png`) se regeneraron con el rediseño.
   Nota: la captura de "speaking" se obtuvo disparando el **handler real de la
   UI** (el turno completo contra el LLM local excedía la ventana de captura).
+
+---
+
+## ARREGLOS DE USO REAL: HTTPS de Tailscale, errores amigables y móvil (2026-09-29)
+
+### Contexto (lo que encontró el usuario)
+- `https://nodochicohp.taildafbf0.ts.net/` (Tailscale Serve) apuntaba a la
+  **voz** (`127.0.0.1:8001`), no a la SPA → abrir esa URL daba la página de
+  llamada sin token y un **401 crudo**.
+- `rafita.home` es HTTP y el micrófono exige contexto seguro → no funcionaba.
+- En móvil (390 px) **la barra de pestañas quedaba aplastada a 26 px** y las
+  pestañas se salían de pantalla (x=427/504/622): "no se ven las opciones".
+
+### Recomendación de entrada (documentada)
+Usar el **HTTPS real de Tailscale** como entrada canónica (certificado válido,
+sin avisos, funciona desde cualquier dispositivo del tailnet):
+```bash
+sudo tailscale serve --bg --https=443  http://127.0.0.1:8010   # SPA
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:8001   # voz
+```
+`rafita.home` queda como comodidad de LAN (HTTP, sin micrófono); no se le pone
+certificado propio porque sería autofirmado (avisos) y el ts.net ya da HTTPS
+válido. Alternativa: NPM con 301 de `rafita.home` al ts.net (opcional).
+
+### Preparado en código para ese HTTPS
+- La SPA **elige sola el origen de voz**: HTTPS → mismo host `:8443`;
+  HTTP en LAN → `:8001`; `config.js` puede forzarlo (en el HP queda vacío).
+- `WEB_ALLOWED_ORIGINS` del HP incluye los orígenes ts.net: la CSP de la SPA
+  los permite en `frame-src` y la página de llamada en `frame-ancestors`
+  (verificado en cabeceras reales).
+
+### Errores amigables (nunca un código en crudo)
+- **Llamada sin token** → "Abre esta página desde la pestaña Llamar de Rafita
+  para autorizar el micrófono." (antes: 401 crudo). Además 401/403/404/5xx y
+  fallos de red tienen mensajes propios (`mensajeHttp()`).
+- **SPA, sesión caducada** (401) → vuelve al login con "Tu sesión ha caducado.
+  Vuelve a entrar." (antes: logout silencioso).
+- **SPA, red caída** → "No se pudo conectar con el servidor. Comprueba tu
+  conexión."; 5xx → "El servidor no pudo completar la petición…".
+- Verificado con Playwright: los tres mensajes, literales.
+
+### Móvil (bug real corregido)
+- **Causa**: `.tabs` tenía `flex: 1` (basis 0) y con `flex-wrap` no saltaba de
+  línea; a 390 px se comprimía a 26 px y las pestañas quedaban fuera.
+- **Arreglo**: en móvil `.tabs { flex: 0 0 100%; min-width: 0 }`, hueco de
+  pestañas a 12 px (las 4 caben a 360 px), toolbars en columna a ancho
+  completo, objetivos táctiles más grandes y `overflow-wrap` en burbujas.
+- **Dos violaciones axe nuevas detectadas y corregidas**: la hora dentro del
+  bloque del usuario (contraste) → color mezclado terracota/tinta; el chat
+  scrolleable → `tabindex="0"` + `aria-label`.
+- **Verificación**: a 390 y 360 px las 4 pestañas dentro del viewport, sin
+  scroll horizontal, **axe 0** en login/chat/baúl y E2E real **9/9**.
+- Capturas actualizadas en `docs/web-screenshots/` (móvil 390 y 360).
