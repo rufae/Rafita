@@ -12,10 +12,54 @@ function show(view) {
   $('#app').classList.toggle('hidden', view === 'login');
 }
 
+async function fetchConTimeout(url, opciones, ms) {
+  const limite = ms || 10000;
+  const ctrl = new AbortController();
+  const temporizador = setTimeout(() => ctrl.abort(), limite);
+  try {
+    return await fetch(url, Object.assign({}, opciones || {}, { signal: ctrl.signal }));
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('La petición tardó demasiado (' + Math.round(limite / 1000) + 's). Comprueba la conexión.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
+// Modal propio (Fase 1.6): sustituye a alert()/confirm() nativos.
+function mostrarModal({ titulo = 'Rafita', mensaje = '', confirmar = 'Aceptar', cancelar = '' }) {
+  return new Promise((resolve) => {
+    const capa = document.getElementById('modal');
+    document.getElementById('modal-titulo').textContent = titulo;
+    document.getElementById('modal-mensaje').textContent = mensaje;
+    const btnOk = document.getElementById('modal-aceptar');
+    const btnCancel = document.getElementById('modal-cancelar');
+    btnOk.textContent = confirmar;
+    btnCancel.textContent = cancelar || 'Cancelar';
+    btnCancel.classList.toggle('hidden', !cancelar);
+    capa.classList.remove('hidden');
+    const cerrar = (valor) => {
+      capa.classList.add('hidden');
+      btnOk.onclick = null;
+      btnCancel.onclick = null;
+      resolve(valor);
+    };
+    btnOk.onclick = () => cerrar(true);
+    btnCancel.onclick = () => cerrar(false);
+    btnOk.focus();
+  });
+}
+
+function mostrarAviso(mensaje) {
+  return mostrarModal({ mensaje, confirmar: 'Entendido' });
+}
+
 async function api(path, options = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
-  const resp = await fetch('/api' + path, Object.assign({}, options, { headers }));
+  const resp = await fetchConTimeout('/api' + path, Object.assign({}, options, { headers }), 10000);
   if (resp.status === 401) {
     logout();
     throw new Error('sesión caducada');
@@ -106,6 +150,32 @@ $('#chat-form').addEventListener('submit', async (ev) => {
 /* ---------- baúl ---------- */
 
 let currentNote = null;
+let noteDirty = false;
+
+// Fase 1.4: aviso de cambios sin guardar al cambiar de nota o salir.
+async function confirmarDescartarCambios() {
+  if (!noteDirty) return true;
+  const seguir = await mostrarModal({
+    titulo: 'Cambios sin guardar',
+    mensaje: 'La nota actual tiene cambios sin guardar. ¿Descartarlos?',
+    confirmar: 'Descartar',
+    cancelar: 'Seguir editando',
+  });
+  if (seguir) noteDirty = false;
+  return seguir;
+}
+
+$('#note-content').addEventListener('input', () => {
+  noteDirty = true;
+  $('#note-status').textContent = 'Cambios sin guardar';
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (noteDirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 async function loadNotes() {
   const query = encodeURIComponent($('#vault-search').value.trim());
@@ -134,6 +204,7 @@ async function loadNotes() {
 }
 
 async function openNote(path, li) {
+  if (!(await confirmarDescartarCambios())) return;
   try {
     const data = await api('/vault/note?path=' + encodeURIComponent(path));
     currentNote = data.path;
@@ -150,7 +221,8 @@ async function openNote(path, li) {
 $('#vault-search').addEventListener('input', debounce(loadNotes, 350));
 $('#vault-folder').addEventListener('input', debounce(loadNotes, 350));
 
-$('#vault-new').addEventListener('click', () => {
+$('#vault-new').addEventListener('click', async () => {
+  if (!(await confirmarDescartarCambios())) return;
   currentNote = null;
   $('#note-path').value = '00-Inbox/nota-' + new Date().toISOString().slice(0, 10) + '.md';
   $('#note-content').value = '';
@@ -167,6 +239,7 @@ $('#note-save').addEventListener('click', async () => {
       body: JSON.stringify({ path, content }),
     });
     currentNote = data.path;
+    noteDirty = false;
     $('#note-status').textContent = 'Guardada ✓';
     loadNotes();
   } catch (e) {
@@ -176,10 +249,18 @@ $('#note-save').addEventListener('click', async () => {
 
 $('#note-delete').addEventListener('click', async () => {
   const path = $('#note-path').value.trim();
-  if (!path || !confirm(`¿Borrar la nota ${path}?`)) return;
+  if (!path) return;
+  const borrar = await mostrarModal({
+    titulo: 'Borrar nota',
+    mensaje: `¿Borrar la nota ${path}?`,
+    confirmar: 'Borrar',
+    cancelar: 'Cancelar',
+  });
+  if (!borrar) return;
   try {
     await api('/vault/note?path=' + encodeURIComponent(path), { method: 'DELETE' });
     currentNote = null;
+    noteDirty = false;
     $('#note-path').value = '';
     $('#note-content').value = '';
     $('#note-status').textContent = 'Nota borrada';
@@ -196,15 +277,25 @@ let recordingStream = null;
 let recordChunks = [];
 let pollTimer = null;
 
-async function uploadMeeting(blob) {
+function mejorMimeGrabacion() {
+  // Fase 1.5: no todos los navegadores graban webm (Safari prefiere mp4).
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidatos = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  for (const c of candidatos) {
+    if (MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return null;
+}
+
+async function uploadMeeting(blob, nombreFichero) {
   const form = new FormData();
-  form.append('file', blob, 'reunion.webm');
+  form.append('file', blob, nombreFichero || 'reunion.webm');
   form.append('title', $('#meet-title').value.trim());
-  const resp = await fetch('/api/meetings', {
+  const resp = await fetchConTimeout('/api/meetings', {
     method: 'POST',
     headers: state.token ? { Authorization: 'Bearer ' + state.token } : {},
     body: form,
-  });
+  }, 30000);
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
   return data;
@@ -280,6 +371,11 @@ async function toggleRecording(kind) {
     recorder.stop();
     return;
   }
+  const mime = mejorMimeGrabacion();
+  if (!mime) {
+    status.textContent = 'Tu navegador no permite grabar audio (falta soporte de webm/mp4).';
+    return;
+  }
   try {
     recordingStream =
       kind === 'mic'
@@ -290,7 +386,7 @@ async function toggleRecording(kind) {
     return;
   }
   recordChunks = [];
-  recorder = new MediaRecorder(recordingStream);
+  recorder = new MediaRecorder(recordingStream, { mimeType: mime });
   recorder.ondataavailable = (ev) => { if (ev.data.size) recordChunks.push(ev.data); };
   recorder.onstop = async () => {
     recordingStream.getTracks().forEach((t) => t.stop());
@@ -299,7 +395,8 @@ async function toggleRecording(kind) {
     status.textContent = 'Subiendo audio…';
     try {
       const blob = new Blob(recordChunks, { type: recorder.mimeType || 'audio/webm' });
-      const data = await uploadMeeting(blob);
+      const nombre = (recorder.mimeType || '').includes('mp4') ? 'reunion.mp4' : 'reunion.webm';
+      const data = await uploadMeeting(blob, nombre);
       status.textContent = 'Procesando…';
       $('#meet-title').value = '';
       showMeeting(data.id);
@@ -332,7 +429,7 @@ $('#call-start').addEventListener('click', async () => {
     frame.classList.remove('hidden');
     $('#call-placeholder').classList.add('hidden');
   } catch (e) {
-    alert('No se pudo iniciar la llamada: ' + e.message);
+    mostrarAviso('No se pudo iniciar la llamada: ' + e.message);
   }
 });
 

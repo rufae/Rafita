@@ -124,3 +124,83 @@ documentar. Cada punto lleva su evidencia real (comandos, salidas, capturas).
 ### Gate de la Fase 0
 `ruff` + `mypy` limpios; **1312 tests en verde** (2 nuevos de cabeceras);
 desplegado en el HP y verificado contra el servidor real.
+
+---
+
+## FASE 1 — Robustez y manejo de errores (2026-09-29)
+
+### 1.1 Reconexión del WebSocket con backoff — IMPLEMENTADO
+- **Hallazgo**: si `ws.onclose` saltaba sin colgar, la app pasaba a "Llamada
+  finalizada" sin reintentar.
+- **Cambio** (`web/call_rafita.html`): estado nuevo `RECONNECTING`
+  (`.status.reconnecting` con punto intermitente), `programarReconexion()`
+  con backoff 1s/2s/4s (3 intentos, máximo) y distinción clara entre
+  "reconectando" y "llamada terminada" (solo el colgado explícito termina;
+  `intentionalHangup` + limpieza del timer).
+- **Evidencia (Playwright, servidor de voz local, llamada real con micro
+  falso)**: cierre inesperado del WS a mitad de llamada →
+  `"Conexión perdida. Reconectando (intento 1/3)..."` → a los ~1s
+  `"Reconectado. Te escucho..."` con `isCallActive === true` (la llamada sigue
+  viva). Nota: `set_offline` de Chromium no corta los `ws://` ya abiertos, así
+  que el corte se fuerza desde la página (mismo camino `onclose` que un corte
+  de red real).
+
+### 1.2 ScriptProcessorNode → AudioWorkletNode — IMPLEMENTADO
+- **Hallazgo**: `createScriptProcessor` está deprecado, corre en el hilo
+  principal y requería el parche `micGain.gain.value = 0`.
+- **Cambio** (`web/call_rafita.html`): `AudioWorkletNode` cargado desde un
+  Blob (la página sigue siendo un único fichero), processor `pcm-capture` que
+  envía PCM Int16 por `port.postMessage`; salida en silencio para mantener el
+  nodo vivo. `ScriptProcessorNode` queda **solo como fallback** si el navegador
+  no soporta AudioWorklet (mensaje en el log que distingue qué modo se usa).
+- **Evidencia (Playwright)**: log real de la llamada:
+  `Captura de audio lista (AudioWorklet, 16000 Hz)` (antes:
+  `Captura de audio lista (16000 Hz)` con ScriptProcessor).
+- **Nota de proceso**: el primer reemplazo falló en silencio (oldString mal
+  escrito) y dejó `startAudioCapture().catch()` sobre `undefined`, colgando la
+  UI en "Conectando..."; lo delató la evidencia (log con formato viejo +
+  estado sin actualizar) y se corrigió en el mismo loop.
+
+### 1.3 fetch sin timeout → AbortController — IMPLEMENTADO
+- **Hallazgo**: una petición colgada dejaba la UI muerta indefinidamente.
+- **Cambio**: `fetchConTimeout()` (10s en general, 30s para subir audio)
+  implementado en **ambas superficies** (`web/app/app.js` y
+  `web/call_rafita.html`); error claro: *"La petición tardó demasiado (10s).
+  Comprueba la conexión."*
+- **Evidencia (Playwright, respuesta retrasada 12s)**:
+  - SPA (búsqueda del Baúl): `Error: La petición tardó demasiado (10s)…`
+  - Llamada (`/call/start`): `Error al iniciar: La petición tardó demasiado (10s)…`
+
+### 1.4 Baúl: aviso de cambios sin guardar — IMPLEMENTADO
+- **Hallazgo**: cambiar de nota con la anterior editada perdía el contenido.
+- **Cambio** (`web/app/app.js`): flag `noteDirty` + modal de confirmación
+  ("¿Descartarlos?" / "Seguir editando") al cambiar de nota, crear nueva o
+  salir de la página (`beforeunload`); se limpia al guardar/borrar.
+- **Evidencia (Playwright)**: editada la nota A y clic en la B → modal
+  *"La nota actual tiene cambios sin guardar…"*; al cancelar el contenido
+  sigue intacto (`editado sin guardar` presente); al descartar abre la otra
+  nota.
+
+### 1.5 MediaRecorder: mimeType soportado — IMPLEMENTADO
+- **Hallazgo**: se asumía `audio/webm` (falla en Safari, que prefiere mp4).
+- **Cambio** (`web/app/app.js`): `mejorMimeGrabacion()` prueba
+  `audio/webm;codecs=opus` → `audio/webm` → `audio/mp4` → `audio/ogg` con
+  `MediaRecorder.isTypeSupported()`; si ninguno sirve, mensaje claro (sin
+  grabación silenciosa); el nombre del fichero se adapta (`.webm`/`.mp4`).
+- **Evidencia (Playwright)**: `mimeType elegido: audio/webm;codecs=opus`;
+  forzando `mejorMimeGrabacion = () => null` → mensaje
+  *"Tu navegador no permite grabar audio (falta soporte de webm/mp4)."*
+
+### 1.6 alert()/confirm() nativos → modal propio — IMPLEMENTADO
+- **Hallazgo**: los diálogos nativos rompían el diseño (borrar nota, errores).
+- **Cambio** (`web/app/index.html`, `styles.css`, `app.js`): `mostrarModal()`
+  (título, mensaje, confirmar/cancelar) con `role="dialog"` y `aria-modal`,
+  `mostrarAviso()` para avisos; usado en borrar nota, cambios sin guardar y
+  errores de llamada.
+- **Evidencia (Playwright)**: `1.6 dialogos nativos disparados: 0` (no se
+  lanzó ningún `window.confirm/alert`), modal visible con el texto correcto y
+  funcionales Cancelar/Aceptar.
+
+### Gate de la Fase 1
+`ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP
+(`mostrarModal`, `WORKLET_CODE`, `programarReconexion` verificados servidos).
