@@ -423,10 +423,40 @@ async def meetings_detail(meeting_id: int, user: dict[str, Any] = Depends(requir
     return detalle
 
 
-@router.delete("/meetings/{meeting_id}")
-async def meetings_delete(meeting_id: int, user: dict[str, Any] = Depends(require_user)):
+@router.patch("/meetings/{meeting_id}")
+async def meetings_update(
+    meeting_id: int, request: Request, user: dict[str, Any] = Depends(require_user)
+):
+    """Edita titulo y/o transcripcion (el acta del Baul se actualiza)."""
     from src.services import meeting_service
 
-    if not await meeting_service.borrar(meeting_id, int(user["id"])):
+    body = await request.json()
+    actualizada = await meeting_service.editar(
+        meeting_id,
+        int(user["id"]),
+        titulo=body.get("title"),
+        transcripcion=body.get("transcript"),
+    )
+    if not actualizada:
+        raise HTTPException(status_code=404, detail="Reunion no encontrada")
+    return {
+        "success": True,
+        "meeting": {
+            "id": actualizada["id"],
+            "title": actualizada["title"],
+            "transcript": actualizada["transcript"],
+        },
+    }
+
+
+@router.delete("/meetings/{meeting_id}")
+async def meetings_delete(
+    meeting_id: int,
+    borrar_nota: bool = True,
+    user: dict[str, Any] = Depends(require_user),
+):
+    from src.services import meeting_service
+
+    if not await meeting_service.borrar(meeting_id, int(user["id"]), borrar_nota=borrar_nota):
         raise HTTPException(status_code=404, detail="Reunion no encontrada")
     return {"success": True}
