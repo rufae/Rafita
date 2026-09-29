@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.models.schemas import MessageRole
@@ -46,6 +47,40 @@ def _mount_web_app() -> None:
 
 
 _mount_web_app()
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """Cabeceras de seguridad de la SPA (Fase 0.5/0.6, 2026-09-29).
+
+    - CSP restrictiva para /app (script/style solo del propio origen, el
+      iframe de llamada en frame-src).
+    - Permissions-Policy delega 'microphone' a los origenes confiables para
+      que el iframe cross-origin de llamada pueda usar el micro.
+    - WEB_ALLOWED_ORIGINS (lista separada por comas) es la lista de origenes
+      confiables de la instalacion: la SPA, la pagina de llamada y localhost.
+    """
+    response = await call_next(request)
+    confiables = [o.strip() for o in (settings.web_allowed_origins or "").split(",") if o.strip()]
+    origen_csp = " ".join(["'self'"] + confiables)
+    microfonos = " ".join(["self"] + ['"%s"' % o for o in confiables])
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "microphone=(%s), camera=(), geolocation=()" % microfonos,
+    )
+    path = request.url.path
+    if path == "/" or path.startswith("/app"):
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "img-src 'self' data:; connect-src 'self'; frame-src %s; "
+            "worker-src 'self'; base-uri 'self'; form-action 'self'; "
+            "object-src 'none'; frame-ancestors 'self'" % origen_csp,
+        )
+    return response
+
 
 _webhook_secret: str | None = None
 _bot_ref = None

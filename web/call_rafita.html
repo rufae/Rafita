@@ -134,6 +134,11 @@
     color: var(--muted); padding: 7px 12px; border-radius: 10px; font-size: 12px; cursor: pointer;
   }
   .mini:hover { color: var(--text); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  #debugControls { display: inline-flex; gap: 10px 14px; flex-wrap: wrap; align-items: center; }
 
   .transcript {
     display: none; margin-top: 16px; padding: 14px 16px;
@@ -177,8 +182,11 @@
   <div class="settings">
     <label><input type="checkbox" id="vadMode" checked> VAD automático</label>
     <label><input type="checkbox" id="echoCancel" checked> Cancelar eco</label>
-    <input type="text" id="serverUrl" placeholder="servidor (vacío = este)">
-    <button class="mini" onclick="testTTS()">Probar TTS</button>
+    <div id="debugControls" class="hidden">
+      <label class="sr-only" for="serverUrl">Servidor (solo depuración)</label>
+      <input type="text" id="serverUrl" placeholder="servidor (vacío = este)">
+      <button class="mini" onclick="testTTS()">Probar TTS</button>
+    </div>
   </div>
 
   <div id="transcript" class="transcript"></div>
@@ -210,11 +218,32 @@ function getWsBase() {
   return (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
 }
 
-function callToken() {
-  return new URLSearchParams(window.location.search).get('token') || '';
-}
-function withToken(url) {
-  return callToken() ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(callToken()) : url;
+// Token de sesion (Fase 0.2): NUNCA en query string (queda en el historial
+// del navegador y en logs de proxy). Llega por postMessage desde la SPA
+// (iframe) o, en acceso directo, por el fragmento #token= (no se envia al
+// servidor). Se envia como cabecera X-Call-Token en los fetch y como primer
+// mensaje de autenticacion en el WebSocket.
+let authToken = '';
+(function initAuthToken() {
+  const frag = window.location.hash.replace(/^#token=/, '');
+  if (frag) {
+    try { authToken = decodeURIComponent(frag); } catch (e) { authToken = frag; }
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  window.addEventListener('message', function (ev) {
+    if (!ev.data || ev.data.type !== 'rafita-auth' || typeof ev.data.token !== 'string') return;
+    // Solo se acepta el token del documento padre (iframe) o del propio origen.
+    let parentOrigin = '';
+    try {
+      parentOrigin = (window.location.ancestorOrigins && window.location.ancestorOrigins[0]) ||
+        (document.referrer ? new URL(document.referrer).origin : '');
+    } catch (e) {}
+    if (parentOrigin && ev.origin !== parentOrigin) return;
+    authToken = ev.data.token;
+  });
+})();
+function authHeaders() {
+  return authToken ? { 'X-Call-Token': authToken } : {};
 }
 
 const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
@@ -255,13 +284,20 @@ function setStatus(state, msg) {
 }
 function log(msg) {
   const t = new Date().toLocaleTimeString();
-  logDiv.innerHTML = '<div>[' + t + '] ' + msg + '</div>' + logDiv.innerHTML;
+  const div = document.createElement('div');
+  div.textContent = '[' + t + '] ' + msg;
+  logDiv.prepend(div);
 }
 function addTranscript(role, text) {
   transcriptDiv.style.display = 'block';
   const cls = role === 'tu' ? 'tu' : 'rafita';
   const prefix = role === 'tu' ? 'Tú' : 'Rafita';
-  transcriptDiv.innerHTML += '<div class="' + cls + '"><strong>' + prefix + ':</strong> ' + text + '</div>';
+  const div = document.createElement('div');
+  div.className = cls;
+  const strong = document.createElement('strong');
+  strong.textContent = prefix + ': ';
+  div.append(strong, document.createTextNode(String(text)));
+  transcriptDiv.appendChild(div);
   transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
 }
 
@@ -366,14 +402,20 @@ function drainQueue() {
 
 // ---------- Llamada ----------
 async function startCall() {
+  // Contexto seguro (Fase 0.6): los navegadores solo dan acceso al micro en
+  // HTTPS o localhost. En http://<host-de-lan> navigator.mediaDevices no existe.
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    setStatus(STATUS.ERROR, 'El micrófono requiere HTTPS: accede por https:// (o desde localhost) o añade un certificado en el proxy.');
+    return false;
+  }
   setStatus(STATUS.CONNECTING, 'Conectando...');
   stopPlayback();
   await ensureAudioContext();
 
   try {
-    const resp = await fetch(withToken(getApiBase() + '/call/start'), {
+    const resp = await fetch(getApiBase() + '/call/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
       body: JSON.stringify({}),
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -399,11 +441,13 @@ async function startCall() {
   }
 
   return new Promise(function (resolve) {
-    ws = new WebSocket(withToken(getWsBase() + '/call/ws/' + sessionId));
+    // Sin token en la URL: la autenticacion va en el primer mensaje (Fase 0.2).
+    ws = new WebSocket(getWsBase() + '/call/ws/' + sessionId);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = function () {
       log('WebSocket conectado');
+      if (authToken) ws.send(JSON.stringify({ type: 'auth', token: authToken }));
       isCallActive = true;
       const rate = audioContext ? audioContext.sampleRate : 48000;
       ws.send(JSON.stringify({ type: 'audio_config', sample_rate: rate }));
@@ -513,7 +557,7 @@ function stopSpeaking() {
 async function endCall() {
   stopSpeaking();
   if (sessionId) {
-    try { await fetch(withToken(getApiBase() + '/call/' + sessionId + '/end'), { method: 'POST' }); } catch (e) {}
+    try { await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST', headers: authHeaders() }); } catch (e) {}
   }
   sessionId = null;
 }
@@ -593,10 +637,17 @@ window.addEventListener('beforeunload', function () {
 });
 requestAnimationFrame(animationLoop);
 
+// Controles de depuracion (Fase 0.4): ocultos por defecto; solo se muestran
+// con ?debug=1. El servidor arbitrario y el test de TTS no son para el usuario.
+if (new URLSearchParams(window.location.search).get('debug') === '1') {
+  const dbg = document.getElementById('debugControls');
+  if (dbg) dbg.classList.remove('hidden');
+}
+
 async function testTTS() {
   setStatus(STATUS.PROCESSING, 'Probando TTS...');
   try {
-    const resp = await fetch(withToken(getApiBase() + '/call/test_tts'));
+    const resp = await fetch(getApiBase() + '/call/test_tts', { headers: authHeaders() });
     if (!resp.ok) {
       const err = await resp.json().catch(function () { return { reason: resp.statusText }; });
       throw new Error(err.reason || 'HTTP ' + resp.status);

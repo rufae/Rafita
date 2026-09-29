@@ -323,9 +323,13 @@ $('#call-start').addEventListener('click', async () => {
     const data = await api('/call/token');
     const cfg = window.RAFITA_CONFIG || {};
     const origin = cfg.callOrigin || `${location.protocol}//${location.hostname}:8001`;
-    const url = `${origin}/?token=${encodeURIComponent(data.token || '')}`;
-    $('#call-frame').src = url;
-    $('#call-frame').classList.remove('hidden');
+    const frame = $('#call-frame');
+    // El token NO va en la URL: se pasa por postMessage al cargar (Fase 0.2).
+    frame.onload = () => {
+      frame.contentWindow.postMessage({ type: 'rafita-auth', token: data.token }, origin);
+    };
+    frame.src = origin + '/';
+    frame.classList.remove('hidden');
     $('#call-placeholder').classList.add('hidden');
   } catch (e) {
     alert('No se pudo iniciar la llamada: ' + e.message);

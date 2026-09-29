@@ -163,11 +163,28 @@ def _get_whisper():
 async def serve_call_page():
     for path in (_HTML_FILE_PATH, _LEGACY_HTML_PATH):
         if path.exists():
-            return FileResponse(str(path), media_type="text/html")
+            return FileResponse(
+                str(path), media_type="text/html", headers=_call_page_security_headers()
+            )
     return JSONResponse(
         status_code=404,
         content={"error": "call_rafita.html not found at %s" % str(_HTML_FILE_PATH)},
     )
+
+
+def _call_page_security_headers() -> dict[str, str]:
+    """Cabeceras de la pagina de llamada (Fase 0, 2026-09-29).
+
+    frame-ancestors: solo el propio origen y los confiables (la SPA embebe
+    la pagina por iframe); nada mas puede iframearla.
+    """
+    confiables = " ".join(_allowed_origins())
+    return {
+        "Content-Security-Policy": "frame-ancestors 'self' %s" % confiables,
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "camera=(), geolocation=(), payment=()",
+    }
 
 
 @app.get("/health")
@@ -331,17 +348,52 @@ def _start_utterance(websocket: WebSocket, session: dict, session_id: str) -> No
 
 @app.websocket("/call/ws/{session_id}")
 async def voice_websocket(websocket: WebSocket, session_id: str):
-    if not _call_token_valid(websocket.query_params.get("token")):
+    # Autenticacion (Fase 0.2): el token NO debe viajar en query string. Se
+    # acepta en la cabecera X-Call-Token (scripts/CLI) o, para navegadores (que
+    # no pueden poner cabeceras en WebSocket), en el primer mensaje
+    # {"type":"auth","token":"..."}. La query ?token= se mantiene por
+    # compatibilidad con clientes antiguos pero la pagina ya no la usa.
+    token = websocket.query_params.get("token") or websocket.headers.get("x-call-token")
+    autenticado = _call_token_valid(token)
+    esperado = (settings.voice_call_token or "").strip()
+    if token and not autenticado:
+        # Token explicito pero invalido: rechazo inmediato sin revelar nada
+        # mas (Fase 0.2).
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": "invalid call token"})
         await websocket.close(code=4401)
         return
+    # Sin token en la peticion (navegadores): autenticacion en el primer
+    # mensaje {"type":"auth","token":"..."}. La sesion NO se revela hasta
+    # autenticar.
+    auth_pending = not autenticado and bool(esperado)
     await websocket.accept()
+    if auth_pending:
+        await websocket.send_json({"type": "auth_required"})
+        token_mensaje = None
+        try:
+            data = await asyncio.wait_for(websocket.receive(), timeout=15.0)
+        except Exception:
+            await websocket.close(code=4401)
+            return
+        if data.get("text"):
+            try:
+                posible = json.loads(data["text"])
+                if posible.get("type") == "auth":
+                    token_mensaje = str(posible.get("token", ""))
+            except json.JSONDecodeError:
+                token_mensaje = None
+        if token_mensaje is None or not _call_token_valid(token_mensaje):
+            await websocket.send_json({"type": "error", "message": "invalid call token"})
+            await websocket.close(code=4401)
+            return
+        logger.info("VoiceStream: WS autenticado por mensaje session=%s", session_id)
     session = _active_sessions.get(session_id)
     if not session:
         await websocket.send_json({"type": "error", "message": "session not found"})
         await websocket.close()
         return
+    session["ws_authenticated"] = True
 
     logger.info("VoiceStream: WebSocket connected session=%s", session_id)
     await websocket.send_json({"type": "ready", "session_id": session_id})

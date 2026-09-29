@@ -323,3 +323,34 @@ def test_google_device_flow_api(monkeypatch, tmp_path):
     repetido = client.get("/api/auth/google/device/poll?state=" + state)
     assert repetido.status_code == 404
     assert client.get("/api/auth/google/device/poll?state=inexistente").status_code == 404
+
+
+def test_spa_security_headers(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        settings, "web_allowed_origins", "http://rafita.home,http://voz.rafita.home"
+    )
+    resp = client.get("/app/")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("referrer-policy") == "no-referrer"
+    csp = resp.headers.get("content-security-policy", "")
+    assert "script-src 'self'" in csp
+    assert "frame-ancestors 'self'" in csp
+    assert "http://voz.rafita.home" in csp  # el iframe de llamada
+    pp = resp.headers.get("permissions-policy", "")
+    assert 'microphone=(self "http://rafita.home" "http://voz.rafita.home")' in pp
+    assert "camera=()" in pp
+    # /api no lleva CSP restrictiva de SPA
+    api = client.get("/api/auth/me")
+    assert "content-security-policy" not in api.headers
+
+
+def test_call_page_security_headers(monkeypatch):
+    from src.voice_stream import server as vs
+
+    monkeypatch.setattr(vs.settings, "web_allowed_origins", "http://rafita.home")
+    headers = vs._call_page_security_headers()
+    assert "frame-ancestors 'self' http://rafita.home" in headers["Content-Security-Policy"]
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["Referrer-Policy"] == "no-referrer"
+    assert "camera=()" in headers["Permissions-Policy"]
