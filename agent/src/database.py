@@ -365,15 +365,17 @@ class DatabaseManager:
         await self.execute(sql, (new_content, chat_id, role))
         await self._conn.commit()
 
-    async def get_chat_history(self, chat_id: int, limit: int = 50) -> list[dict[str, Any]]:
+    async def get_chat_history(
+        self, chat_id: int, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         sql = """
             SELECT id, chat_id, role, content, created_at
             FROM chat_history
             WHERE chat_id = ?
             ORDER BY created_at DESC, id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
         """
-        rows = await self.fetchall(sql, (chat_id, limit))
+        rows = await self.fetchall(sql, (chat_id, limit, max(0, offset)))
         rows.reverse()
         return rows
 

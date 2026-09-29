@@ -134,19 +134,46 @@ function addBubble(text, cls) {
   return div;
 }
 
-async function loadChatHistory() {
+let chatOffset = 0;
+
+async function loadChatHistory(acumular) {
+  const mas = acumular === true;
   const boxInicial = $('#chat-messages');
-  boxInicial.innerHTML = skeletonHTML(2);
+  if (!mas) {
+    chatOffset = 0;
+    boxInicial.innerHTML = skeletonHTML(2);
+  }
   try {
-    const data = await api('/chat/history?limit=30');
+    const data = await api(`/chat/history?limit=30&offset=${mas ? chatOffset : 0}`);
     const box = $('#chat-messages');
-    box.innerHTML = '';
-    data.messages.forEach((m) => {
-      if (m.role === 'user' || m.role === 'assistant') {
-        addBubble(m.content, m.role === 'user' ? 'user' : 'bot');
-      }
-    });
-    if (!data.messages.length) addBubble('Hola, soy Rafita. ¿En qué te ayudo?', 'bot');
+    if (!mas) box.innerHTML = '';
+    const previo = document.getElementById('chat-more');
+    if (previo) previo.remove();
+    // Historial mas reciente primero en la API; los mensajes mas antiguos se
+    // insertan ARRIBA en orden cronologico (Fase 4.3).
+    const crearBurbuja = (m) => {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + (m.role === 'user' ? 'user' : 'bot');
+      div.textContent = m.content;
+      return div;
+    };
+    const burbujas = data.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    if (chatOffset === 0 && !burbujas.length) addBubble('Hola, soy Rafita. ¿En qué te ayudo?', 'bot');
+    if (mas) {
+      const ancla = box.querySelector('.bubble');
+      [...burbujas].reverse().forEach((m) => box.insertBefore(crearBurbuja(m), ancla));
+    } else {
+      burbujas.forEach((m) => box.appendChild(crearBurbuja(m)));
+    }
+    chatOffset += data.messages.length;
+    if (data.messages.length >= 30) {
+      const mas = document.createElement('div');
+      mas.id = 'chat-more';
+      mas.innerHTML = '<button class="ghost">Cargar mensajes anteriores</button>';
+      mas.querySelector('button').addEventListener('click', () => loadChatHistory(true));
+      box.prepend(mas);
+      box.scrollTop = box.scrollHeight;
+    }
   } catch (e) {
     addBubble('No pude cargar el historial: ' + e.message, 'bot');
   }
@@ -200,14 +227,23 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-async function loadNotes() {
+let vaultOffset = 0;
+
+async function loadNotes(acumular) {
+  // Ojo: debounce() reenvia el evento; solo "true" literal pagina.
+  const mas = acumular === true;
   const query = encodeURIComponent($('#vault-search').value.trim());
   const folder = encodeURIComponent($('#vault-folder').value.trim());
   const list = $('#vault-list');
-  list.innerHTML = skeletonHTML(4);
+  if (!mas) {
+    vaultOffset = 0;
+    list.innerHTML = skeletonHTML(4);
+  }
   try {
-    const data = await api(`/vault/notes?query=${query}&folder=${folder}`);
-    list.innerHTML = '';
+    const data = await api(
+      `/vault/notes?query=${query}&folder=${folder}&limit=50&offset=${mas ? vaultOffset : 0}`
+    );
+    if (!mas) list.innerHTML = '';
     if (!data.notes.length) {
       pintarVacio(
         list,
@@ -239,6 +275,18 @@ async function loadNotes() {
       li.addEventListener('click', () => openNote(note.path, li));
       list.appendChild(li);
     });
+    vaultOffset += data.notes.length;
+    // Paginacion real (Fase 4.3): si quedan mas, boton para cargar la pagina.
+    const previo = document.getElementById('vault-more');
+    if (previo) previo.remove();
+    if (vaultOffset < data.total) {
+      const mas = document.createElement('li');
+      mas.id = 'vault-more';
+      mas.innerHTML = '<button class="ghost" style="width:100%">Cargar más (' +
+        (data.total - vaultOffset) + ' restantes)</button>';
+      mas.querySelector('button').addEventListener('click', () => loadNotes(true));
+      list.appendChild(mas);
+    }
   } catch (e) {
     list.innerHTML = '';
     const li = document.createElement('li');

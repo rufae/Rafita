@@ -255,10 +255,14 @@ async def web_chat(request: Request, user: dict[str, Any] = Depends(require_user
 
 
 @router.get("/chat/history")
-async def web_chat_history(limit: int = 30, user: dict[str, Any] = Depends(require_user)):
+async def web_chat_history(
+    limit: int = 30,
+    offset: int = 0,
+    user: dict[str, Any] = Depends(require_user),
+):
     chat_id = WEB_CHAT_BASE + int(user["id"])
-    rows = await db.get_chat_history(chat_id, limit=max(1, min(100, limit)))
-    return {"messages": list(reversed(rows))}
+    rows = await db.get_chat_history(chat_id, limit=max(1, min(100, limit)), offset=max(0, offset))
+    return {"messages": list(reversed(rows)), "offset": max(0, offset)}
 
 
 # ---------- llamada ----------
@@ -290,14 +294,20 @@ async def vault_notes(
     query: str = "",
     folder: str = "",
     limit: int = 100,
+    offset: int = 0,
     _user: dict[str, Any] = Depends(require_user),
 ):
+    """Lista notas con paginacion real (Fase 4.3): `total` es el total de
+    coincidencias y `notes` es la pagina [offset, offset+limit)."""
     root = _vault_root()
     if not root.exists():
         return {"notes": [], "total": 0}
     query_lower = query.strip().lower()
     folder_lower = folder.strip().strip("/").lower()
+    pagina = max(1, min(300, limit))
+    salto = max(0, offset)
     notas: list[dict[str, Any]] = []
+    total = 0
     for ruta in sorted(root.rglob("*.md")):
         rel = ruta.relative_to(root)
         if any(part.startswith(".") for part in rel.parts):
@@ -309,18 +319,16 @@ async def vault_notes(
             coincide = query_lower in nombre
             if not coincide:
                 try:
-                    coincide = (
-                        query_lower
-                        in ruta.read_text(encoding="utf-8", errors="ignore")[:4096].lower()
-                    )
+                    contenido = ruta.read_text(encoding="utf-8", errors="ignore")[:4096]
+                    coincide = query_lower in contenido.lower()
                 except OSError:
                     coincide = False
             if not coincide:
                 continue
-        notas.append(_note_entry(ruta, root))
-        if len(notas) >= max(1, min(300, limit)):
-            break
-    return {"notes": notas, "total": len(notas)}
+        if total >= salto and len(notas) < pagina:
+            notas.append(_note_entry(ruta, root))
+        total += 1
+    return {"notes": notas, "total": total, "offset": salto}
 
 
 @router.get("/vault/note")
