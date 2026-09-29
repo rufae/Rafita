@@ -187,3 +187,75 @@ async def exchange_google_code(code: str, request_base: str = "") -> dict[str, A
     except Exception as e:
         logger.warning("Web: fallo el login con Google: %s", e)
         return None
+
+
+# ---------- Sign in with Google: flujo de dispositivo (LAN/CLI) ----------
+# Recomendado para instalaciones en LAN (*.home, *.local): no necesita
+# redirect URI (basta un cliente OAuth de tipo "TVs and Limited Input
+# devices"). El usuario abre la URL de verificacion e introduce un codigo.
+
+GOOGLE_DEVICE_CODE_URL = "https://oauth2.googleapis.com/device/code"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+GOOGLE_DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+
+
+async def google_device_start() -> dict[str, Any] | None:
+    """Inicia el flujo de dispositivo; devuelve device_code + user_code."""
+    if not google_configured():
+        return None
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                GOOGLE_DEVICE_CODE_URL,
+                data={
+                    "client_id": settings.google_web_client_id.strip(),
+                    "scope": "openid email profile",
+                },
+            )
+            resp.raise_for_status()
+            datos: dict[str, Any] = resp.json()
+            return datos
+    except Exception as e:
+        logger.warning("Web: no se pudo iniciar el flujo de dispositivo: %s", e)
+        return None
+
+
+async def google_device_poll(device_code: str) -> dict[str, Any]:
+    """Consulta el estado: pending | ok (con email) | error | expired."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": settings.google_web_client_id.strip(),
+                    "client_secret": settings.google_web_client_secret.strip(),
+                    "device_code": device_code,
+                    "grant_type": GOOGLE_DEVICE_GRANT,
+                },
+            )
+            datos = resp.json()
+            error = str(datos.get("error", ""))
+            if error in ("authorization_pending", "slow_down"):
+                return {"status": "pending"}
+            if error in ("expired_token", "access_denied"):
+                return {"status": "error", "detail": error}
+            if error:
+                return {
+                    "status": "error",
+                    "detail": datos.get("error_description") or error,
+                }
+            info = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": "Bearer %s" % datos.get("access_token", "")},
+            )
+            info.raise_for_status()
+            perfil: dict[str, Any] = info.json()
+            return {"status": "ok", "email": str(perfil.get("email", "")).strip().lower()}
+    except Exception as e:
+        logger.warning("Web: fallo consultando el flujo de dispositivo: %s", e)
+        return {"status": "error", "detail": str(e)[:120]}
