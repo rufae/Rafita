@@ -14,7 +14,7 @@ faster-whisper==1.1.1
 piper-tts==1.2.0
 requests==2.33.0
 beautifulsoup4==4.12.3
-duckduckgo-search==7.5.1
+duckduckgo-search==8.1.1
 soundfile==0.12.1
 sounddevice==0.5.1
 numpy<2.0.0,>=1.23.2
