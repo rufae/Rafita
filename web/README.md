@@ -14,15 +14,15 @@ La página de llamada vive en su propio origen **a propósito**:
   independientes: `VOICE_CALL_TOKEN` + `frame-ancestors` restringido a la SPA);
 - se embebe por iframe en la vista Llamada y también se usa directamente;
 - el servidor de voz puede reiniciarse sin tocar la SPA y viceversa.
-Lo comparten: `web/app/tokens.css` (sistema de diseño único, el servidor de
- voz publica `/tokens.css`) y la paleta/marca.
+Lo comparten: `web/app/design-tokens.css` (sistema de diseño único, el servidor de
+ voz publica `/design-tokens.css`) y la paleta/marca.
 
 ## `call_rafita.html` es un monolito (decisión)
 
 HTML + CSS + JS inline en un **único fichero**. Se mantiene así a propósito:
 una sola petición sirve toda la página de llamada, no requiere build ni rutas
 adicionales y el despliegue es `scp`/rsync de un archivo. No es un accidente
-histórico. Si creciera mucho, el primer paso sería extraer `tokens.css`
+histórico. Si creciera mucho, el primer paso sería extraer `design-tokens.css`
 (ya externo) seguido de un `call.js` servido por el mismo servidor de voz.
 
 ## Configuración por instalación

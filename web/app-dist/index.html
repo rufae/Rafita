@@ -3,112 +3,222 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="Rafita: tu asistente personal. Chat, bóveda y llamadas de voz." />
+  <meta name="theme-color" content="#f5efe3" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#191611" media="(prefers-color-scheme: dark)" />
+  <meta name="description" content="Rafita: tu asistente personal privado. Chat, bóveda de notas y llamadas de voz, en tu propio servidor." />
   <title>Rafita</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
+  <link rel="alternate icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="tokens-11a1e442.css" />
-  <link rel="stylesheet" href="styles-cc6580e7.css" />
+  <link rel="stylesheet" href="design-tokens-93353fc1.css" />
+  <link rel="stylesheet" href="styles-16b868b0.css" />
 </head>
 <body>
-  <!-- Vista de acceso -->
+  <!-- Sprite de iconos: mismo trazo (1.5), mismo lenguaje. -->
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-spark" viewBox="0 0 24 24">
+      <path d="M12 3c.6 3.9 1.9 5.7 5.6 6.6-3.7.9-5 2.7-5.6 6.6-.6-3.9-1.9-5.7-5.6-6.6C10.1 8.7 11.4 6.9 12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M18.5 15.5c.25 1.6.8 2.35 2.3 2.7-1.5.35-2.05 1.1-2.3 2.7-.25-1.6-.8-2.35-2.3-2.7 1.5-.35 2.05-1.1 2.3-2.7Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24">
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-4 3.4V6.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M8 9h8M8 12.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-book" viewBox="0 0 24 24">
+      <path d="M5 5.5A2 2 0 0 1 7 3.5h11.5V18H7a2 2 0 0 0-2 2V5.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M5 20a2 2 0 0 1 2-2h11.5v2.5H7A2 2 0 0 1 5 20Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M9 8h7M9 11h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24">
+      <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24">
+      <path d="M6.2 3.8h3l1.6 4-2 1.6a12.5 12.5 0 0 0 5.8 5.8l1.6-2 4 1.6v3c0 .9-.8 1.6-1.7 1.5C10.9 18.6 5.4 13.1 4.7 5.5c-.1-.9.6-1.7 1.5-1.7Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-send" viewBox="0 0 24 24">
+      <path d="m4.5 12 15-7-4.2 15-3.4-5.4L4.5 12Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="m11.9 14.6 7.6-9.6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24">
+      <path d="M5 6.5h14M9.5 6.5V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v1.5M7 6.5 7.8 19a1.5 1.5 0 0 0 1.5 1.4h5.4A1.5 1.5 0 0 0 16.2 19L17 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M10.5 10v6.5M13.5 10v6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24">
+      <rect x="7" y="7" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="m15.5 15.5 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M5.5 20a6.5 6.5 0 0 1 13 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <path d="M5 12h13M13 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24">
+      <path d="M12 3.5 19 6v6c0 4-3 7-7 8.5C8 19 5 16 5 12V6l7-2.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+  </svg>
+
+  <!-- Vista de acceso: composición editorial asimétrica -->
   <main id="login" class="login hidden">
-    <div class="login-card">
-      <img class="logo" src="icons/icon-192.png" alt="Rafita" />
-      <h1>Rafita</h1>
-      <p class="muted">Tu asistente personal: chat, bóveda y llamadas.</p>
-      <form id="login-form">
-        <label>Email<input id="login-email" type="email" autocomplete="username" required /></label>
-        <label>Contraseña<input id="login-password" type="password" autocomplete="current-password" required /></label>
-        <button class="primary" type="submit">Entrar</button>
+    <section class="login-brand" aria-label="Rafita">
+      <div class="login-mark">
+        <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg>
+      </div>
+      <h1 class="wordmark">Rafita</h1>
+      <p class="login-tagline">
+        Un asistente personal que vive en tu servidor: tus notas, tu correo,
+        tu agenda y tu voz. Sin nubes ajenas.
+      </p>
+      <ul class="login-notes">
+        <li><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> Bóveda de notas propia</li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg> Voz en tiempo real</li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg> Todo se queda en casa</li>
+      </ul>
+    </section>
+
+    <section class="login-access" aria-label="Acceso">
+      <p class="eyebrow">Acceso privado</p>
+      <h2 class="login-title">Entra en tu cuaderno</h2>
+      <form id="login-form" class="login-form">
+        <div class="field">
+          <label for="login-email">Correo</label>
+          <input id="login-email" type="email" autocomplete="username" required placeholder="tu@correo.com" />
+        </div>
+        <div class="field">
+          <label for="login-password">Contraseña</label>
+          <input id="login-password" type="password" autocomplete="current-password" required placeholder="••••••••" />
+        </div>
+        <button class="btn btn-primary" type="submit">
+          Entrar <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>
+        </button>
       </form>
       <div class="separator"><span>o</span></div>
       <a class="google-btn" href="/api/auth/google/start">
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
         Continuar con Google
       </a>
       <div id="google-device" class="google-device hidden"></div>
       <p id="login-error" class="error hidden"></p>
-    </div>
+    </section>
   </main>
 
   <!-- Aplicación -->
   <section id="app" class="app hidden">
-    <header class="topbar" role="banner">
-      <h1 class="sr-only">Rafita</h1>
-      <div class="brand">
-        <img src="icons/icon-192.png" alt="" width="28" height="28" />
-        <span>Rafita</span>
-      </div>
-      <nav class="tabs" role="tablist" aria-label="Secciones de Rafita">
-        <button class="tab active" id="tab-chat" role="tab" aria-selected="true" aria-controls="view-chat" tabindex="0" data-view="chat">Chat</button>
-        <button class="tab" id="tab-vault" role="tab" aria-selected="false" aria-controls="view-vault" tabindex="-1" data-view="vault">Baúl</button>
-        <button class="tab" id="tab-meetings" role="tab" aria-selected="false" aria-controls="view-meetings" tabindex="-1" data-view="meetings">Reuniones</button>
-        <button class="tab" id="tab-call" role="tab" aria-selected="false" aria-controls="view-call" tabindex="-1" data-view="call">Llamar</button>
-      </nav>
-      <div class="user">
-        <span id="user-email" class="muted"></span>
-        <button id="logout" class="ghost">Salir</button>
+    <header class="masthead" role="banner">
+      <div class="masthead-inner">
+        <h1 class="brand">
+          <span class="brand-mark"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg></span>
+          <span class="wordmark">Rafita</span>
+        </h1>
+        <nav class="tabs" role="tablist" aria-label="Secciones de Rafita">
+          <button class="tab active" id="tab-chat" role="tab" aria-selected="true" aria-controls="view-chat" tabindex="0" data-view="chat">
+            <svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg> Chat
+          </button>
+          <button class="tab" id="tab-vault" role="tab" aria-selected="false" aria-controls="view-vault" tabindex="-1" data-view="vault">
+            <svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> Baúl
+          </button>
+          <button class="tab" id="tab-meetings" role="tab" aria-selected="false" aria-controls="view-meetings" tabindex="-1" data-view="meetings">
+            <svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg> Reuniones
+          </button>
+          <button class="tab" id="tab-call" role="tab" aria-selected="false" aria-controls="view-call" tabindex="-1" data-view="call">
+            <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg> Llamar
+          </button>
+        </nav>
+        <div class="session">
+          <span id="user-email" class="session-email"></span>
+          <button id="logout" class="btn btn-ghost btn-sm">Salir</button>
+        </div>
       </div>
     </header>
 
-    <main>
+    <main class="page">
       <!-- Vista Chat -->
       <section id="view-chat" class="view active" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
         <div id="chat-messages" class="messages" aria-live="polite"></div>
         <form id="chat-form" class="composer">
           <label class="sr-only" for="chat-input">Mensaje para Rafita</label>
           <input id="chat-input" type="text" placeholder="Escribe a Rafita…" autocomplete="off" required />
-          <button class="primary" type="submit">Enviar</button>
+          <button class="btn btn-primary btn-icon" type="submit" aria-label="Enviar mensaje">
+            <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
+          </button>
         </form>
       </section>
 
       <!-- Vista Baúl -->
       <section id="view-vault" class="view" role="tabpanel" aria-labelledby="tab-vault" tabindex="0">
-        <div class="vault-toolbar">
-          <label class="sr-only" for="vault-search">Buscar en la bóveda</label>
-          <input id="vault-search" type="search" placeholder="Buscar en la bóveda…" />
-          <label class="sr-only" for="vault-folder">Carpeta de la bóveda</label>
-          <input id="vault-folder" type="text" placeholder="Carpeta (ej: 00-Inbox)" />
-          <button id="vault-new" class="primary">Nueva nota</button>
+        <div class="section-head">
+          <h2 class="section-title">Baúl</h2>
+          <div class="vault-toolbar">
+            <div class="field field-inline">
+              <label class="sr-only" for="vault-search">Buscar en la bóveda</label>
+              <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+              <input id="vault-search" type="search" placeholder="Buscar notas…" />
+            </div>
+            <div class="field field-inline">
+              <label class="sr-only" for="vault-folder">Carpeta de la bóveda</label>
+              <input id="vault-folder" type="text" placeholder="Carpeta" />
+            </div>
+            <button id="vault-new" class="btn btn-secondary btn-sm">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Nueva nota
+            </button>
+          </div>
         </div>
         <div class="vault-grid">
           <ul id="vault-list" class="note-list" tabindex="0" aria-label="Notas de la bóveda"></ul>
           <div class="editor">
             <div class="editor-head">
               <label class="sr-only" for="note-path">Ruta de la nota</label>
-              <input id="note-path" type="text" placeholder="ruta/nota.md" />
+              <input id="note-path" type="text" class="editor-path" placeholder="ruta/nota.md" />
               <div class="editor-actions">
-                <button id="note-save" class="primary">Guardar</button>
-                <button id="note-delete" class="danger">Borrar</button>
+                <button id="note-save" class="btn btn-primary btn-sm">
+                  <svg class="icon" aria-hidden="true"><use href="#i-check"/></svg> Guardar
+                </button>
+                <button id="note-delete" class="btn btn-danger btn-sm">
+                  <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Borrar
+                </button>
               </div>
             </div>
-            <textarea id="note-content" placeholder="Contenido de la nota…"></textarea>
-            <p id="note-status" class="muted"></p>
+            <textarea id="note-content" class="editor-body" placeholder="Escribe en Markdown…"></textarea>
+            <p id="note-status" class="editor-status"></p>
           </div>
         </div>
       </section>
 
       <!-- Vista Reuniones -->
       <section id="view-meetings" class="view" role="tabpanel" aria-labelledby="tab-meetings" tabindex="0">
-        <div class="vault-toolbar">
-          <label class="sr-only" for="meet-title">Título de la reunión</label>
-          <input id="meet-title" type="text" placeholder="Título de la reunión (opcional)" />
-          <button id="meet-mic" class="primary">● Grabar micro</button>
-          <button id="meet-tab" class="ghost">Grabar pestaña</button>
-          <span id="meet-status" class="muted small"></span>
+        <div class="section-head">
+          <h2 class="section-title">Reuniones</h2>
+          <div class="vault-toolbar">
+            <label class="sr-only" for="meet-title">Título de la reunión</label>
+            <input id="meet-title" type="text" class="meet-title" placeholder="Título (opcional)" />
+            <button id="meet-mic" class="btn btn-primary btn-sm">
+              <svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg> Grabar micro
+            </button>
+            <button id="meet-tab" class="btn btn-secondary btn-sm">Grabar pestaña</button>
+            <span id="meet-status" class="caption"></span>
+          </div>
         </div>
         <div class="vault-grid">
           <ul id="meet-list" class="note-list" tabindex="0" aria-label="Reuniones grabadas"></ul>
           <div class="editor">
-            <h2 id="meet-detail-title">Detalle de la reunión</h2>
-            <p id="meet-detail-meta" class="muted small"></p>
-            <div id="meet-summary" class="meet-summary muted small">
+            <h2 id="meet-detail-title" class="editor-title">Detalle de la reunión</h2>
+            <p id="meet-detail-meta" class="caption"></p>
+            <div id="meet-summary" class="meet-summary">
               Selecciona o graba una reunión para ver su resumen.
             </div>
-            <textarea id="meet-transcript" readonly placeholder="Transcripción…"></textarea>
+            <textarea id="meet-transcript" class="editor-body" readonly placeholder="Transcripción…"></textarea>
           </div>
         </div>
       </section>
@@ -117,24 +227,28 @@
       <section id="view-call" class="view" role="tabpanel" aria-labelledby="tab-call" tabindex="0">
         <div class="call-wrap">
           <div id="call-placeholder" class="call-placeholder">
-            <img src="icons/icon-192.png" alt="" width="72" height="72" />
-            <h2>Llamada con Rafita</h2>
-            <p class="muted">Voz en tiempo real con el mismo cerebro que Telegram.</p>
-            <button id="call-start" class="primary">Iniciar llamada</button>
-            <p class="muted small">Usa auriculares para evitar eco.</p>
+            <span class="call-mark"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-phone"/></svg></span>
+            <h2 class="editor-title">Llamar a Rafita</h2>
+            <p class="prose-caption">
+              Habla en tiempo real con el mismo asistente que cuida tus notas y tu correo.
+            </p>
+            <button id="call-start" class="btn btn-primary">
+              <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg> Iniciar llamada
+            </button>
+            <p class="caption">Necesita HTTPS (o localhost) para el micrófono. Usa auriculares para evitar eco.</p>
           </div>
           <iframe id="call-frame" class="call-frame hidden" title="Llamada con Rafita" allow="microphone"></iframe>
         </div>
       </section>
 
-      <!-- Modal propio (Fase 1.6): confirmaciones y avisos sin dialogos nativos -->
+      <!-- Modal propio: confirmaciones y avisos sin dialogos nativos -->
       <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
         <div class="modal-card">
-          <h2 id="modal-titulo">Rafita</h2>
-          <p id="modal-mensaje"></p>
+          <h2 id="modal-titulo" class="modal-title">Rafita</h2>
+          <p id="modal-mensaje" class="modal-message"></p>
           <div class="modal-actions">
-            <button id="modal-cancelar" class="ghost">Cancelar</button>
-            <button id="modal-aceptar" class="primary">Aceptar</button>
+            <button id="modal-cancelar" class="btn btn-ghost">Cancelar</button>
+            <button id="modal-aceptar" class="btn btn-primary">Aceptar</button>
           </div>
         </div>
       </div>
@@ -142,6 +256,6 @@
   </section>
 
   <script src="config.js"></script>
-  <script src="app-f9a05624.js"></script>
+  <script src="app-0d9d00fc.js"></script>
 </body>
 </html>

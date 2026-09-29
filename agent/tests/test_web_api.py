@@ -360,16 +360,17 @@ def test_call_page_security_headers(monkeypatch):
     assert "camera=()" in headers["Permissions-Policy"]
 
 
-def test_tokens_css_servido_por_el_servidor_de_voz():
-    """El token de diseno unificado debe servirse en la pagina de llamada."""
+def test_design_tokens_css_servido_por_el_servidor_de_voz():
+    """El sistema de diseno unificado debe servirse en la pagina de llamada."""
     from fastapi.testclient import TestClient
 
     from src.voice_stream import server as vs
 
     client = TestClient(vs.app)
-    resp = client.get("/tokens.css")
+    resp = client.get("/design-tokens.css")
     assert resp.status_code == 200
-    assert "--font-sans" in resp.text
+    assert "--font-ui" in resp.text
+    assert "--paper" in resp.text
     assert resp.headers.get("content-type", "").startswith("text/css")
 
 
@@ -427,7 +428,7 @@ def test_build_web_minifica_y_hashea(tmp_path):
     spec.loader.exec_module(modulo)
     salida = tmp_path / "app-dist"
     hasheados = modulo.build(salida)
-    assert set(hasheados) == {"app.js", "styles.css", "tokens.css"}
+    assert set(hasheados) == {"app.js", "styles.css", "design-tokens.css"}
     for nombre, destino in hasheados.items():
         assert (salida / destino).exists()
         assert destino != nombre  # lleva hash

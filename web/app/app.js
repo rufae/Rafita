@@ -129,10 +129,50 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 /* ---------- chat ---------- */
 
-function addBubble(text, cls) {
+function horaCorta(fechaISO) {
+  const d = fechaISO ? new Date(String(fechaISO).replace(' ', 'T')) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Presentacion de los mensajes (mismas clases que antes: .bubble .bot/.user).
+function crearBurbuja(texto, rol, fechaISO) {
   const div = document.createElement('div');
-  div.className = `bubble ${cls}`;
-  div.textContent = text;
+  if (rol === 'typing') {
+    div.className = 'bubble typing';
+    div.setAttribute('role', 'status');
+    div.textContent = 'Rafita está escribiendo';
+    const punto = document.createElement('span');
+    punto.className = 'dot';
+    div.prepend(punto);
+    return div;
+  }
+  div.className = `bubble ${rol}`;
+  const cuerpo = document.createElement('div');
+  if (rol === 'bot') {
+    const quien = document.createElement('span');
+    quien.className = 'who';
+    quien.textContent = 'Rafita';
+    cuerpo.appendChild(quien);
+  }
+  const parrafo = document.createElement('p');
+  parrafo.className = 'text';
+  parrafo.textContent = texto;
+  cuerpo.appendChild(parrafo);
+  const hora = horaCorta(fechaISO);
+  if (hora) {
+    const tiempo = document.createElement('time');
+    tiempo.className = 'time';
+    tiempo.textContent = hora;
+    cuerpo.appendChild(tiempo);
+  }
+  div.appendChild(cuerpo);
+  return div;
+}
+
+function addBubble(text, cls) {
+  const rol = cls.includes('typing') ? 'typing' : cls.includes('user') ? 'user' : 'bot';
+  const div = crearBurbuja(text, rol, '');
   $('#chat-messages').appendChild(div);
   $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
   return div;
@@ -155,23 +195,19 @@ async function loadChatHistory(acumular) {
     if (previo) previo.remove();
     // Historial mas reciente primero en la API; los mensajes mas antiguos se
     // insertan ARRIBA en orden cronologico (Fase 4.3).
-    const crearBurbuja = (m) => {
-      const div = document.createElement('div');
-      div.className = `bubble ${m.role === 'user' ? 'user' : 'bot'}`;
-      div.textContent = m.content;
-      return div;
-    };
+    const burbujaDe = (m) =>
+      crearBurbuja(m.content, m.role === 'user' ? 'user' : 'bot', m.created_at);
     const burbujas = data.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
     if (chatOffset === 0 && !burbujas.length)
       addBubble('Hola, soy Rafita. ¿En qué te ayudo?', 'bot');
     if (mas) {
       const ancla = box.querySelector('.bubble');
       [...burbujas].reverse().forEach((m) => {
-        box.insertBefore(crearBurbuja(m), ancla);
+        box.insertBefore(burbujaDe(m), ancla);
       });
     } else {
       burbujas.forEach((m) => {
-        box.appendChild(crearBurbuja(m));
+        box.appendChild(burbujaDe(m));
       });
     }
     chatOffset += data.messages.length;
