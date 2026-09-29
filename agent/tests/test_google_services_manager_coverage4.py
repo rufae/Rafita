@@ -327,6 +327,10 @@ async def test_task_crud_uses_task_parameter():
     assert captured["insert"]["tasklist"] == "@default"
     assert captured["insert"]["body"] == {"title": "Comprar pan"}
 
+    con_fecha = await manager.create_task("Pagar recibo", due="2026-10-01")
+    assert con_fecha["due"] == "2026-10-01"
+    assert captured["insert"]["body"]["due"] == "2026-10-01T00:00:00.000Z"
+
     completed = await manager.complete_task("t1")
     assert completed["success"] is True
     assert captured["patch"]["body"] == {"status": "completed"}

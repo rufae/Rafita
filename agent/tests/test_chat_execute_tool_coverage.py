@@ -875,6 +875,17 @@ async def test_manage_google_tasks_variants(monkeypatch):
     )
     assert created["success"]
 
+    # Con fecha relativa: se parsea y se pasa como due (regresion 2026-09-29).
+    calls: list = []
+    monkeypatch.setattr(
+        chat_mod.google_services, "create_task", _fn({"success": True}, calls=calls)
+    )
+    con_fecha = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "create", "title": "Pagar", "due": "mañana"}
+    )
+    assert con_fecha["success"]
+    assert calls and calls[-1][1].get("due")
+
     missing_id = await chat_mod._execute_tool(1, "manage_google_tasks", {"action": "complete"})
     assert not missing_id["success"]
     monkeypatch.setattr(chat_mod.google_services, "complete_task", _fn({"success": True}))
