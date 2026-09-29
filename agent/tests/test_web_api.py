@@ -270,3 +270,56 @@ def test_meetings_api(monkeypatch, tmp_path):
         headers=headers,
     )
     assert vacio.status_code == 400
+
+
+def test_google_device_flow_api(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+
+    # Sin configurar -> 503 con pistas
+    no = client.post("/api/auth/google/device/start")
+    assert no.status_code == 503
+    assert "TVs and Limited Input" in no.json()["hint"]
+
+    monkeypatch.setattr(settings, "google_web_client_id", "id")
+    monkeypatch.setattr(settings, "google_web_client_secret", "secreto")
+
+    async def fake_start():
+        return {
+            "device_code": "d1",
+            "user_code": "ABCD-EFGH",
+            "verification_url": "https://google.com/device",
+            "interval": 5,
+            "expires_in": 1800,
+        }
+
+    monkeypatch.setattr(web_api, "google_device_start", fake_start)
+    inicio = client.post("/api/auth/google/device/start")
+    assert inicio.status_code == 200
+    assert inicio.json()["user_code"] == "ABCD-EFGH"
+    state = inicio.json()["state"]
+
+    # pendiente
+    async def fake_pending(device_code):
+        return {"status": "pending"}
+
+    monkeypatch.setattr(web_api, "google_device_poll", fake_pending)
+    pend = client.get("/api/auth/google/device/poll?state=" + state)
+    assert pend.status_code == 200 and pend.json()["status"] == "pending"
+
+    # autorizado -> crea usuario y devuelve token
+    async def fake_ok(device_code):
+        return {"status": "ok", "email": "nuevo@x.com"}
+
+    monkeypatch.setattr(web_api, "google_device_poll", fake_ok)
+    ok = client.get("/api/auth/google/device/poll?state=" + state)
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "ok"
+    assert ok.json()["user"]["email"] == "nuevo@x.com"
+    token = ok.json()["token"]
+    me = client.get("/api/auth/me", headers={"Authorization": "Bearer " + token})
+    assert me.status_code == 200
+
+    # el state ya no sirve dos veces
+    repetido = client.get("/api/auth/google/device/poll?state=" + state)
+    assert repetido.status_code == 404
+    assert client.get("/api/auth/google/device/poll?state=inexistente").status_code == 404

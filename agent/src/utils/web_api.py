@@ -24,6 +24,8 @@ from src.utils.web_auth import (
     exchange_google_code,
     google_auth_url,
     google_configured,
+    google_device_poll,
+    google_device_start,
     hash_password,
     verify_password,
 )
@@ -34,6 +36,8 @@ router = APIRouter(prefix="/api")
 WEB_CHAT_BASE = 900_000_000
 # Estados OAuth en memoria (un solo proceso) con caducidad.
 _GOOGLE_STATES: dict[str, float] = {}
+# Sesiones del flujo de dispositivo: state -> {device_code, exp}
+_DEVICE_SESSIONS: dict[str, dict[str, Any]] = {}
 _STATE_TTL_S = 600
 _MAX_NOTE_BYTES = 512_000
 
@@ -151,19 +155,82 @@ async def auth_google_callback(request: Request, code: str = "", state: str = ""
     info = await exchange_google_code(code, str(request.base_url))
     if not info or not info.get("email"):
         raise HTTPException(status_code=401, detail="No se pudo validar la cuenta de Google")
-    email = str(info["email"]).strip().lower()
-    user = await db.get_web_user_by_email(email)
-    if not user:
-        sin_usuarios = await db.count_web_users() == 0
-        es_admin = sin_usuarios or email == (settings.web_admin_email or "").strip().lower()
-        user_id = await db.create_web_user(email, "", is_admin=es_admin)
-        user = await db.get_web_user(user_id)
-        if not user:
-            raise HTTPException(status_code=500, detail="No se pudo crear el usuario")
-        logger.info("Web: usuario creado via Google (%s)", email)
+    user = await _upsert_google_user(str(info["email"]))
     if not (settings.web_auth_secret or "").strip():
         raise HTTPException(status_code=503, detail="Login web deshabilitado (WEB_AUTH_SECRET)")
     return RedirectResponse("/app/#token=%s" % create_token(user))
+
+
+async def _upsert_google_user(email: str) -> dict[str, Any]:
+    """Login o alta del usuario de Google (el primero es admin)."""
+    email = email.strip().lower()
+    user = await db.get_web_user_by_email(email)
+    if user:
+        return user
+    sin_usuarios = await db.count_web_users() == 0
+    es_admin = sin_usuarios or email == (settings.web_admin_email or "").strip().lower()
+    user_id = await db.create_web_user(email, "", is_admin=es_admin)
+    creado = await db.get_web_user(user_id)
+    if not creado:
+        raise HTTPException(status_code=500, detail="No se pudo crear el usuario")
+    logger.info("Web: usuario creado via Google (%s)", email)
+    return creado
+
+
+@router.post("/auth/google/device/start")
+async def auth_google_device_start():
+    """Inicia Sign in with Google por flujo de dispositivo (ideal para LAN)."""
+    if not google_configured():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Google no configurado para la web",
+                "hint": (
+                    "Crea un cliente OAuth de tipo 'TVs and Limited Input devices' en "
+                    "Google Cloud Console y define GOOGLE_WEB_CLIENT_ID y "
+                    "GOOGLE_WEB_CLIENT_SECRET en el .env (no necesita redirect URI)."
+                ),
+            },
+        )
+    datos = await google_device_start()
+    if not datos or not datos.get("device_code"):
+        raise HTTPException(status_code=502, detail="Google no respondio al iniciar el flujo")
+    state = secrets.token_urlsafe(16)
+    _DEVICE_SESSIONS[state] = {
+        "device_code": datos["device_code"],
+        "exp": time.time() + int(datos.get("expires_in", 1800) or 1800),
+    }
+    return {
+        "state": state,
+        "user_code": datos.get("user_code", ""),
+        "verification_url": datos.get("verification_url") or datos.get("verification_uri", ""),
+        "interval": int(datos.get("interval", 5) or 5),
+        "expires_in": int(datos.get("expires_in", 1800) or 1800),
+    }
+
+
+@router.get("/auth/google/device/poll")
+async def auth_google_device_poll(state: str):
+    sesion = _DEVICE_SESSIONS.get(state)
+    if not sesion:
+        raise HTTPException(status_code=404, detail="Sesion de dispositivo no encontrada")
+    if float(sesion.get("exp", 0)) < time.time():
+        _DEVICE_SESSIONS.pop(state, None)
+        raise HTTPException(status_code=410, detail="Codigo caducado; vuelve a intentarlo")
+    resultado = await google_device_poll(str(sesion["device_code"]))
+    if resultado.get("status") == "pending":
+        return {"status": "pending"}
+    if resultado.get("status") != "ok":
+        _DEVICE_SESSIONS.pop(state, None)
+        raise HTTPException(
+            status_code=401,
+            detail="No se pudo validar la cuenta (%s)" % resultado.get("detail", "?"),
+        )
+    _DEVICE_SESSIONS.pop(state, None)
+    user = await _upsert_google_user(str(resultado.get("email", "")))
+    if not (settings.web_auth_secret or "").strip():
+        raise HTTPException(status_code=503, detail="Login web deshabilitado (WEB_AUTH_SECRET)")
+    return {"status": "ok", "token": create_token(user), "user": _user_public(user)}
 
 
 @router.get("/auth/users")
