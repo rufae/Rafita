@@ -773,8 +773,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "manage_google_tasks",
             "description": "Gestiona las tareas del usuario (Google Tasks si esta conectado; "
             "si no, tareas LOCALES integradas, igual de funcional): list (listar), "
-            "create (crear con titulo), complete (marcar hecha por task_id), delete "
-            "(borrar por task_id). Usalo para 'anademe una tarea', 'que tareas tengo', "
+            "create (crear con titulo y, si la dio, fecha en due), complete "
+            "(marcar hecha por task_id), delete (borrar por task_id). Usalo "
+            "SIEMPRE que el usuario pida guardar, apuntar o recordar algo: "
+            "'guarda esta tarea', 'apunta que...', 'recuérdame...', 'anademe "
+            "una tarea', 'para mañana tengo que...', 'que tareas tengo', "
             "'marca como hecha la tarea...'.",
             "parameters": {
                 "type": "object",
@@ -785,7 +788,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "title": {
                         "type": "string",
-                        "description": "Titulo de la tarea (para create)",
+                        "description": "Titulo completo de la tarea (para create)",
+                    },
+                    "due": {
+                        "type": "string",
+                        "description": "Fecha limite si el usuario la dio, tal cual "
+                        "('mañana', 'el viernes', 'en 3 dias', '2026-10-01')",
                     },
                     "task_id": {
                         "type": "string",

@@ -1685,12 +1685,27 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 title = args.get("title", "").strip()
                 if not title:
                     return {"success": False, "message": "Indica el título de la tarea."}
+                due_date = ""
+                when = str(args.get("due", "") or "").strip()
+                if when:
+                    from src.services.google_services_manager import parse_relative_datetime
+
+                    parsed = parse_relative_datetime(when)
+                    if parsed:
+                        due_date = parsed.date().isoformat()
                 if use_google:
-                    return await google_services.create_task(title)
-                task_id = await db.add_task(chat_id, title)
+                    result = await google_services.create_task(title, due=due_date or None)
+                    if due_date and result.get("success"):
+                        result["message"] = "Tarea guardada en Google Tasks para el %s: %s" % (
+                            due_date,
+                            title,
+                        )
+                    return result
+                task_id = await db.add_task(chat_id, title, due=due_date or None)
+                aviso = " para el %s" % due_date if due_date else ""
                 return {
                     "success": True,
-                    "message": "Tarea guardada localmente: %s (id: %s)" % (title, task_id),
+                    "message": "Tarea guardada localmente%s: %s (id: %s)" % (aviso, title, task_id),
                 }
             if action in ("complete", "delete"):
                 task_id = args.get("task_id", "").strip()

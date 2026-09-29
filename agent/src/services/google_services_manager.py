@@ -699,12 +699,21 @@ class GoogleServicesManager:
         data = await self._run(lambda: self.tasks.tasklists().list(), "listar listas de tareas")
         return data.get("items", [])
 
-    async def create_task(self, title: str, tasklist: str = "@default") -> dict[str, Any]:
+    async def create_task(
+        self, title: str, tasklist: str = "@default", due: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"title": title}
+        if due:
+            # Google Tasks espera RFC3339; la fecha se marca a medianoche UTC.
+            body["due"] = "%sT00:00:00.000Z" % due
         data = await self._run(
-            lambda: self.tasks.tasks().insert(tasklist=tasklist, body={"title": title}),
+            lambda: self.tasks.tasks().insert(tasklist=tasklist, body=body),
             "crear tarea",
         )
-        return {"success": True, "id": data.get("id"), "title": data.get("title", title)}
+        result = {"success": True, "id": data.get("id"), "title": data.get("title", title)}
+        if due:
+            result["due"] = due
+        return result
 
     async def delete_task(self, task_id: str, tasklist: str = "@default") -> dict[str, Any]:
         # La API espera el parámetro `task` (no `taskId`) — bug detectado por el E2E.
