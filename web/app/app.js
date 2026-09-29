@@ -135,6 +135,8 @@ function addBubble(text, cls) {
 }
 
 async function loadChatHistory() {
+  const boxInicial = $('#chat-messages');
+  boxInicial.innerHTML = skeletonHTML(2);
   try {
     const data = await api('/chat/history?limit=30');
     const box = $('#chat-messages');
@@ -202,12 +204,30 @@ async function loadNotes() {
   const query = encodeURIComponent($('#vault-search').value.trim());
   const folder = encodeURIComponent($('#vault-folder').value.trim());
   const list = $('#vault-list');
-  list.innerHTML = '<li class="muted">Cargando…</li>';
+  list.innerHTML = skeletonHTML(4);
   try {
     const data = await api(`/vault/notes?query=${query}&folder=${folder}`);
     list.innerHTML = '';
     if (!data.notes.length) {
-      list.innerHTML = '<li class="muted">No hay notas que coincidan.</li>';
+      pintarVacio(
+        list,
+        '🗒️',
+        query || folder ? 'Sin resultados' : 'Aún no hay notas',
+        query || folder
+          ? 'Prueba con otra búsqueda o borra el filtro de carpeta.'
+          : 'Crea tu primera nota para empezar tu bóveda.',
+        query || folder ? 'Limpiar búsqueda' : 'Nueva nota',
+        'vault-empty-cta',
+        () => {
+          if (query || folder) {
+            $('#vault-search').value = '';
+            $('#vault-folder').value = '';
+            loadNotes();
+          } else {
+            $('#vault-new').click();
+          }
+        }
+      );
       return;
     }
     data.notes.forEach((note) => {
@@ -220,7 +240,11 @@ async function loadNotes() {
       list.appendChild(li);
     });
   } catch (e) {
-    list.innerHTML = `<li class="error">Error: ${e.message}</li>`;
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'error';
+    li.textContent = 'Error: ' + e.message;
+    list.appendChild(li);
   }
 }
 
@@ -329,12 +353,20 @@ function formatDuration(seconds) {
 
 async function loadMeetings() {
   const list = $('#meet-list');
-  list.innerHTML = '<li class="muted">Cargando…</li>';
+  list.innerHTML = skeletonHTML(3);
   try {
     const data = await api('/meetings');
     list.innerHTML = '';
     if (!data.meetings.length) {
-      list.innerHTML = '<li class="muted">Aún no hay reuniones. Graba una con el botón de arriba.</li>';
+      pintarVacio(
+        list,
+        '🎙️',
+        'Aún no hay reuniones',
+        'Graba tu primera reunión: la transcribimos, separamos hablantes y generamos el acta.',
+        'Grabar una reunión',
+        'meet-empty-cta',
+        () => $('#meet-mic').click()
+      );
       return;
     }
     data.meetings.forEach((m) => {
@@ -347,7 +379,11 @@ async function loadMeetings() {
       list.appendChild(li);
     });
   } catch (e) {
-    list.innerHTML = `<li class="error">Error: ${e.message}</li>`;
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'error';
+    li.textContent = 'Error: ' + e.message;
+    list.appendChild(li);
   }
 }
 
@@ -455,6 +491,28 @@ $('#call-start').addEventListener('click', async () => {
 });
 
 /* ---------- utilidades ---------- */
+
+function skeletonHTML(n) {
+  return Array.from({ length: n }, () => '<li class="skeleton"></li>').join('');
+}
+
+function vacioHTML(icono, titulo, texto, ctaTexto, ctaId) {
+  return (
+    '<li class="vacio">' +
+    '<div class="icono" aria-hidden="true">' + icono + '</div>' +
+    '<strong></strong><span class="muted"></span>' +
+    '<button class="primary" id="' + ctaId + '"></button></li>'
+  );
+}
+
+function pintarVacio(contenedor, icono, titulo, texto, ctaTexto, ctaId, alPulsar) {
+  contenedor.innerHTML = vacioHTML(icono, titulo, texto, ctaTexto, ctaId);
+  contenedor.querySelector('strong').textContent = titulo;
+  contenedor.querySelector('.muted').textContent = texto;
+  const cta = contenedor.querySelector('#' + ctaId);
+  cta.textContent = ctaTexto;
+  cta.addEventListener('click', alPulsar);
+}
 
 function debounce(fn, ms) {
   let timer = null;
