@@ -218,3 +218,55 @@ async def test_procesar_sin_transcripcion_marca_error(monkeypatch, tmp_path):
     audio.write_bytes(b"x")
     await ms._procesar(meeting_id, audio)
     assert fake_db.rows[meeting_id]["status"] == "error"
+
+
+async def test_editar_reunion_actualiza_nota_y_conserva_secciones(monkeypatch, tmp_path):
+    fake_db = _FakeDB()
+    monkeypatch.setattr(ms, "db", fake_db)
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "obsidian_vault_dir", str(tmp_path / "vault"))
+    carpeta = tmp_path / "vault" / "Reuniones"
+    carpeta.mkdir(parents=True)
+    nota = carpeta / "2026-09-29 1200 Reunion.md"
+    nota.write_text(
+        "---\ntitle: Reunion\ntipo: reunion\n---\n\n# Resumen ejecutivo\nok\n\n"
+        "## Puntos clave\n- punto importante\n\n## Decisiones\n- decision\n\n"
+        "## Tareas y compromisos\n- [ ] tarea\n\n## Transcripción\n[00:00] Hablante 1: hola\n",
+        encoding="utf-8",
+    )
+    mid = await fake_db.create_meeting(1, "Reunion")
+    await fake_db.update_meeting(
+        mid,
+        note_path="Reuniones/2026-09-29 1200 Reunion.md",
+        transcript="[00:00] Hablante 1: hola",
+    )
+    actualizada = await ms.editar(
+        mid, 1, titulo="Reunión con Ana", transcripcion="[00:00] Hablante 1: buenas tardes"
+    )
+    assert actualizada["title"] == "Reunión con Ana"
+    assert actualizada["transcript"] == "[00:00] Hablante 1: buenas tardes"
+    contenido = nota.read_text(encoding="utf-8")
+    assert "title: Reunión con Ana" in contenido
+    assert "buenas tardes" in contenido and "hola" not in contenido
+    # el resto del acta se conserva
+    assert "## Puntos clave" in contenido and "- punto importante" in contenido
+    assert "## Decisiones" in contenido and "- decision" in contenido
+
+
+async def test_borrar_reunion_borra_su_acta(monkeypatch, tmp_path):
+    fake_db = _FakeDB()
+    monkeypatch.setattr(ms, "db", fake_db)
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "obsidian_vault_dir", str(tmp_path / "vault"))
+    carpeta = tmp_path / "vault" / "Reuniones"
+    carpeta.mkdir(parents=True)
+    nota = carpeta / "acta.md"
+    nota.write_text("# Acta\n", encoding="utf-8")
+    mid = await fake_db.create_meeting(1, "Reunion")
+    await fake_db.update_meeting(mid, note_path="Reuniones/acta.md")
+    assert await ms.borrar(mid, 1) is True
+    assert not nota.exists()
+    # sin permiso no borra ni edita
+    mid2 = await fake_db.create_meeting(1, "Otra")
+    assert await ms.editar(mid2, 99, titulo="x") is None
+    assert await ms.borrar(mid2, 99) is False

@@ -363,6 +363,60 @@ async def listar(user_id: int) -> list[dict[str, Any]]:
     ]
 
 
+async def editar(
+    meeting_id: int,
+    user_id: int,
+    titulo: str | None = None,
+    transcripcion: str | None = None,
+) -> dict[str, Any] | None:
+    """Edita titulo y/o transcripcion de una reunion.
+
+    El acta de la boveda se actualiza de forma quirurgica: se cambia el titulo
+    del frontmatter y la seccion de transcripcion, conservando el resumen,
+    puntos clave, decisiones y tareas. El indexador del vault la reindexa.
+    """
+    import re
+
+    from src.utils.path_safety import resolve_within
+
+    meeting = await db.get_meeting(meeting_id)
+    if not meeting or int(meeting.get("user_id", 0)) != int(user_id):
+        return None
+    campos: dict[str, Any] = {}
+    if titulo is not None and titulo.strip():
+        campos["title"] = titulo.strip()
+    if transcripcion is not None:
+        campos["transcript"] = transcripcion
+    if campos:
+        await db.update_meeting(meeting_id, **campos)
+
+    nota = str(meeting.get("note_path") or "")
+    if nota:
+        try:
+            ruta = resolve_within(settings.obsidian_vault_path, settings.obsidian_vault_path / nota)
+            if ruta.exists():
+                contenido = ruta.read_text(encoding="utf-8")
+                if campos.get("title"):
+                    contenido = re.sub(
+                        r"(?m)^title: .*$", "title: %s" % campos["title"], contenido, count=1
+                    )
+                if transcripcion is not None:
+                    # Tolera la cabecera con o sin tilde (notas antiguas/manuales).
+                    marca = re.search(r"(?m)^##\s*Transcripci[oó]n\s*$", contenido)
+                    if marca:
+                        contenido = (
+                            contenido[: marca.start()]
+                            + "## Transcripción\n"
+                            + (transcripcion or "(sin transcripcion)")
+                            + "\n"
+                        )
+                ruta.write_text(contenido, encoding="utf-8")
+                logger.info("Reuniones #%d: acta editada (%s)", meeting_id, ruta.name)
+        except Exception as e:
+            logger.warning("Reuniones #%d: no se pudo actualizar el acta: %s", meeting_id, e)
+    return await db.get_meeting(meeting_id)
+
+
 async def detalle(meeting_id: int, user_id: int) -> dict[str, Any] | None:
     meeting = await db.get_meeting(meeting_id)
     if not meeting or int(meeting.get("user_id", 0)) != int(user_id):
@@ -374,7 +428,7 @@ async def detalle(meeting_id: int, user_id: int) -> dict[str, Any] | None:
     }
 
 
-async def borrar(meeting_id: int, user_id: int) -> bool:
+async def borrar(meeting_id: int, user_id: int, borrar_nota: bool = True) -> bool:
     meeting = await db.get_meeting(meeting_id)
     if not meeting or int(meeting.get("user_id", 0)) != int(user_id):
         return False
@@ -385,5 +439,15 @@ async def borrar(meeting_id: int, user_id: int) -> bool:
                 Path(audio + sufijo).unlink(missing_ok=True)
             except OSError:
                 pass
+    nota = str(meeting.get("note_path") or "")
+    if borrar_nota and nota:
+        try:
+            from src.utils.path_safety import resolve_within
+
+            ruta = resolve_within(settings.obsidian_vault_path, settings.obsidian_vault_path / nota)
+            ruta.unlink(missing_ok=True)
+            logger.info("Reuniones #%d: acta borrada (%s)", meeting_id, ruta.name)
+        except Exception as e:
+            logger.warning("Reuniones #%d: no se pudo borrar el acta: %s", meeting_id, e)
     await db.delete_meeting(meeting_id)
     return True
