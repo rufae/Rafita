@@ -474,3 +474,68 @@ offset de chat); Lighthouse sin regresiones y con el único limitador restante
 ### Gate de la Fase 5
 `ruff`/`mypy` limpios; **1.324 tests** (8 unitarios JS + 1 E2E, que se salta sin entorno);
 `biome ci web/` limpio y añadido a CI; smoke post-formateo sin regresiones.
+
+---
+
+## REDISEÑO VISUAL COMPLETO (2026-09-29)
+
+Encargo: identidad editorial/artesanal propia; prohibido navy+cian, glass,
+tarjetas rgba, glow, degradados radiales genéricos, estética SaaS/hacker,
+hover con `translateY(-1px)`. Solo presentación: **endpoints, API, auth,
+almacenamiento, navegación, WebSocket, audio, vault y lógica intactos**
+(confirmado con el E2E real: 9/9).
+
+### Sistema de diseño
+- **`web/app/design-tokens.css`** sustituye a `tokens.css`: fuente única
+  (color, tipografía, espaciado, radios, bordes, sombras, z-index, duraciones,
+  curvas, breakpoints). La SPA y la llamada lo consumen; la llamada desde su
+  origen (`GET /design-tokens.css`, ruta y tests renombrados).
+- Paleta de **papel cálido + tinta + terracota** (claro) y **carbón cálido**
+  (oscuro, no inversión); salvia y petróleo como secundarios; estados maduros.
+  Tipografía: **serif editorial** (identidad: wordmark, títulos, chat de
+  Rafita, editor del Baúl) + **sans humanista** (interfaz) — fuera `system-ui`
+  como identidad.
+
+### Composición
+- Fuera tarjetas flotantes y cristal: superficies planas, **líneas finas**,
+  sombras casi imperceptibles, espacio negativo y **grano de papel** sutil.
+- Masthead con wordmark serif + marca propia; pestañas como **navegación
+  subrayada** (filete terracota en la activa).
+- **Login asimétrico** en dos columnas editoriales (marca/tesis + acceso),
+  apilado en móvil.
+- **Chat** editorial: Rafita con marca glyph, nombre en serif y hora; usuario
+  en bloque terracota suave; indicador de escritura de tres puntos.
+- **Baúl** como editor real: títulos serif, metadatos en versalitas, cuerpo
+  del editor en serif para lectura larga.
+- **Botones**: sistema completo (primary/secondary/tertiary/ghost/danger/icon
+  + sm) con estados (hover/active/focus/disabled/loading); hover por
+  color/borde, sin `translateY`.
+- **Iconografía**: sprite SVG propio (trazo 1.5) — logo, avatar de Rafita,
+  favicon (SVG nuevo) y wordmark diferenciados; iconos PNG regenerados en la
+  nueva paleta.
+- **Llamada**: los orbes radiales desaparecen → **dos presencias orgánicas
+  conectadas por un hilo**; morfología animada, anillo de tinta, halos por
+  estado, partículas mínimas en "pensando", hilo que fluye según
+  listening/thinking/speaking/reconnecting; el `--level` real sigue animando
+  las presencias. `prefers-reduced-motion` respetado en ambas superficies.
+
+### Verificación (ronda real de revisión y corrección)
+- **axe-core**: **0 violaciones** en login/chat/baúl/reuniones/llamada en
+  claro y oscuro y en la página de llamada.
+- **Contraste medido desde tokens**: todo ≥ 4,5:1 (tinta 13,3-14,2; tinta
+  suave 5,2-6,7; acento 4,8-6,2; texto sobre acento 5,1-5,9; peligro 6,0-6,7).
+  **Problema encontrado y corregido en la revisión**: `--ink-faint` daba
+  3,23/3,91 (captions) → oscurecido a `#6f6656` (claro) y `#8d8471` (oscuro)
+  y recapturado. axe no lo detectaba porque el grano de papel le impide
+  resolver el fondo → por eso el medidor de tokens.
+- **Sin scroll horizontal** a 390 px (login/chat/baúl/llamada).
+- **Revisión de composición**: serif aplicada al wordmark, login a dos
+  columnas, filete de pestaña activa, sans humanista en el cuerpo.
+- **Lógica intacta**: E2E real (login → chat con respuesta del cerebro →
+  crear/abrir/borrar nota) **9/9**; `biome check web/` limpio; **1.324 tests**.
+- **Capturas reales** (19) en `docs/web-screenshots/`: login/chat/baúl/
+  reuniones/llamada en claro y oscuro, móvil, y los cuatro estados de la
+  llamada (idle/listening/thinking/speaking) + idle en ambos temas. Las
+  capturas del manifest (`icons/shot-*.png`) se regeneraron con el rediseño.
+  Nota: la captura de "speaking" se obtuvo disparando el **handler real de la
+  UI** (el turno completo contra el LLM local excedía la ventana de captura).

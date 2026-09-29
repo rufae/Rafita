@@ -1,0 +1,160 @@
+/* ============================================================
+   Rafita — Sistema de diseño (fuente única)
+   Identidad: editorial + artesanal + tecnológica + minimalista.
+   Papel cálido, tinta carbón, terracota como acento, salvia y
+   petróleo como secundarios. Nada neón, nada glass, nada glow.
+   Lo consumen la SPA (web/app) y la página de llamada
+   (web/call_rafita.html) — ninguna redefine su propia identidad.
+   ============================================================ */
+
+:root {
+  /* ---------- color: tema claro (papel cálido) ---------- */
+  --paper: #f5efe3; /* fondo base, marfil cálido */
+  --surface: #fbf7ee; /* superficie elevada, blanco cálido */
+  --surface-2: #ece4d4; /* beige secundario */
+  --surface-3: #e2d8c4; /* beige más profundo (pressed) */
+  --ink: #2a251e; /* texto principal, carbón cálido */
+  --ink-soft: #6c6355; /* texto secundario */
+  --ink-faint: #8d8471; /* metadatos/captions */
+  --line: #ddd3c0; /* bordes finos */
+  --line-strong: #c6b9a1; /* bordes activos */
+  --accent: #a94f2b; /* terracota (acento principal) */
+  --accent-ink: #fbf7ee; /* texto sobre acento */
+  --accent-soft: #f0d9cc; /* tinte terracota para fondos */
+  --secondary: #566a48; /* verde salvia (secundario) */
+  --secondary-soft: #dfe6d5;
+  --info: #33636b; /* azul petróleo (solo informativo) */
+  --info-soft: #d7e5e6;
+  --ok: #4f6b3a;
+  --ok-soft: #dde7d2;
+  --warn: #8a6519;
+  --warn-soft: #f2e4c8;
+  --danger: #9c3a2a;
+  --danger-soft: #f2d9d3;
+  --grain-opacity: 0.5;
+
+  /* ---------- tipografía ---------- */
+  --font-display:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Times New Roman',
+    serif;
+  --font-ui: 'Avenir Next', Avenir, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Liberation Mono', monospace;
+
+  --fs-display: clamp(30px, 4.2vw, 44px);
+  --fs-h1: 26px;
+  --fs-h2: 20px;
+  --fs-h3: 17px;
+  --fs-body: 15.5px;
+  --fs-sm: 13.5px;
+  --fs-label: 11.5px;
+  --fs-caption: 11px;
+
+  --lh-tight: 1.18;
+  --lh-title: 1.3;
+  --lh-body: 1.6;
+  --lh-prose: 1.75;
+
+  --ls-display: -0.015em;
+  --ls-title: -0.01em;
+  --ls-label: 0.08em;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* ---------- espaciado (escala 4) ---------- */
+  --sp-0: 0;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+
+  /* ---------- formas ---------- */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* ---------- bordes y sombras (muy suaves) ---------- */
+  --border: 1px solid var(--line);
+  --border-strong: 1px solid var(--line-strong);
+  --shadow-1: 0 1px 2px rgba(42, 37, 30, 0.05);
+  --shadow-2: 0 2px 10px rgba(42, 37, 30, 0.07);
+  --shadow-lift: 0 10px 32px rgba(42, 37, 30, 0.1);
+
+  /* ---------- z-index ---------- */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-overlay: 40;
+  --z-modal: 60;
+  --z-toast: 80;
+
+  /* ---------- movimiento ---------- */
+  --t-instant: 90ms;
+  --t-fast: 160ms;
+  --t-base: 240ms;
+  --t-slow: 420ms;
+  --t-breath: 5200ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-inout: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+
+  /* ---------- breakpoints (referencia; usar en @media) ---------- */
+  --bp-sm: 640px;
+  --bp-md: 900px;
+  --bp-lg: 1200px;
+
+  /* ---------- gráfico de identidad ---------- */
+  --glyph-ink: var(--ink);
+}
+
+/* ---------- tema oscuro (carbón cálido, no inversión) ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191611;
+    --surface: #211d16;
+    --surface-2: #2a251c;
+    --surface-3: #332d22;
+    --ink: #ece3d2;
+    --ink-soft: #a79c88;
+    --ink-faint: #8d8471;
+    --line: #332d23;
+    --line-strong: #4a4133;
+    --accent: #d4835c;
+    --accent-ink: #211a12;
+    --accent-soft: #3a2a1e;
+    --secondary: #9db28a;
+    --secondary-soft: #2b3324;
+    --info: #7fb0b6;
+    --info-soft: #1f2f31;
+    --ok: #8fae74;
+    --ok-soft: #27301f;
+    --warn: #d3a34e;
+    --warn-soft: #38301d;
+    --danger: #d98a77;
+    --danger-soft: #3a241f;
+    --grain-opacity: 0.35;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-2: 0 2px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lift: 0 12px 36px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ---------- accesibilidad: menos movimiento ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-instant: 0ms;
+    --t-fast: 0ms;
+    --t-base: 0ms;
+    --t-slow: 0ms;
+    --t-breath: 0ms;
+  }
+}
