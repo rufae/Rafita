@@ -52,6 +52,17 @@ navegador se hace por un proxy (Nginx Proxy Manager en el HP). Ejemplo:
    `window.RAFITA_CONFIG = { callOrigin: "https://voz.rafita.home" };`
    (vacío = mismo host, puerto 8001).
 
+> **Importante si el proxy está en Docker**: publicar los puertos en
+> `127.0.0.1` no sirve al proxy (no puede alcanzar la IP LAN del host). O se
+> publican en la LAN (`"8010:8000"` / `"8001:8001"`) o se conecta el
+> contenedor del proxy a la red `rafita-network` y se usa
+> `http://rafita-agent-core:8000` como upstream. Síntoma típico: NPM marca el
+> host «Online» pero responde **502**.
+>
+> **PWA**: el service worker y la instalación requieren **contexto seguro**
+> (HTTPS). Con `HTTP Only` en NPM la web funciona, pero no se podrá instalar
+> como app hasta habilitar un certificado (self-signed o dominio real).
+
 ## Usuarios y autenticación
 
 - **Email + contraseña** (scrypt + JWT firmado con `WEB_AUTH_SECRET`, que se
