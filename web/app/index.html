@@ -13,7 +13,7 @@
 </head>
 <body>
   <!-- Vista de acceso -->
-  <section id="login" class="login hidden">
+  <main id="login" class="login hidden">
     <div class="login-card">
       <img class="logo" src="icons/icon-192.png" alt="Rafita" />
       <h1>Rafita</h1>
@@ -31,20 +31,21 @@
       <div id="google-device" class="google-device hidden"></div>
       <p id="login-error" class="error hidden"></p>
     </div>
-  </section>
+  </main>
 
   <!-- Aplicación -->
   <section id="app" class="app hidden">
-    <header class="topbar">
+    <header class="topbar" role="banner">
+      <h1 class="sr-only">Rafita</h1>
       <div class="brand">
         <img src="icons/icon-192.png" alt="" width="28" height="28" />
         <span>Rafita</span>
       </div>
-      <nav class="tabs" role="tablist">
-        <button class="tab active" data-view="chat" role="tab">Chat</button>
-        <button class="tab" data-view="vault" role="tab">Baúl</button>
-        <button class="tab" data-view="meetings" role="tab">Reuniones</button>
-        <button class="tab" data-view="call" role="tab">Llamar</button>
+      <nav class="tabs" role="tablist" aria-label="Secciones de Rafita">
+        <button class="tab active" id="tab-chat" role="tab" aria-selected="true" aria-controls="view-chat" tabindex="0" data-view="chat">Chat</button>
+        <button class="tab" id="tab-vault" role="tab" aria-selected="false" aria-controls="view-vault" tabindex="-1" data-view="vault">Baúl</button>
+        <button class="tab" id="tab-meetings" role="tab" aria-selected="false" aria-controls="view-meetings" tabindex="-1" data-view="meetings">Reuniones</button>
+        <button class="tab" id="tab-call" role="tab" aria-selected="false" aria-controls="view-call" tabindex="-1" data-view="call">Llamar</button>
       </nav>
       <div class="user">
         <span id="user-email" class="muted"></span>
@@ -54,25 +55,29 @@
 
     <main>
       <!-- Vista Chat -->
-      <section id="view-chat" class="view active">
+      <section id="view-chat" class="view active" role="tabpanel" aria-labelledby="tab-chat" tabindex="0">
         <div id="chat-messages" class="messages" aria-live="polite"></div>
         <form id="chat-form" class="composer">
+          <label class="sr-only" for="chat-input">Mensaje para Rafita</label>
           <input id="chat-input" type="text" placeholder="Escribe a Rafita…" autocomplete="off" required />
           <button class="primary" type="submit">Enviar</button>
         </form>
       </section>
 
       <!-- Vista Baúl -->
-      <section id="view-vault" class="view">
+      <section id="view-vault" class="view" role="tabpanel" aria-labelledby="tab-vault" tabindex="0">
         <div class="vault-toolbar">
+          <label class="sr-only" for="vault-search">Buscar en la bóveda</label>
           <input id="vault-search" type="search" placeholder="Buscar en la bóveda…" />
+          <label class="sr-only" for="vault-folder">Carpeta de la bóveda</label>
           <input id="vault-folder" type="text" placeholder="Carpeta (ej: 00-Inbox)" />
           <button id="vault-new" class="primary">Nueva nota</button>
         </div>
         <div class="vault-grid">
-          <ul id="vault-list" class="note-list"></ul>
+          <ul id="vault-list" class="note-list" tabindex="0" aria-label="Notas de la bóveda"></ul>
           <div class="editor">
             <div class="editor-head">
+              <label class="sr-only" for="note-path">Ruta de la nota</label>
               <input id="note-path" type="text" placeholder="ruta/nota.md" />
               <div class="editor-actions">
                 <button id="note-save" class="primary">Guardar</button>
@@ -86,17 +91,18 @@
       </section>
 
       <!-- Vista Reuniones -->
-      <section id="view-meetings" class="view">
+      <section id="view-meetings" class="view" role="tabpanel" aria-labelledby="tab-meetings" tabindex="0">
         <div class="vault-toolbar">
+          <label class="sr-only" for="meet-title">Título de la reunión</label>
           <input id="meet-title" type="text" placeholder="Título de la reunión (opcional)" />
           <button id="meet-mic" class="primary">● Grabar micro</button>
           <button id="meet-tab" class="ghost">Grabar pestaña</button>
           <span id="meet-status" class="muted small"></span>
         </div>
         <div class="vault-grid">
-          <ul id="meet-list" class="note-list"></ul>
+          <ul id="meet-list" class="note-list" tabindex="0" aria-label="Reuniones grabadas"></ul>
           <div class="editor">
-            <h3 id="meet-detail-title">Detalle de la reunión</h3>
+            <h2 id="meet-detail-title">Detalle de la reunión</h2>
             <p id="meet-detail-meta" class="muted small"></p>
             <div id="meet-summary" class="meet-summary muted small">
               Selecciona o graba una reunión para ver su resumen.
@@ -107,7 +113,7 @@
       </section>
 
       <!-- Vista Llamada -->
-      <section id="view-call" class="view">
+      <section id="view-call" class="view" role="tabpanel" aria-labelledby="tab-call" tabindex="0">
         <div class="call-wrap">
           <div id="call-placeholder" class="call-placeholder">
             <img src="icons/icon-192.png" alt="" width="72" height="72" />
@@ -119,20 +125,20 @@
           <iframe id="call-frame" class="call-frame hidden" title="Llamada con Rafita" allow="microphone"></iframe>
         </div>
       </section>
+
+      <!-- Modal propio (Fase 1.6): confirmaciones y avisos sin dialogos nativos -->
+      <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+        <div class="modal-card">
+          <h2 id="modal-titulo">Rafita</h2>
+          <p id="modal-mensaje"></p>
+          <div class="modal-actions">
+            <button id="modal-cancelar" class="ghost">Cancelar</button>
+            <button id="modal-aceptar" class="primary">Aceptar</button>
+          </div>
+        </div>
+      </div>
     </main>
   </section>
-
-  <!-- Modal propio (Fase 1.6): confirmaciones y avisos sin dialogos nativos -->
-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
-    <div class="modal-card">
-      <h3 id="modal-titulo">Rafita</h3>
-      <p id="modal-mensaje"></p>
-      <div class="modal-actions">
-        <button id="modal-cancelar" class="ghost">Cancelar</button>
-        <button id="modal-aceptar" class="primary">Aceptar</button>
-      </div>
-    </div>
-  </div>
 
   <script src="config.js"></script>
   <script src="app.js"></script>
