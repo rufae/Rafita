@@ -278,6 +278,10 @@ def test_meetings_api(monkeypatch, tmp_path):
 
 def test_google_device_flow_api(monkeypatch, tmp_path):
     client, fake = _cliente(monkeypatch, tmp_path)
+    # Hermetico: sin credenciales de Google (aunque el .env local las tenga).
+    monkeypatch.setattr(settings, "google_web_client_id", "")
+    monkeypatch.setattr(settings, "google_web_client_secret", "")
+    monkeypatch.setattr(settings, "google_web_redirect_uri", "")
 
     # Sin configurar -> 503 con pistas
     no = client.post("/api/auth/google/device/start")
@@ -449,6 +453,9 @@ def test_build_web_minifica_y_hashea(tmp_path):
 def test_google_status_y_errores_vuelven_a_la_spa(monkeypatch, tmp_path):
     """Google: estado consultable y fallos que vuelven a la SPA (no JSON)."""
     client, fake = _cliente(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "google_web_client_id", "")
+    monkeypatch.setattr(settings, "google_web_client_secret", "")
+    monkeypatch.setattr(settings, "google_web_redirect_uri", "")
     estado = client.get("/api/auth/google/status")
     assert estado.status_code == 200
     assert estado.json()["configured"] is False

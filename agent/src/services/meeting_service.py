@@ -77,7 +77,12 @@ def transcribir(audio_wav: Path) -> tuple[list[dict[str, Any]], str]:
     if modelo is None:
         return [], ""
     segmentos_iter, info = modelo.transcribe(
-        str(audio_wav), language="es", vad_filter=True, beam_size=1
+        str(audio_wav),
+        language="es",
+        vad_filter=True,
+        beam_size=1,
+        condition_on_previous_text=False,
+        initial_prompt="Conversación en español con un asistente personal.",
     )
     segmentos = [
         {"start": float(s.start), "end": float(s.end), "text": (s.text or "").strip()}

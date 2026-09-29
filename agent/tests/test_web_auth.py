@@ -56,6 +56,7 @@ def test_jwt_sin_secreto_falla_cerrado(monkeypatch):
 def test_google_configurado(monkeypatch):
     monkeypatch.setattr(settings, "google_web_client_id", "")
     monkeypatch.setattr(settings, "google_web_client_secret", "")
+    monkeypatch.setattr(settings, "google_web_redirect_uri", "")
     assert wa.google_configured() is False
     monkeypatch.setattr(settings, "google_web_client_id", "id")
     monkeypatch.setattr(settings, "google_web_client_secret", "secreto")

@@ -378,3 +378,33 @@ async def test_prepare_tool_phase_reintenta_por_email_inventado(monkeypatch):
     _, _content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo sobre anabel", 1)
     assert len(llamadas) == 2
     assert tool_calls and tool_calls[0]["function"]["name"] == "search_gmail"
+
+
+async def test_guardia_caza_he_anotado(monkeypatch):
+    """Regresion: 'He anotado la tarea' sin herramienta debe reintentarse."""
+    _patch_common(monkeypatch)
+    llamadas = []
+
+    async def respond(messages, tools):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            return 'He anotado la tarea "comprar pilas".', None
+        return "", [
+            {
+                "id": "c1",
+                "function": {
+                    "name": "manage_google_tasks",
+                    "arguments": '{"action": "create", "title": "comprar pilas"}',
+                },
+            }
+        ]
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+
+    async def fake_execute(chat_id, func_name, args):
+        return {"success": True, "message": "ok"}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("apunta comprar pilas", 1)
+    assert len(llamadas) == 2
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"

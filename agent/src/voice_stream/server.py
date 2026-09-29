@@ -45,13 +45,13 @@ app.add_middleware(
 # se emite una frase natural para evitar el silencio. La piscina rota sin
 # repetir y un cooldown evita saturar si hay varias consultas seguidas.
 FILLER_PHRASES = (
-    "Dame un momento, estoy buscando...",
-    "Dejame consultar eso, un segundo...",
-    "Voy a mirarlo, dame un instante...",
-    "Un momento, lo compruebo...",
-    "Estoy en ello, enseguida te digo...",
+    "Dame un momento, por favor...",
+    "Un segundo...",
+    "Estoy en ello...",
+    "Ahora mismo te digo...",
+    "Vale, dame un instante...",
 )
-FILLER_DELAY_S = 1.5
+FILLER_DELAY_S = 2.2
 FILLER_COOLDOWN_S = 25.0
 
 
@@ -257,6 +257,15 @@ async def start_call(request: Request):
         payload = {}
 
     chat_id = payload.get("chat_id", 0)
+    if not chat_id:
+        # Cada llamada empieza con contexto limpio: se borra el historial de
+        # voz anterior (chat_id 0) para que no contamine respuestas nuevas.
+        try:
+            from src.database import db
+
+            await db.delete_chat_history(0)
+        except Exception as e:
+            logger.debug("VoiceStream: no se pudo limpiar historial de voz: %s", e)
     session_id = str(uuid.uuid4())
 
     _active_sessions[session_id] = {
@@ -825,13 +834,15 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
         def _do():
             segments, info = model.transcribe(
                 tmp_path,
-                beam_size=1,
+                beam_size=5,
                 language=settings.language,
-                temperature=0.0,
+                # Fallback de temperatura: mas robusto en audios muy cortos
+                # ("Hola" aislado) sin degradar las frases normales.
+                temperature=[0.0, 0.2, 0.4],
                 vad_filter=True,
                 vad_parameters={
                     "min_silence_duration_ms": 300,
-                    "speech_pad_ms": 200,
+                    "speech_pad_ms": 300,
                 },
                 condition_on_previous_text=False,
                 no_speech_threshold=0.6,

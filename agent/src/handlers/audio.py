@@ -158,10 +158,14 @@ async def _transcribe_file(audio_path: Path) -> str | None:
         loop = asyncio.get_event_loop()
 
         def _do_transcribe():
+            from src.i18n import stt_prompt
+
             segments, info = model.transcribe(
                 str(audio_path),
-                beam_size=1,
+                beam_size=5,
                 language=settings.language,
+                initial_prompt=stt_prompt(),
+                condition_on_previous_text=False,
                 vad_filter=True,
                 vad_parameters={
                     "min_silence_duration_ms": 300,
