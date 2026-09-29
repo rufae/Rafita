@@ -61,12 +61,16 @@ function mostrarAviso(mensaje) {
 // Mensajes para el usuario: nunca un codigo HTTP en crudo.
 let mensajeSesion = '';
 
-async function api(path, options = {}) {
+async function api(path, options = {}, ms) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   let resp;
   try {
-    resp = await fetchConTimeout(`/api${path}`, Object.assign({}, options, { headers }), 10000);
+    resp = await fetchConTimeout(
+      `/api${path}`,
+      Object.assign({}, options, { headers }),
+      ms || 10000,
+    );
   } catch (e) {
     if (e && e.name === 'TypeError') {
       throw new Error('No se pudo conectar con el servidor. Comprueba tu conexión.');
@@ -161,15 +165,86 @@ function horaCorta(fechaISO) {
 }
 
 // Presentacion de los mensajes (mismas clases que antes: .bubble .bot/.user).
+// Markdown minimo y seguro: primero se escapa el HTML y despues se aplican
+// negritas, codigo, titulos y tablas (nunca se ejecuta nada del modelo).
+function renderizarMarkdown(texto) {
+  const escapado = String(texto ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+  const lineas = escapado.split('\n');
+  const salida = [];
+  let i = 0;
+  while (i < lineas.length) {
+    const linea = lineas[i];
+    const esTabla =
+      linea.includes('|') &&
+      i + 1 < lineas.length &&
+      /^\s*\|?[\s:|-]{3,}\|?\s*$/.test(lineas[i + 1]);
+    if (esTabla) {
+      const filas = [];
+      while (i < lineas.length && lineas[i].includes('|')) {
+        filas.push(lineas[i]);
+        i += 1;
+      }
+      const celdas = (fila) =>
+        fila
+          .split('|')
+          .map((c) => c.trim())
+          .filter((c, idx, arr) => !(c === '' && (idx === 0 || idx === arr.length - 1)));
+      const cabecera = celdas(filas[0]);
+      const cuerpoFilas = filas.slice(2).map(celdas);
+      salida.push(
+        '<div class="tabla-scroll"><table><thead><tr>' +
+          cabecera.map((c) => `<th>${c}</th>`).join('') +
+          '</tr></thead><tbody>' +
+          cuerpoFilas
+            .map((fila) => `<tr>${fila.map((c) => `<td>${c}</td>`).join('')}</tr>`)
+            .join('') +
+          '</tbody></table></div>',
+      );
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(linea)) {
+      salida.push(`<strong>${linea.replace(/^#{1,6}\s+/, '')}</strong>`);
+    } else if (linea.trim() === '') {
+      salida.push('<br>');
+    } else {
+      salida.push(linea);
+    }
+    i += 1;
+  }
+  return salida
+    .join('<br>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+// Los mensajes consecutivos del mismo emisor se leen como un grupo: solo el
+// primero lleva avatar y nombre.
+function reagruparBurbujas() {
+  let anterior = '';
+  document.querySelectorAll('#chat-messages .bubble').forEach((b) => {
+    const rol = b.classList.contains('user') ? 'user' : 'bot';
+    b.classList.toggle('continuacion', rol === anterior);
+    anterior = rol;
+  });
+}
+
 function crearBurbuja(texto, rol, fechaISO) {
   const div = document.createElement('div');
   if (rol === 'typing') {
     div.className = 'bubble typing';
     div.setAttribute('role', 'status');
-    div.textContent = 'Rafita está escribiendo';
-    const punto = document.createElement('span');
-    punto.className = 'dot';
-    div.prepend(punto);
+    div.setAttribute('aria-label', 'Rafita está escribiendo');
+    const cuerpo = document.createElement('div');
+    cuerpo.className = 'typing-dots';
+    for (let i = 0; i < 3; i++) {
+      const punto = document.createElement('span');
+      punto.className = 'dot';
+      cuerpo.appendChild(punto);
+    }
+    div.appendChild(cuerpo);
     return div;
   }
   div.className = `bubble ${rol}`;
@@ -182,7 +257,11 @@ function crearBurbuja(texto, rol, fechaISO) {
   }
   const parrafo = document.createElement('p');
   parrafo.className = 'text';
-  parrafo.textContent = texto;
+  if (rol === 'bot') {
+    parrafo.innerHTML = renderizarMarkdown(texto);
+  } else {
+    parrafo.textContent = texto;
+  }
   cuerpo.appendChild(parrafo);
   const hora = horaCorta(fechaISO);
   if (hora) {
@@ -199,6 +278,7 @@ function addBubble(text, cls) {
   const rol = cls.includes('typing') ? 'typing' : cls.includes('user') ? 'user' : 'bot';
   const div = crearBurbuja(text, rol, '');
   $('#chat-messages').appendChild(div);
+  reagruparBurbujas();
   $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
   return div;
 }
@@ -235,6 +315,7 @@ async function loadChatHistory(acumular) {
         box.appendChild(burbujaDe(m));
       });
     }
+    reagruparBurbujas();
     chatOffset += data.messages.length;
     if (data.messages.length >= 30) {
       const mas = document.createElement('div');
@@ -258,7 +339,11 @@ $('#chat-form').addEventListener('submit', async (ev) => {
   addBubble(text, 'user');
   const typing = addBubble('Rafita está escribiendo…', 'bot typing');
   try {
-    const data = await api('/chat', { method: 'POST', body: JSON.stringify({ message: text }) });
+    const data = await api(
+      '/chat',
+      { method: 'POST', body: JSON.stringify({ message: text }) },
+      180000,
+    );
     typing.remove();
     addBubble(data.reply, 'bot');
   } catch (e) {

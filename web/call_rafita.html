@@ -220,6 +220,76 @@
   .status.error .dot { background: var(--danger); }
   @keyframes blink { 50% { opacity: 0.3; } }
 
+  /* ---------- avisos reutilizables (aviso/error/ok) ---------- */
+  .aviso-zona:empty { display: none; }
+  .notice {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: flex-start;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface);
+    font-size: var(--fs-sm);
+    color: var(--ink-soft);
+    line-height: var(--lh-body);
+  }
+  .notice .icon { flex: none; margin-top: 2px; color: var(--ink-faint); }
+  .notice .notice-accion { margin-left: auto; flex: none; }
+  .notice.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: var(--warn-soft); }
+  .notice.warn .icon { color: var(--warn); }
+  .notice.error { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); background: var(--danger-soft); }
+  .notice.error .icon { color: var(--danger); }
+  .notice.ok { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); background: var(--ok-soft); }
+  .notice.ok .icon { color: var(--ok); }
+
+  /* ---------- interruptores (VAD, eco) ---------- */
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    cursor: pointer;
+  }
+  .switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .switch .pista {
+    position: relative;
+    width: 34px;
+    height: 20px;
+    flex: none;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    transition: background-color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+  }
+  .switch .pista::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    transition: transform var(--t-fast) var(--ease-out), background-color var(--t-fast) var(--ease-out);
+  }
+  .switch input:checked + .pista {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .switch input:checked + .pista::after {
+    transform: translateX(14px);
+    background: var(--accent);
+  }
+  .switch input:focus-visible + .pista {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   /* ---------- controles: sistema de botones del diseño ---------- */
   .controls { display: flex; gap: var(--sp-3); justify-content: center; flex-wrap: wrap; }
   .ctl {
@@ -375,6 +445,8 @@
 
   <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"><span class="dot"></span><span id="statusText">Presiona Iniciar para llamar</span></div>
 
+  <div id="avisoZona" class="aviso-zona"></div>
+
   <div class="controls">
     <button id="callBtn" class="ctl primary" aria-label="Iniciar llamada" onclick="toggleCall()"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-phone"/></svg> Iniciar</button>
     <button id="stopBtn" class="ctl stop hidden" aria-label="Parar de hablar" onclick="stopSpeaking()"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-stop"/></svg> Parar</button>
@@ -382,8 +454,8 @@
   </div>
 
   <div class="settings">
-    <label><input type="checkbox" id="vadMode" checked> VAD automático</label>
-    <label><input type="checkbox" id="echoCancel" checked> Cancelar eco</label>
+    <label class="switch"><input type="checkbox" id="vadMode" checked><span class="pista"></span> VAD automático</label>
+    <label class="switch"><input type="checkbox" id="echoCancel" checked><span class="pista"></span> Cancelar eco</label>
     <div id="debugControls" class="hidden">
       <label class="sr-only" for="serverUrl">Servidor (solo depuración)</label>
       <input type="text" id="serverUrl" placeholder="servidor (vacío = este)">
@@ -697,7 +769,9 @@ async function startCall() {
   // Contexto seguro (Fase 0.6): los navegadores solo dan acceso al micro en
   // HTTPS o localhost. En http://<host-de-lan> navigator.mediaDevices no existe.
   if (!window.isSecureContext || !navigator.mediaDevices) {
-    setStatus(STATUS.ERROR, 'El micrófono requiere HTTPS: accede por https:// (o desde localhost) o añade un certificado en el proxy.');
+    const texto = 'El micrófono requiere HTTPS: accede por https:// (o desde localhost) o añade un certificado en el proxy.';
+    setStatus(STATUS.ERROR, texto);
+    mostrarAviso('error', texto);
     return false;
   }
   setStatus(STATUS.CONNECTING, 'Conectando...');
@@ -760,6 +834,8 @@ function conectarSocket() {
       }
       pttBtn.disabled = false;
       setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
+      const zona = document.getElementById('avisoZona');
+      if (zona) zona.innerHTML = '';
       resolve(true);
     };
 
@@ -986,21 +1062,40 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   if (dbg) dbg.classList.remove('hidden');
 }
 
+// Avisos con componente propio (aviso/error/ok), reutilizable.
+function mostrarAviso(tipo, texto, accion) {
+  const zona = document.getElementById('avisoZona');
+  if (!zona) return;
+  zona.innerHTML = '';
+  const caja = document.createElement('div');
+  caja.className = `notice ${tipo}`;
+  const icono = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icono.setAttribute('class', 'icon');
+  const uso = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  uso.setAttribute('href', tipo === 'error' ? '#i-shield' : tipo === 'ok' ? '#i-check' : '#i-phone');
+  icono.appendChild(uso);
+  const mensaje = document.createElement('span');
+  mensaje.textContent = texto;
+  caja.append(icono, mensaje);
+  if (accion) {
+    const boton = document.createElement('a');
+    boton.className = 'ctl ghost notice-accion';
+    boton.href = accion.href;
+    boton.textContent = accion.texto;
+    caja.appendChild(boton);
+  }
+  zona.appendChild(caja);
+}
+
 // Sin token no se puede autorizar la llamada: se explica en vez de fallar y
 // se ofrece el camino de vuelta a Rafita (mismo host en HTTPS).
 if (!authToken) {
   setStatus(STATUS.ERROR, 'Abre esta página desde la pestaña Llamar de Rafita para autorizar el micrófono.');
   log('Sin token de acceso: entra por la pestaña Llamar de Rafita.');
-  if (window.location.protocol === 'https:') {
-    const volver = document.createElement('a');
-    volver.href = `${window.location.protocol}//${window.location.hostname}/`;
-    volver.textContent = 'Ir a Rafita';
-    volver.className = 'mini';
-    volver.style.display = 'inline-block';
-    volver.style.marginTop = '10px';
-    const controles = document.querySelector('.controls');
-    if (controles) controles.appendChild(volver);
-  }
+  const accion = window.location.protocol === 'https:'
+    ? { href: `${window.location.protocol}//${window.location.hostname}/`, texto: 'Ir a Rafita' }
+    : null;
+  mostrarAviso('warn', 'Esta página necesita abrirse desde la pestaña Llamar de Rafita para autorizar el micrófono.', accion);
 }
 
 async function testTTS() {
