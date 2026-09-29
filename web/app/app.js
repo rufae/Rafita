@@ -5,7 +5,7 @@ const TOKEN_KEY = 'rafita_token';
 
 const $ = (sel) => document.querySelector(sel);
 
-let state = { token: localStorage.getItem(TOKEN_KEY) || '', email: '', view: 'chat' };
+const state = { token: localStorage.getItem(TOKEN_KEY) || '', email: '', view: 'chat' };
 
 function show(view) {
   $('#login').classList.toggle('hidden', view !== 'login');
@@ -20,7 +20,9 @@ async function fetchConTimeout(url, opciones, ms) {
     return await fetch(url, Object.assign({}, opciones || {}, { signal: ctrl.signal }));
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      throw new Error('La petición tardó demasiado (' + Math.round(limite / 1000) + 's). Comprueba la conexión.');
+      throw new Error(
+        `La petición tardó demasiado (${Math.round(limite / 1000)}s). Comprueba la conexión.`,
+      );
     }
     throw e;
   } finally {
@@ -58,14 +60,14 @@ function mostrarAviso(mensaje) {
 
 async function api(path, options = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
-  if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
-  const resp = await fetchConTimeout('/api' + path, Object.assign({}, options, { headers }), 10000);
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const resp = await fetchConTimeout(`/api${path}`, Object.assign({}, options, { headers }), 10000);
   if (resp.status === 401) {
     logout();
     throw new Error('sesión caducada');
   }
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.detail || data.error || ('HTTP ' + resp.status));
+  if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
   return data;
 }
 
@@ -98,7 +100,9 @@ function setView(view) {
     t.setAttribute('aria-selected', seleccionada ? 'true' : 'false');
     t.tabIndex = seleccionada ? 0 : -1;
   });
-  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
+  document.querySelectorAll('.view').forEach((v) => {
+    v.classList.toggle('active', v.id === `view-${view}`);
+  });
   if (view === 'vault') loadNotes();
   if (view === 'meetings') loadMeetings();
 }
@@ -127,7 +131,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 function addBubble(text, cls) {
   const div = document.createElement('div');
-  div.className = 'bubble ' + cls;
+  div.className = `bubble ${cls}`;
   div.textContent = text;
   $('#chat-messages').appendChild(div);
   $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
@@ -153,17 +157,22 @@ async function loadChatHistory(acumular) {
     // insertan ARRIBA en orden cronologico (Fase 4.3).
     const crearBurbuja = (m) => {
       const div = document.createElement('div');
-      div.className = 'bubble ' + (m.role === 'user' ? 'user' : 'bot');
+      div.className = `bubble ${m.role === 'user' ? 'user' : 'bot'}`;
       div.textContent = m.content;
       return div;
     };
     const burbujas = data.messages.filter((m) => m.role === 'user' || m.role === 'assistant');
-    if (chatOffset === 0 && !burbujas.length) addBubble('Hola, soy Rafita. ¿En qué te ayudo?', 'bot');
+    if (chatOffset === 0 && !burbujas.length)
+      addBubble('Hola, soy Rafita. ¿En qué te ayudo?', 'bot');
     if (mas) {
       const ancla = box.querySelector('.bubble');
-      [...burbujas].reverse().forEach((m) => box.insertBefore(crearBurbuja(m), ancla));
+      [...burbujas].reverse().forEach((m) => {
+        box.insertBefore(crearBurbuja(m), ancla);
+      });
     } else {
-      burbujas.forEach((m) => box.appendChild(crearBurbuja(m)));
+      burbujas.forEach((m) => {
+        box.appendChild(crearBurbuja(m));
+      });
     }
     chatOffset += data.messages.length;
     if (data.messages.length >= 30) {
@@ -175,7 +184,7 @@ async function loadChatHistory(acumular) {
       box.scrollTop = box.scrollHeight;
     }
   } catch (e) {
-    addBubble('No pude cargar el historial: ' + e.message, 'bot');
+    addBubble(`No pude cargar el historial: ${e.message}`, 'bot');
   }
 }
 
@@ -193,13 +202,13 @@ $('#chat-form').addEventListener('submit', async (ev) => {
     addBubble(data.reply, 'bot');
   } catch (e) {
     typing.remove();
-    addBubble('Error: ' + e.message, 'bot');
+    addBubble(`Error: ${e.message}`, 'bot');
   }
 });
 
 /* ---------- baúl ---------- */
 
-let currentNote = null;
+let _currentNote = null;
 let noteDirty = false;
 
 // Fase 1.4: aviso de cambios sin guardar al cambiar de nota o salir.
@@ -241,7 +250,7 @@ async function loadNotes(acumular) {
   }
   try {
     const data = await api(
-      `/vault/notes?query=${query}&folder=${folder}&limit=50&offset=${mas ? vaultOffset : 0}`
+      `/vault/notes?query=${query}&folder=${folder}&limit=50&offset=${mas ? vaultOffset : 0}`,
     );
     if (!mas) list.innerHTML = '';
     if (!data.notes.length) {
@@ -262,7 +271,7 @@ async function loadNotes(acumular) {
           } else {
             $('#vault-new').click();
           }
-        }
+        },
       );
       return;
     }
@@ -282,8 +291,10 @@ async function loadNotes(acumular) {
     if (vaultOffset < data.total) {
       const mas = document.createElement('li');
       mas.id = 'vault-more';
-      mas.innerHTML = '<button class="ghost" style="width:100%">Cargar más (' +
-        (data.total - vaultOffset) + ' restantes)</button>';
+      mas.innerHTML =
+        '<button class="ghost" style="width:100%">Cargar más (' +
+        (data.total - vaultOffset) +
+        ' restantes)</button>';
       mas.querySelector('button').addEventListener('click', () => loadNotes(true));
       list.appendChild(mas);
     }
@@ -291,7 +302,7 @@ async function loadNotes(acumular) {
     list.innerHTML = '';
     const li = document.createElement('li');
     li.className = 'error';
-    li.textContent = 'Error: ' + e.message;
+    li.textContent = `Error: ${e.message}`;
     list.appendChild(li);
   }
 }
@@ -299,15 +310,17 @@ async function loadNotes(acumular) {
 async function openNote(path, li) {
   if (!(await confirmarDescartarCambios())) return;
   try {
-    const data = await api('/vault/note?path=' + encodeURIComponent(path));
-    currentNote = data.path;
+    const data = await api(`/vault/note?path=${encodeURIComponent(path)}`);
+    _currentNote = data.path;
     $('#note-path').value = data.path;
     $('#note-content').value = data.content;
     $('#note-status').textContent = '';
-    document.querySelectorAll('#vault-list li').forEach((el) => el.classList.remove('active'));
+    document.querySelectorAll('#vault-list li').forEach((el) => {
+      el.classList.remove('active');
+    });
     if (li) li.classList.add('active');
   } catch (e) {
-    $('#note-status').textContent = 'Error: ' + e.message;
+    $('#note-status').textContent = `Error: ${e.message}`;
   }
 }
 
@@ -316,8 +329,8 @@ $('#vault-folder').addEventListener('input', debounce(loadNotes, 350));
 
 $('#vault-new').addEventListener('click', async () => {
   if (!(await confirmarDescartarCambios())) return;
-  currentNote = null;
-  $('#note-path').value = '00-Inbox/nota-' + new Date().toISOString().slice(0, 10) + '.md';
+  _currentNote = null;
+  $('#note-path').value = `00-Inbox/nota-${new Date().toISOString().slice(0, 10)}.md`;
   $('#note-content').value = '';
   $('#note-status').textContent = 'Nueva nota (sin guardar)';
 });
@@ -331,12 +344,12 @@ $('#note-save').addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({ path, content }),
     });
-    currentNote = data.path;
+    _currentNote = data.path;
     noteDirty = false;
     $('#note-status').textContent = 'Guardada ✓';
     loadNotes();
   } catch (e) {
-    $('#note-status').textContent = 'Error: ' + e.message;
+    $('#note-status').textContent = `Error: ${e.message}`;
   }
 });
 
@@ -351,15 +364,15 @@ $('#note-delete').addEventListener('click', async () => {
   });
   if (!borrar) return;
   try {
-    await api('/vault/note?path=' + encodeURIComponent(path), { method: 'DELETE' });
-    currentNote = null;
+    await api(`/vault/note?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+    _currentNote = null;
     noteDirty = false;
     $('#note-path').value = '';
     $('#note-content').value = '';
     $('#note-status').textContent = 'Nota borrada';
     loadNotes();
   } catch (e) {
-    $('#note-status').textContent = 'Error: ' + e.message;
+    $('#note-status').textContent = `Error: ${e.message}`;
   }
 });
 
@@ -384,13 +397,17 @@ async function uploadMeeting(blob, nombreFichero) {
   const form = new FormData();
   form.append('file', blob, nombreFichero || 'reunion.webm');
   form.append('title', $('#meet-title').value.trim());
-  const resp = await fetchConTimeout('/api/meetings', {
-    method: 'POST',
-    headers: state.token ? { Authorization: 'Bearer ' + state.token } : {},
-    body: form,
-  }, 30000);
+  const resp = await fetchConTimeout(
+    '/api/meetings',
+    {
+      method: 'POST',
+      headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+      body: form,
+    },
+    30000,
+  );
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
   return data;
 }
 
@@ -413,7 +430,7 @@ async function loadMeetings() {
         'Graba tu primera reunión: la transcribimos, separamos hablantes y generamos el acta.',
         'Grabar una reunión',
         'meet-empty-cta',
-        () => $('#meet-mic').click()
+        () => $('#meet-mic').click(),
       );
       return;
     }
@@ -430,7 +447,7 @@ async function loadMeetings() {
     list.innerHTML = '';
     const li = document.createElement('li');
     li.className = 'error';
-    li.textContent = 'Error: ' + e.message;
+    li.textContent = `Error: ${e.message}`;
     list.appendChild(li);
   }
 }
@@ -438,7 +455,7 @@ async function loadMeetings() {
 async function showMeeting(id) {
   clearInterval(pollTimer);
   try {
-    const m = await api('/meetings/' + id);
+    const m = await api(`/meetings/${id}`);
     $('#meet-detail-title').textContent = m.title;
     $('#meet-detail-meta').textContent =
       `${m.created_at} · ${m.status} · ${formatDuration(m.duration_s)}` +
@@ -460,7 +477,7 @@ async function showMeeting(id) {
     }
     loadMeetings();
   } catch (e) {
-    $('#meet-summary').textContent = 'Error: ' + e.message;
+    $('#meet-summary').textContent = `Error: ${e.message}`;
   }
 }
 
@@ -487,14 +504,18 @@ async function toggleRecording(kind) {
         ? await navigator.mediaDevices.getUserMedia({ audio: true })
         : await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
   } catch (e) {
-    status.textContent = 'Permiso denegado: ' + e.message;
+    status.textContent = `Permiso denegado: ${e.message}`;
     return;
   }
   recordChunks = [];
   recorder = new MediaRecorder(recordingStream, { mimeType: mime });
-  recorder.ondataavailable = (ev) => { if (ev.data.size) recordChunks.push(ev.data); };
+  recorder.ondataavailable = (ev) => {
+    if (ev.data.size) recordChunks.push(ev.data);
+  };
   recorder.onstop = async () => {
-    recordingStream.getTracks().forEach((t) => t.stop());
+    recordingStream.getTracks().forEach((t) => {
+      t.stop();
+    });
     $('#meet-mic').textContent = '● Grabar micro';
     $('#meet-tab').textContent = 'Grabar pestaña';
     status.textContent = 'Subiendo audio…';
@@ -506,7 +527,7 @@ async function toggleRecording(kind) {
       $('#meet-title').value = '';
       showMeeting(data.id);
     } catch (e) {
-      status.textContent = 'Error: ' + e.message;
+      status.textContent = `Error: ${e.message}`;
     }
   };
   recorder.start(1000);
@@ -530,11 +551,11 @@ $('#call-start').addEventListener('click', async () => {
     frame.onload = () => {
       frame.contentWindow.postMessage({ type: 'rafita-auth', token: data.token }, origin);
     };
-    frame.src = origin + '/';
+    frame.src = `${origin}/`;
     frame.classList.remove('hidden');
     $('#call-placeholder').classList.add('hidden');
   } catch (e) {
-    mostrarAviso('No se pudo iniciar la llamada: ' + e.message);
+    mostrarAviso(`No se pudo iniciar la llamada: ${e.message}`);
   }
 });
 
@@ -544,12 +565,16 @@ function skeletonHTML(n) {
   return Array.from({ length: n }, () => '<li class="skeleton"></li>').join('');
 }
 
-function vacioHTML(icono, titulo, texto, ctaTexto, ctaId) {
+function vacioHTML(icono, _titulo, _texto, _ctaTexto, ctaId) {
   return (
     '<li class="vacio">' +
-    '<div class="icono" aria-hidden="true">' + icono + '</div>' +
+    '<div class="icono" aria-hidden="true">' +
+    icono +
+    '</div>' +
     '<strong></strong><span class="muted"></span>' +
-    '<button class="primary" id="' + ctaId + '"></button></li>'
+    '<button class="primary" id="' +
+    ctaId +
+    '"></button></li>'
   );
 }
 
@@ -557,7 +582,7 @@ function pintarVacio(contenedor, icono, titulo, texto, ctaTexto, ctaId, alPulsar
   contenedor.innerHTML = vacioHTML(icono, titulo, texto, ctaTexto, ctaId);
   contenedor.querySelector('strong').textContent = titulo;
   contenedor.querySelector('.muted').textContent = texto;
-  const cta = contenedor.querySelector('#' + ctaId);
+  const cta = contenedor.querySelector(`#${ctaId}`);
   cta.textContent = ctaTexto;
   cta.addEventListener('click', alPulsar);
 }
@@ -608,8 +633,11 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
     box.innerHTML = '';
     const p = document.createElement('p');
     p.innerHTML =
-      'Abre <a href="' + start.verification_url + '" target="_blank" rel="noopener">' +
-      start.verification_url + '</a> e introduce el código:';
+      'Abre <a href="' +
+      start.verification_url +
+      '" target="_blank" rel="noopener">' +
+      start.verification_url +
+      '</a> e introduce el código:';
     const code = document.createElement('div');
     code.className = 'device-code';
     code.textContent = start.user_code;
@@ -620,7 +648,7 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
     const intervalo = Math.max(3, start.interval || 5) * 1000;
     const timer = setInterval(async () => {
       try {
-        const res = await api('/auth/google/device/poll?state=' + encodeURIComponent(start.state));
+        const res = await api(`/auth/google/device/poll?state=${encodeURIComponent(start.state)}`);
         if (res.status === 'ok') {
           clearInterval(timer);
           state.token = res.token;
@@ -630,11 +658,11 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
       } catch (e) {
         if (/caducad|no encontrada|validar/.test(e.message)) {
           clearInterval(timer);
-          espera.textContent = 'No se pudo completar: ' + e.message;
+          espera.textContent = `No se pudo completar: ${e.message}`;
         }
       }
     }, intervalo);
-  } catch (e) {
+  } catch (_e) {
     // Sin credenciales de dispositivo: probamos el flujo con redirect.
     location.href = '/api/auth/google/start';
   }

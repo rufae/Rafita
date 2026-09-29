@@ -21,7 +21,7 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE)
       .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -30,7 +30,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
             }
             return resp;
           })
-          .catch(() => caches.match('./index.html'))
-    )
+          .catch(() => caches.match('./index.html')),
+    ),
   );
 });

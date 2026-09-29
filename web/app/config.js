@@ -4,4 +4,4 @@
      "" (vacio)                      -> mismo host, puerto 8001
      "https://voz.midominio.local"   -> proxy NPM con WebSocket hacia 8001
 */
-window.RAFITA_CONFIG = { callOrigin: "" };
+window.RAFITA_CONFIG = { callOrigin: '' };
