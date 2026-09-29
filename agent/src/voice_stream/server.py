@@ -176,7 +176,10 @@ async def serve_call_page():
 async def serve_design_tokens_css():
     """Tokens de diseño compartidos (fuente unica, Fase 3): la pagina de
     llamada y la SPA consumen el mismo fichero."""
-    for path in (Path("/workspace/web/app/design-tokens.css"), Path("/workspace/web/design-tokens.css")):
+    for path in (
+        Path("/workspace/web/app/design-tokens.css"),
+        Path("/workspace/web/design-tokens.css"),
+    ):
         if path.exists():
             return FileResponse(str(path), media_type="text/css")
     return JSONResponse(status_code=404, content={"error": "design-tokens.css not found"})

@@ -444,3 +444,28 @@ def test_build_web_minifica_y_hashea(tmp_path):
         assert destino in sw
     assert (salida / "manifest.webmanifest").exists()
     assert (salida / "icons" / "icon-192.png").exists()
+
+
+def test_google_status_y_errores_vuelven_a_la_spa(monkeypatch, tmp_path):
+    """Google: estado consultable y fallos que vuelven a la SPA (no JSON)."""
+    client, fake = _cliente(monkeypatch, tmp_path)
+    estado = client.get("/api/auth/google/status")
+    assert estado.status_code == 200
+    assert estado.json()["configured"] is False
+
+    inicio = client.get("/api/auth/google/start", follow_redirects=False)
+    assert inicio.status_code in (302, 307)
+    assert "google-error=no_config" in inicio.headers["location"]
+
+    cancelado = client.get("/api/auth/google/callback?error=access_denied", follow_redirects=False)
+    assert cancelado.status_code in (302, 307)
+    assert "google-error=denied" in cancelado.headers["location"]
+
+    mal_estado = client.get(
+        "/api/auth/google/callback?code=x&state=inventado", follow_redirects=False
+    )
+    assert "google-error=state" in mal_estado.headers["location"]
+
+    monkeypatch.setattr(settings, "google_web_client_id", "id")
+    monkeypatch.setattr(settings, "google_web_client_secret", "secreto")
+    assert client.get("/api/auth/google/status").json()["configured"] is True
