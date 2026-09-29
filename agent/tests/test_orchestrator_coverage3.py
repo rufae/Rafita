@@ -275,3 +275,106 @@ async def test_generate_response_stream_empty_content(monkeypatch):
 
 def test_chunk_words_keeps_spacing():
     assert list(orch._chunk_words("un dos tres")) == ["un ", "dos ", "tres"]
+
+
+# ---------- guardia de honestidad (2026-09-29) ----------
+
+
+async def test_prepare_tool_phase_reintenta_accion_sin_herramienta(monkeypatch):
+    """Si afirma una accion sin tool_calls, reintenta y ejecuta la herramienta."""
+    _patch_common(monkeypatch)
+    llamadas = []
+
+    async def respond(messages, tools):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            return "Buscando un correo sobre Anabel. Un momento por favor.", None
+        return "", [
+            {"id": "c1", "function": {"name": "search_gmail", "arguments": '{"query": "anabel"}'}}
+        ]
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    ejecutados = []
+
+    async def fake_execute(chat_id, func_name, args):
+        ejecutados.append((func_name, args))
+        return {"success": True, "message": "ok"}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo sobre anabel", 1)
+    assert len(llamadas) == 2
+    assert ejecutados == [("search_gmail", {"query": "anabel"})]
+    assert tool_calls and tool_calls[0]["function"]["name"] == "search_gmail"
+
+
+async def test_prepare_tool_phase_sin_reintento_si_no_afirma_accion(monkeypatch):
+    _patch_common(monkeypatch)
+    llamadas = []
+
+    async def respond(messages, tools):
+        llamadas.append(1)
+        return "No encuentro ningun correo de Anabel.", None
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    _, content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo", 1)
+    assert len(llamadas) == 1
+    assert tool_calls == []
+    assert "No encuentro" in content
+
+
+async def test_prepare_tool_phase_reintento_fallido_se_tolera(monkeypatch):
+    _patch_common(monkeypatch)
+
+    async def respond(messages, tools):
+        ultimo = messages[-1]
+        if ultimo.get("role") == "system" and "AVISO" in (ultimo.get("content") or ""):
+            raise RuntimeError("boom")
+        return "He guardado la tarea.", None
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    _, content, tool_calls, _ = await orch._prepare_tool_phase("guarda esta tarea", 1)
+    assert tool_calls == []
+    assert "He guardado" in content
+
+
+async def test_hallucination_risk_detecta_emails_y_afirmaciones():
+    assert orch._hallucination_risk("He guardado la tarea.", "guarda una tarea")
+    assert orch._hallucination_risk("Te escribio anabel@x.com", "busca un correo")
+    assert orch._hallucination_risk("Searchando en tus correos...", "busca un correo")
+    assert not orch._hallucination_risk("Tu correo es yo@x.com", "mi correo es yo@x.com")
+    assert not orch._hallucination_risk("No encuentro nada.", "busca un correo")
+
+
+async def test_prepare_tool_phase_fallback_honesto_si_reintento_tambien_inventa(monkeypatch):
+    _patch_common(monkeypatch)
+
+    async def respond(messages, tools):
+        return "El correo de anabel@inventado.com es importante.", None
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    _, content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo sobre anabel", 1)
+    assert tool_calls == []
+    assert content == orch.HONEST_FALLBACK
+
+
+async def test_prepare_tool_phase_reintenta_por_email_inventado(monkeypatch):
+    _patch_common(monkeypatch)
+    llamadas = []
+
+    async def respond(messages, tools):
+        llamadas.append(1)
+        if len(llamadas) == 1:
+            return "He encontrado un correo de anabel@x.com", None
+        return "", [
+            {"id": "c1", "function": {"name": "search_gmail", "arguments": '{"query": "anabel"}'}}
+        ]
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+
+    async def fake_execute(chat_id, func_name, args):
+        return {"success": True, "message": "sin resultados"}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo sobre anabel", 1)
+    assert len(llamadas) == 2
+    assert tool_calls and tool_calls[0]["function"]["name"] == "search_gmail"

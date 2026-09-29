@@ -34,3 +34,14 @@ def test_prompt_reports_google_missing(monkeypatch):
     monkeypatch.setattr(orch, "google_services", _Missing())
     prompt = build_system_prompt()
     assert "no configurado" in prompt
+
+
+def test_prompt_incluye_reglas_anti_invencion_y_tareas():
+    """Regresion 2026-09-29: la llamada invento un correo y no guardo una tarea."""
+    prompt = build_system_prompt(voice=True)
+    assert "TRUTH_RULE" in prompt
+    assert "TOOL_HONESTY_RULE" in prompt
+    assert "TASK_RULE" in prompt
+    assert "manage_google_tasks" in prompt
+    assert "EMAIL_RULE" in prompt
+    assert "search_gmail" in prompt

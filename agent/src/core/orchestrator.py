@@ -9,6 +9,7 @@ This avoids duplicating the prompt/rules/tools logic across interfaces.
 
 import asyncio
 import json
+import re
 import time as _time
 from datetime import datetime
 from typing import Any
@@ -24,6 +25,37 @@ from src.ollama_client import OllamaClientError, llm
 from src.services.google_services_manager import google_services
 from src.utils.telemetry import get_correlation_id, metrics
 from src.vault_config import get_taxonomy
+
+# Afirmaciones de accion sin herramienta (alucinaciones 2026-09-29: la llamada
+# dijo "Buscando un correo..." sin buscar y el chat dijo "He guardado la tarea"
+# sin guardarla). Si el modelo afirma una accion y no hubo tool_calls, se
+# reintenta una vez obligandole a usar la herramienta o a desdecirse.
+_ACTION_CLAIM_RE = re.compile(
+    r"\b(?:he guardado|he creado|he a[nñ]adido|he apuntado|he enviado|he completado|"
+    r"he registrado|he encontrado|guardando|buscando|search\w*|busc\w+|encontr[eé]|"
+    r"enviando|apuntando|completando|un momento|te muestro|te busco|aqu[ií] tienes|"
+    r"resultados?)\b",
+    re.IGNORECASE,
+)
+# Correo electronico en la respuesta: si no lo dijo el usuario, es inventado.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+HONEST_FALLBACK = (
+    "No he podido comprobar esa informacion con mis herramientas y no quiero "
+    "darte datos inventados. ¿Puedes darme mas detalle o lo intento de otra forma?"
+)
+
+
+def _hallucination_risk(content: str, user_text: str) -> bool:
+    """True si la respuesta afirma acciones o cita correos que no vinieron de tools."""
+    if _ACTION_CLAIM_RE.search(content or ""):
+        return True
+    texto_usuario = (user_text or "").lower()
+    for match in _EMAIL_RE.finditer(content or ""):
+        if match.group().lower() not in texto_usuario:
+            return True
+    return False
+
 
 SYSTEM_PROMPT_VOICE = (
     f"{language_rule()}"
@@ -54,8 +86,11 @@ SYSTEM_PROMPT_VOICE = (
     "- save_expense / get_finance_summary\n"
     "- manage_obsidian_note / search_obsidian_vault\n"
     "- search_web / remember_fact / search_knowledge\n"
-    "- create_event / create_alert\n"
-    "- manage_google_calendar / create_google_calendar_event\n"
+    "- create_event / create_alert / manage_google_calendar\n"
+    "- manage_google_tasks (tareas: guardar, listar, completar)\n"
+    "- search_gmail / send_gmail (correo)\n"
+    "- find_contact (telefonos y correos de contactos)\n"
+    "- manage_crm (clientes y pipeline)\n"
     "- search_google_drive / read_google_drive_file\n"
     "- generate_google_auth_link / save_google_verification_code\n\n"
     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
@@ -105,6 +140,27 @@ def build_system_prompt(voice: bool = False) -> str:
         "ACTION_RULE: si la peticion del usuario esta cubierta por una "
         "herramienta, invocala directamente sin pedir confirmacion ni "
         "preguntar detalles que puedas asumir razonablemente.\n"
+        "TRUTH_RULE (critica): NUNCA inventes datos. No inventes correos, "
+        "remitentes, direcciones, fechas, importes, eventos ni tareas. Si una "
+        "herramienta no devuelve resultados o falla, di exactamente que no hay "
+        "resultados (o que no pudiste comprobarlo); jamas rellenes con "
+        "suposiciones. Solo puedes afirmar algo si viene de una herramienta o "
+        "del propio mensaje del usuario.\n"
+        "TOOL_HONESTY_RULE: no afirmes haber hecho una accion (guardar, crear, "
+        "enviar, anadir, completar) si no la ha ejecutado una herramienta en "
+        "este turno. Si no puedes ejecutarla, dilo claramente.\n"
+        "TASK_RULE: cuando el usuario pida guardar, apuntar o recordar una "
+        "tarea ('guarda esta tarea', 'apunta que...', 'recuérdame...', 'para "
+        "mañana'), llama SIEMPRE a manage_google_tasks (action=create) con el "
+        "titulo completo y, si dio una fecha relativa, en `due` tal cual "
+        "('mañana', 'el viernes'). Confirma solo si la herramienta responde "
+        "con exito.\n"
+        "EMAIL_RULE: para cualquier pregunta sobre correos usa SIEMPRE "
+        "search_gmail antes de responder y cita unicamente remitente, asunto "
+        "y fecha que devuelva la herramienta. Si no hay resultados, dilo; "
+        "nunca inventes un correo ni un remitente. Busca de inmediato con lo "
+        "que el usuario haya dicho (nombre, parte del nombre, asunto...): NO "
+        "pidas confirmacion ni el nombre completo antes de buscar.\n"
         "CONTACT_RULE: si el usuario pide el telefono, movil, correo o "
         "direccion de una persona (mama, papa, Ana, un amigo...), usa SIEMPRE "
         "find_contact (Google Contacts) ANTES de responder. NUNCA uses "
@@ -226,6 +282,53 @@ async def _prepare_tool_phase(
         len(content or ""),
         bool(tool_calls),
     )
+
+    # Guardia de honestidad: si afirma una accion sin haber usado herramienta,
+    # reintentar una vez para que la ejecute o se desdecida.
+    if not tool_calls and _hallucination_risk(content or "", text):
+        logger.warning(
+            "[ORCHESTRATOR] accion afirmada sin herramienta (chat_id=%d); reintentando",
+            chat_id,
+        )
+        messages_for_llm.append(
+            {
+                "role": "system",
+                "content": (
+                    "AVISO: has respondido como si hubieras hecho una accion o has "
+                    "citado datos (correos) sin llamar a ninguna herramienta. Si el "
+                    "usuario pidio buscar, guardar, crear, completar o enviar algo, "
+                    "llama AHORA a la herramienta adecuada (search_gmail para correos, "
+                    "manage_google_tasks para tareas). No inventes datos; si no puedes, "
+                    "di claramente que no lo has hecho."
+                ),
+            }
+        )
+        try:
+            content_retry, tool_calls_retry = await asyncio.wait_for(
+                llm.chat_with_tools(
+                    messages=messages_for_llm,
+                    tools=tools_for_call,
+                    max_tokens=512,
+                ),
+                timeout=600.0,
+            )
+            if tool_calls_retry:
+                content, tool_calls = content_retry, tool_calls_retry
+                logger.info(
+                    "[ORCHESTRATOR] reintento con herramienta: %s",
+                    [tc["function"]["name"] for tc in tool_calls],
+                )
+            elif _hallucination_risk(content_retry or "", text):
+                # El reintento tampoco uso herramientas: mejor honestidad que datos falsos.
+                logger.warning(
+                    "[ORCHESTRATOR] reintento sin herramienta; respuesta honesta (chat_id=%d)",
+                    chat_id,
+                )
+                content = HONEST_FALLBACK
+            elif content_retry:
+                content = content_retry
+        except Exception as e:
+            logger.warning("[ORCHESTRATOR] reintento de herramienta fallo: %s", e)
 
     if tool_calls:
         results = []
