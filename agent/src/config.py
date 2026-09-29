@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     # coma). Vacio = solo mismo origen/localhost.
     web_allowed_origins: str = Field("", alias="WEB_ALLOWED_ORIGINS")
 
+    # Web SPA (Fase 3, 2026-09-29): auth por email/clave + Sign in with Google.
+    web_auth_secret: str = Field("", alias="WEB_AUTH_SECRET")
+    web_admin_email: str = Field("", alias="WEB_ADMIN_EMAIL")
+    web_admin_password: str = Field("", alias="WEB_ADMIN_PASSWORD")
+    web_allow_registration: bool = Field(False, alias="WEB_ALLOW_REGISTRATION")
+    google_web_client_id: str = Field("", alias="GOOGLE_WEB_CLIENT_ID")
+    google_web_client_secret: str = Field("", alias="GOOGLE_WEB_CLIENT_SECRET")
+    google_web_redirect_uri: str = Field("", alias="GOOGLE_WEB_REDIRECT_URI")
+
     # Briefing matutino y recordatorios proactivos (mejoras 2 y 6, 2026-09-28).
     briefing_enabled: bool = Field(True, alias="BRIEFING_ENABLED")
     briefing_time: str = Field("08:00", alias="BRIEFING_TIME")

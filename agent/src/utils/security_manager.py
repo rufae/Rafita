@@ -160,6 +160,29 @@ def get_or_create_voice_call_token() -> str:
     return token
 
 
+def get_or_create_web_auth_secret() -> str:
+    """Secreto para firmar los tokens JWT de la web (Fase 3, 2026-09-29).
+
+    Si no se puede persistir, se devuelve vacio y el login web queda
+    deshabilitado (fail-closed) en lugar de usar un secreto compartido.
+    """
+    if settings.web_auth_secret:
+        return settings.web_auth_secret.strip()
+
+    persisted = _read_env_var("WEB_AUTH_SECRET")
+    if persisted:
+        return persisted
+
+    secret = secrets.token_urlsafe(48)
+    try:
+        _persist_env_var("WEB_AUTH_SECRET", secret)
+    except RuntimeError as e:
+        logger.warning("Could not persist WEB_AUTH_SECRET (%s). Web login disabled.", e)
+        return ""
+    logger.info("Web auth secret generated and saved to %s", ENV_PATH)
+    return secret
+
+
 _cipher: Fernet | None = None
 
 

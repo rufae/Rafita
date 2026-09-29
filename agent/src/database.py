@@ -110,6 +110,15 @@ class DatabaseManager:
             ON email_sequence_steps(sequence_id)
             """,
             """
+            CREATE TABLE IF NOT EXISTS web_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL DEFAULT '',
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -499,6 +508,38 @@ class DatabaseManager:
     async def delete_sequence(self, sequence_id: int) -> None:
         await self.execute("DELETE FROM email_sequence_steps WHERE sequence_id = ?", (sequence_id,))
         await self.execute("DELETE FROM email_sequences WHERE id = ?", (sequence_id,))
+        await self._conn.commit()
+
+    # ---------- usuarios web (Fase 3) ----------
+
+    async def create_web_user(self, email: str, password_hash: str, is_admin: bool = False) -> int:
+        sql = """
+            INSERT INTO web_users (email, password_hash, is_admin)
+            VALUES (?, ?, ?)
+        """
+        return await self.insert(sql, (email.strip().lower(), password_hash, 1 if is_admin else 0))
+
+    async def get_web_user_by_email(self, email: str) -> dict[str, Any] | None:
+        return await self.fetchone(
+            "SELECT * FROM web_users WHERE email = ?", (email.strip().lower(),)
+        )
+
+    async def get_web_user(self, user_id: int) -> dict[str, Any] | None:
+        return await self.fetchone("SELECT * FROM web_users WHERE id = ?", (user_id,))
+
+    async def count_web_users(self) -> int:
+        row = await self.fetchone("SELECT COUNT(*) AS total FROM web_users")
+        return int((row or {}).get("total", 0))
+
+    async def list_web_users(self) -> list[dict[str, Any]]:
+        return await self.fetchall(
+            "SELECT id, email, is_admin, created_at FROM web_users ORDER BY id"
+        )
+
+    async def update_web_user_password(self, user_id: int, password_hash: str) -> None:
+        await self.execute(
+            "UPDATE web_users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+        )
         await self._conn.commit()
 
     async def add_alert(
