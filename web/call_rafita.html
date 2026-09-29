@@ -104,6 +104,7 @@
   .status.processing .dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: blink 1s infinite; }
   .status.speaking .dot { background: var(--user-1); box-shadow: 0 0 12px var(--user-1); }
   .status.error .dot { background: var(--err); box-shadow: 0 0 12px var(--err); }
+  .status.reconnecting .dot { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: blink 0.7s infinite; }
   @keyframes blink { 50% { opacity: 0.35; } }
 
   .controls { display: flex; gap: 10px; justify-content: center; align-items: stretch; flex-wrap: wrap; }
@@ -246,11 +247,58 @@ function authHeaders() {
   return authToken ? { 'X-Call-Token': authToken } : {};
 }
 
-const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
+const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', RECONNECTING: 'reconnecting', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', ERROR: 'error' };
+
+// Fetch con timeout (Fase 1.3): una peticion colgada no deja la UI muerta.
+async function fetchConTimeout(url, opciones, ms) {
+  const limite = ms || 10000;
+  const ctrl = new AbortController();
+  const temporizador = setTimeout(function () { ctrl.abort(); }, limite);
+  try {
+    return await fetch(url, Object.assign({}, opciones || {}, { signal: ctrl.signal }));
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('La petición tardó demasiado (' + Math.round(limite / 1000) + 's). Comprueba la conexión.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
+// AudioWorklet (Fase 1.2): captura de micro fuera del hilo principal. Se carga
+// desde un Blob para mantener la pagina como un unico fichero. Si el navegador
+// no soporta AudioWorklet se cae al ScriptProcessorNode (deprecado) como
+// retrocompatibilidad.
+const WORKLET_CODE = [
+  'class PcmCapture extends AudioWorkletProcessor {',
+  '  process(inputs) {',
+  '    const canal = inputs[0] && inputs[0][0];',
+  '    if (canal && canal.length) {',
+  '      const pcm = new Int16Array(canal.length);',
+  '      for (let i = 0; i < canal.length; i++) {',
+  '        const s = Math.max(-1, Math.min(1, canal[i]));',
+  '        pcm[i] = s < 0 ? s * 32768 : s * 32767;',
+  '      }',
+  '      this.port.postMessage(pcm.buffer, [pcm.buffer]);',
+  '    }',
+  '    return true;',
+  '  }',
+  '}',
+  'registerProcessor("pcm-capture", PcmCapture);',
+].join('\n');
+
+// Reconexion (Fase 1.1): si el WS cae sin colgar, se reintenta con backoff
+// (1s, 2s, 4s; 3 intentos) distinguiendo "reconectando" de "llamada finalizada".
+const RECONNECT_MAX = 3;
+const RECONNECT_DELAYS = [1000, 2000, 4000];
+let intentionalHangup = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
 
 let ws = null, sessionId = null;
 let audioContext = null, micStream = null;
-let micSource = null, micProcessor = null, micGain = null, micAnalyser = null;
+let micSource = null, micProcessor = null, micGain = null, micAnalyser = null, micWorklet = null;
 let playbackGain = null, rafitaAnalyser = null;
 let isCallActive = false, callState = STATUS.IDLE;
 let audioQueue = [], activeSources = [], nextPlayTime = 0;
@@ -319,37 +367,64 @@ async function ensureAudioContext() {
   return audioContext;
 }
 
-function startAudioCapture() {
+function enviarPcm(arrayBuffer) {
+  if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (pttActive === false && !vadMode.checked) return;
+  // El micro NO se silencia mientras Rafita habla: asi el servidor puede
+  // detectar barge-in (hablar por encima) y el orbe del usuario se mueve.
+  ws.send(arrayBuffer);
+}
+
+async function startAudioCapture() {
   if (!micStream || !audioContext) return;
   micSource = audioContext.createMediaStreamSource(micStream);
   micAnalyser = audioContext.createAnalyser();
   micAnalyser.fftSize = 1024;
   micSource.connect(micAnalyser);
 
-  micGain = audioContext.createGain();
-  micGain.gain.value = 0;
-  micProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-  micSource.connect(micProcessor);
-  micProcessor.connect(micGain);
-  micGain.connect(audioContext.destination);
-
-  micProcessor.onaudioprocess = function (e) {
-    if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
-    if (pttActive === false && !vadMode.checked) return;
-    // El micro NO se silencia mientras Rafita habla: asi el servidor puede
-    // detectar barge-in (hablar por encima) y el orbe del usuario se mueve.
-    const input = e.inputBuffer.getChannelData(0);
-    const pcm = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      pcm[i] = s < 0 ? s * 32768 : s * 32767;
+  // AudioWorklet (Fase 1.2): fuera del hilo principal y sin el parche del
+  // gain a 0. ScriptProcessorNode queda solo como respaldo para navegadores
+  // sin AudioWorklet.
+  let usadoWorklet = false;
+  if (audioContext.audioWorklet) {
+    try {
+      const blobUrl = URL.createObjectURL(new Blob([WORKLET_CODE], { type: 'application/javascript' }));
+      await audioContext.audioWorklet.addModule(blobUrl);
+      URL.revokeObjectURL(blobUrl);
+      micWorklet = new AudioWorkletNode(audioContext, 'pcm-capture', { numberOfInputs: 1, numberOfOutputs: 1 });
+      micWorklet.port.onmessage = function (e) { enviarPcm(e.data); };
+      // Salida en silencio (el processor no escribe outputs): mantiene el
+      // nodo procesando sin generar feedback audible.
+      micWorklet.connect(audioContext.destination);
+      micSource.connect(micWorklet);
+      usadoWorklet = true;
+      log('Captura de audio lista (AudioWorklet, ' + audioContext.sampleRate + ' Hz)');
+    } catch (e) {
+      log('AudioWorklet no disponible (' + e.message + '); se usa el modo legacy');
     }
-    ws.send(pcm.buffer);
-  };
-  log('Captura de audio lista (' + audioContext.sampleRate + ' Hz)');
+  }
+  if (!usadoWorklet) {
+    micGain = audioContext.createGain();
+    micGain.gain.value = 0;
+    micProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    micSource.connect(micProcessor);
+    micProcessor.connect(micGain);
+    micGain.connect(audioContext.destination);
+    micProcessor.onaudioprocess = function (e) {
+      const input = e.inputBuffer.getChannelData(0);
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        pcm[i] = s < 0 ? s * 32768 : s * 32767;
+      }
+      enviarPcm(pcm.buffer);
+    };
+    log('Captura de audio lista (legacy ScriptProcessor, ' + audioContext.sampleRate + ' Hz)');
+  }
 }
 
 function stopAudioCapture() {
+  if (micWorklet) { micWorklet.port.onmessage = null; try { micWorklet.disconnect(); } catch (e) {} micWorklet = null; }
   if (micProcessor) { micProcessor.onaudioprocess = null; try { micProcessor.disconnect(); } catch (e) {} micProcessor = null; }
   if (micSource) { try { micSource.disconnect(); } catch (e) {} micSource = null; }
   if (micAnalyser) { try { micAnalyser.disconnect(); } catch (e) {} micAnalyser = null; }
@@ -410,14 +485,16 @@ async function startCall() {
   }
   setStatus(STATUS.CONNECTING, 'Conectando...');
   stopPlayback();
+  intentionalHangup = false;
+  reconnectAttempts = 0;
   await ensureAudioContext();
 
   try {
-    const resp = await fetch(getApiBase() + '/call/start', {
+    const resp = await fetchConTimeout(getApiBase() + '/call/start', {
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
       body: JSON.stringify({}),
-    });
+    }, 10000);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     sessionId = data.session_id;
@@ -440,18 +517,27 @@ async function startCall() {
     return false;
   }
 
+  const ok = await conectarSocket();
+  return ok;
+}
+
+function conectarSocket() {
   return new Promise(function (resolve) {
     // Sin token en la URL: la autenticacion va en el primer mensaje (Fase 0.2).
     ws = new WebSocket(getWsBase() + '/call/ws/' + sessionId);
     ws.binaryType = 'arraybuffer';
+    let resuelto = false;
 
     ws.onopen = function () {
+      resuelto = true;
       log('WebSocket conectado');
       if (authToken) ws.send(JSON.stringify({ type: 'auth', token: authToken }));
       isCallActive = true;
       const rate = audioContext ? audioContext.sampleRate : 48000;
       ws.send(JSON.stringify({ type: 'audio_config', sample_rate: rate }));
-      startAudioCapture();
+      if (!micWorklet && !micProcessor) {
+        startAudioCapture().catch(function (e) { log('Captura: ' + e.message); });
+      }
       pttBtn.disabled = false;
       setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
       resolve(true);
@@ -459,14 +545,17 @@ async function startCall() {
 
     ws.onclose = function () {
       log('WebSocket cerrado');
-      if (isCallActive) setStatus(STATUS.IDLE, 'Llamada finalizada');
-      isCallActive = false;
-      resolve(false);
+      if (!resuelto) resolve(false);
+      // Fase 1.1: caida inesperada con la llamada activa -> reconectar con
+      // backoff; solo el colgado explicito deja la llamada terminada.
+      if (!intentionalHangup && isCallActive) programarReconexion();
     };
 
     ws.onerror = function () {
-      setStatus(STATUS.ERROR, 'Error de conexión');
-      resolve(false);
+      if (!resuelto) {
+        setStatus(STATUS.ERROR, 'Error de conexión');
+        resolve(false);
+      }
     };
 
     ws.onmessage = function (event) {
@@ -478,6 +567,32 @@ async function startCall() {
       }
     };
   });
+}
+
+function programarReconexion() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (reconnectAttempts >= RECONNECT_MAX) {
+    setStatus(STATUS.ERROR, 'No se pudo reconectar (3 intentos). Pulsa Iniciar para volver a llamar.');
+    isCallActive = false;
+    stopAudioCapture();
+    stopPlayback();
+    pttBtn.disabled = true;
+    callBtn.innerHTML = '\ud83d\udcde Iniciar';
+    callBtn.className = 'ctl primary';
+    return;
+  }
+  const espera = RECONNECT_DELAYS[reconnectAttempts];
+  reconnectAttempts++;
+  setStatus(STATUS.RECONNECTING, 'Conexión perdida. Reconectando (intento ' + reconnectAttempts + '/' + RECONNECT_MAX + ')...');
+  reconnectTimer = setTimeout(async function () {
+    reconnectTimer = null;
+    if (!isCallActive || intentionalHangup) return;
+    const ok = await conectarSocket();
+    if (ok) {
+      reconnectAttempts = 0;
+      setStatus(STATUS.LISTENING, 'Reconectado. Te escucho...');
+    }
+  }, espera);
 }
 
 function handleServerMessage(msg) {
@@ -557,7 +672,7 @@ function stopSpeaking() {
 async function endCall() {
   stopSpeaking();
   if (sessionId) {
-    try { await fetch(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST', headers: authHeaders() }); } catch (e) {}
+    try { await fetchConTimeout(getApiBase() + '/call/' + sessionId + '/end', { method: 'POST', headers: authHeaders() }, 8000); } catch (e) {}
   }
   sessionId = null;
 }
@@ -565,7 +680,10 @@ async function endCall() {
 async function toggleCall() {
   if (isCallActive) {
     callBtn.disabled = true;
+    intentionalHangup = true;
     isCallActive = false;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempts = 0;
     stopAudioCapture();
     stopPlayback();
     if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} ws = null; }
@@ -647,7 +765,7 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
 async function testTTS() {
   setStatus(STATUS.PROCESSING, 'Probando TTS...');
   try {
-    const resp = await fetch(getApiBase() + '/call/test_tts', { headers: authHeaders() });
+    const resp = await fetchConTimeout(getApiBase() + '/call/test_tts', { headers: authHeaders() }, 10000);
     if (!resp.ok) {
       const err = await resp.json().catch(function () { return { reason: resp.statusText }; });
       throw new Error(err.reason || 'HTTP ' + resp.status);
