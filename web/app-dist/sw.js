@@ -3,12 +3,12 @@
    Decision (Fase 3): call_rafita.html queda FUERA de la experiencia
    instalable a proposito: vive en otro origen (voz.*) y se embebe desde la
    vista Llamada; aqui solo va el shell de la SPA. */
-const CACHE = 'rafita-shell-f0a4efc2';
+const CACHE = 'rafita-shell-3e50c6c5';
 const SHELL = [
   './',
   './index.html',
-  './styles-16b868b0.css',
-  './app-0d9d00fc.js',
+  './styles-5cd1cec1.css',
+  './app-02695935.js',
   './config.js',
   './design-tokens-93353fc1.css',
   './manifest.webmanifest',
