@@ -81,6 +81,35 @@ class DatabaseManager:
             ON tasks(chat_id)
             """,
             """
+            CREATE TABLE IF NOT EXISTS email_sequences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                contact_name TEXT NOT NULL,
+                contact_email TEXT NOT NULL,
+                context TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS email_sequence_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sequence_id INTEGER NOT NULL,
+                step_no INTEGER NOT NULL,
+                delay_days INTEGER NOT NULL DEFAULT 0,
+                goal TEXT NOT NULL,
+                subject TEXT,
+                body TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                sent_at TEXT,
+                message_id TEXT
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_sequence_steps_seq
+            ON email_sequence_steps(sequence_id)
+            """,
+            """
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -389,6 +418,87 @@ class DatabaseManager:
 
     async def delete_task(self, chat_id: int, task_id: int) -> None:
         await self.execute("DELETE FROM tasks WHERE id = ? AND chat_id = ?", (task_id, chat_id))
+        await self._conn.commit()
+
+    # ---------- secuencias de email (Fase 2) ----------
+
+    async def create_sequence(
+        self, name: str, contact_name: str, contact_email: str, context: str = ""
+    ) -> int:
+        sql = """
+            INSERT INTO email_sequences (name, contact_name, contact_email, context)
+            VALUES (?, ?, ?, ?)
+        """
+        return await self.insert(sql, (name, contact_name, contact_email, context))
+
+    async def add_sequence_step(
+        self, sequence_id: int, step_no: int, delay_days: int, goal: str
+    ) -> int:
+        sql = """
+            INSERT INTO email_sequence_steps (sequence_id, step_no, delay_days, goal)
+            VALUES (?, ?, ?, ?)
+        """
+        return await self.insert(sql, (sequence_id, step_no, delay_days, goal))
+
+    async def list_sequences(self, status: str | None = None) -> list[dict[str, Any]]:
+        if status:
+            return await self.fetchall(
+                "SELECT * FROM email_sequences WHERE status = ? ORDER BY id DESC", (status,)
+            )
+        return await self.fetchall("SELECT * FROM email_sequences ORDER BY id DESC")
+
+    async def get_sequence(self, sequence_id: int) -> dict[str, Any] | None:
+        return await self.fetchone("SELECT * FROM email_sequences WHERE id = ?", (sequence_id,))
+
+    async def list_sequence_steps(self, sequence_id: int) -> list[dict[str, Any]]:
+        return await self.fetchall(
+            "SELECT * FROM email_sequence_steps WHERE sequence_id = ? ORDER BY step_no",
+            (sequence_id,),
+        )
+
+    async def update_sequence_status(self, sequence_id: int, status: str) -> None:
+        await self.execute(
+            "UPDATE email_sequences SET status = ? WHERE id = ?", (status, sequence_id)
+        )
+        await self._conn.commit()
+
+    async def update_sequence_step(
+        self,
+        step_id: int,
+        status: str,
+        subject: str | None = None,
+        body: str | None = None,
+        message_id: str | None = None,
+    ) -> None:
+        await self.execute(
+            """
+            UPDATE email_sequence_steps
+            SET status = ?, subject = COALESCE(?, subject), body = COALESCE(?, body),
+                message_id = COALESCE(?, message_id),
+                sent_at = CASE WHEN ? = 'sent' THEN datetime('now') ELSE sent_at END
+            WHERE id = ?
+            """,
+            (status, subject, body, message_id, status, step_id),
+        )
+        await self._conn.commit()
+
+    async def due_sequence_steps(self) -> list[dict[str, Any]]:
+        """Pasos pendientes de secuencias activas cuya fecha ya llego."""
+        sql = """
+            SELECT s.id AS step_id, s.step_no, s.delay_days, s.goal,
+                   q.id AS sequence_id, q.name AS sequence_name, q.contact_name,
+                   q.contact_email, q.context, q.created_at AS sequence_created
+            FROM email_sequence_steps s
+            JOIN email_sequences q ON q.id = s.sequence_id
+            WHERE s.status = 'pending' AND q.status = 'active'
+              AND date(q.created_at, '+' || s.delay_days || ' day') <= date('now')
+            ORDER BY q.id, s.step_no
+        """
+        return await self.fetchall(sql)
+
+    async def delete_sequence(self, sequence_id: int) -> None:
+        await self.execute("DELETE FROM email_sequence_steps WHERE sequence_id = ?", (sequence_id,))
+        await self.execute("DELETE FROM email_sequences WHERE id = ?", (sequence_id,))
         await self._conn.commit()
 
     async def add_alert(
