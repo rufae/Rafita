@@ -443,6 +443,18 @@ let recorder = null;
 let recordingStream = null;
 let recordChunks = [];
 let pollTimer = null;
+let currentMeetingId = null;
+let meetStatusTimer = null;
+
+function meetStatus(texto, limpiarMs) {
+  clearTimeout(meetStatusTimer);
+  $('#meet-status').textContent = texto;
+  if (limpiarMs) {
+    meetStatusTimer = setTimeout(() => {
+      $('#meet-status').textContent = '';
+    }, limpiarMs);
+  }
+}
 
 function mejorMimeGrabacion() {
   // Fase 1.5: no todos los navegadores graban webm (Safari prefiere mp4).
@@ -517,7 +529,10 @@ async function showMeeting(id) {
   clearInterval(pollTimer);
   try {
     const m = await api(`/meetings/${id}`);
-    $('#meet-detail-title').textContent = m.title;
+    currentMeetingId = m.id;
+    $('#meet-detail-title').value = m.title;
+    $('#meet-save').classList.remove('hidden');
+    $('#meet-delete').classList.remove('hidden');
     $('#meet-detail-meta').textContent =
       `${m.created_at} · ${m.status} · ${formatDuration(m.duration_s)}` +
       (m.speakers ? ` · ${m.speakers}` : '') +
@@ -541,6 +556,53 @@ async function showMeeting(id) {
     $('#meet-summary').textContent = `Error: ${e.message}`;
   }
 }
+
+// Editar y borrar la reunión seleccionada (el acta del Baúl se actualiza).
+$('#meet-save').addEventListener('click', async () => {
+  if (!currentMeetingId) return;
+  const boton = $('#meet-save');
+  boton.classList.add('is-loading');
+  try {
+    await api(`/meetings/${currentMeetingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: $('#meet-detail-title').value.trim(),
+        transcript: $('#meet-transcript').value,
+      }),
+    });
+    meetStatus('Cambios guardados ✓', 3000);
+    loadMeetings();
+  } catch (e) {
+    $('#meet-status').textContent = `No se pudo guardar: ${e.message}`;
+  } finally {
+    boton.classList.remove('is-loading');
+  }
+});
+
+$('#meet-delete').addEventListener('click', async () => {
+  if (!currentMeetingId) return;
+  const borrar = await mostrarModal({
+    titulo: 'Borrar reunión',
+    mensaje: 'Se borrará la reunión, su audio y su acta del Baúl.',
+    confirmar: 'Borrar',
+    cancelar: 'Cancelar',
+  });
+  if (!borrar) return;
+  try {
+    await api(`/meetings/${currentMeetingId}`, { method: 'DELETE' });
+    currentMeetingId = null;
+    $('#meet-detail-title').value = '';
+    $('#meet-transcript').value = '';
+    $('#meet-summary').textContent = 'Selecciona o graba una reunión para ver su resumen.';
+    $('#meet-detail-meta').textContent = '';
+    $('#meet-save').classList.add('hidden');
+    $('#meet-delete').classList.add('hidden');
+    meetStatus('Reunión borrada', 3000);
+    loadMeetings();
+  } catch (e) {
+    $('#meet-status').textContent = `No se pudo borrar: ${e.message}`;
+  }
+});
 
 function escapeHtml(text) {
   const div = document.createElement('div');

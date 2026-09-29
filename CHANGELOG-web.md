@@ -696,3 +696,45 @@ la SPA caía al endpoint de redirect y mostraba **JSON crudo** (503).
 ### Gate
 `ruff`/`mypy`/`biome` limpios; **1.326 tests** (regresión «He anotado»);
 desplegado y verificado en el HP.
+
+---
+
+## REUNIONES: EDITAR Y BORRAR + RAG (2026-09-29)
+
+### ¿Están en el Baúl y las puede usar Rafita? SÍ
+- Cada reunión guarda su **acta en `Reuniones/`** de la bóveda (resumen,
+  puntos clave, decisiones, tareas y transcripción) y aparece en la vista
+  Baúl. El **VaultIndexer la indexa automáticamente** (evidencia en logs:
+  `Reuniones/prueba-editar.md -> 5 chunks`).
+- **Recuperación verificada (RAG)**: consulta a la base vectorial con
+  «punto X importante reunion de prueba» → devuelve los fragmentos del acta
+  (`Reunion de prueba sobre el punto X.`, `- punto X importante`). Es decir,
+  Rafita puede citarla en chat/llamada.
+
+### Editar — IMPLEMENTADO
+- **API**: `PATCH /api/meetings/{id}` con `{title?, transcript?}`.
+- **Servicio**: actualiza la BD y el acta del Baúl de forma **quirúrgica**
+  (título del frontmatter + sección de transcripción, tolerando cabecera con
+  o sin tilde) **conservando** resumen, puntos clave, decisiones y tareas;
+  el watcher la reindexa.
+- **UI**: el título es editable y la transcripción también; botones
+  «Guardar»/«Borrar» que aparecen al seleccionar una reunión. El resumen
+  (generado por IA) se sigue editando desde el Baúl.
+- **Evidencia**: PATCH → título/transcripción actualizados en BD y en el
+  acta, secciones conservadas; UI: «Cambios guardados ✓».
+
+### Borrar — IMPLEMENTADO
+- **API**: `DELETE /api/meetings/{id}?borrar_nota=true` (por defecto borra
+  también el acta).
+- **Servicio**: elimina audio (`.webm`/`.wav`), acta del Baúl (con
+  `resolve_within`) y la fila de la BD.
+- **UI**: botón «Borrar» con modal propio («Se borrará la reunión, su audio
+  y su acta del Baúl»).
+- **Evidencia**: UI → modal → aceptar → la reunión desaparece de la lista y
+  el fichero del acta ya no existe en el HP.
+
+### Tests y gate
+Nuevos: `test_editar_reunion_actualiza_nota_y_conserva_secciones`,
+`test_borrar_reunion_borra_su_acta`, `test_meetings_editar_y_borrar`
+(API). **1.329 tests**, ruff/mypy/biome limpios, desplegado y verificado en
+el HP.

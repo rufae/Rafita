@@ -239,7 +239,7 @@ def test_meetings_api(monkeypatch, tmp_path):
             return None
         return {"id": 5, "title": "Reunion", "status": "done", "tasks_list": ["t"]}
 
-    async def fake_borrar(meeting_id, user_id):
+    async def fake_borrar(meeting_id, user_id, borrar_nota=True):
         return meeting_id == 5
 
     monkeypatch.setattr("src.services.meeting_service.crear_desde_subida", fake_crear)
@@ -476,3 +476,43 @@ def test_google_status_y_errores_vuelven_a_la_spa(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "google_web_client_id", "id")
     monkeypatch.setattr(settings, "google_web_client_secret", "secreto")
     assert client.get("/api/auth/google/status").json()["configured"] is True
+
+
+def test_meetings_editar_y_borrar(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+    llamadas = {}
+
+    async def fake_editar(meeting_id, user_id, titulo=None, transcripcion=None):
+        llamadas["editar"] = (meeting_id, titulo, transcripcion)
+        return {"id": meeting_id, "title": titulo, "transcript": transcripcion}
+
+    async def fake_borrar(meeting_id, user_id, borrar_nota=True):
+        llamadas["borrar"] = (meeting_id, borrar_nota)
+        return meeting_id == 7
+
+    monkeypatch.setattr("src.services.meeting_service.editar", fake_editar)
+    monkeypatch.setattr("src.services.meeting_service.borrar", fake_borrar)
+
+    r = client.patch(
+        "/api/meetings/7",
+        json={"title": "Nuevo título", "transcript": "texto"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["meeting"]["title"] == "Nuevo título"
+    assert llamadas["editar"] == (7, "Nuevo título", "texto")
+
+    sin_auth = client.patch("/api/meetings/7", json={"title": "x"})
+    assert sin_auth.status_code == 401
+
+    d = client.delete("/api/meetings/7?borrar_nota=false", headers=headers)
+    assert d.status_code == 200
+    assert llamadas["borrar"] == (7, False)
+    assert client.delete("/api/meetings/99", headers=headers).status_code == 404

@@ -918,6 +918,22 @@ textarea:hover {
   font-size: var(--fs-h2);
 }
 
+input.editor-title {
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-title);
+  flex: 1;
+  min-width: 180px;
+  border-color: transparent;
+  background: transparent;
+}
+
+input.editor-title:hover,
+input.editor-title:focus {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
 .editor-status {
   font-size: var(--fs-caption);
   color: var(--ink-faint);
