@@ -638,3 +638,61 @@ la SPA caía al endpoint de redirect y mostraba **JSON crudo** (503).
    y `docker compose … up -d rafita-agent-core`.
    (Alternativa sin dominio: cliente *TVs and Limited Input devices* y flujo de
    dispositivo con código — ya implementado.)
+
+---
+
+## GOOGLE ACTIVADO + CALIDAD DE VOZ/STT + CONTEXTO DE LLAMADA (2026-09-29)
+
+### Google: credenciales pasadas al HP y flujo listo
+- Credenciales del `.env` local pasadas al HP
+  (`GOOGLE_WEB_CLIENT_ID/SECRET/REDIRECT_URI`, callback en el ts.net).
+- Verificado en el HP: `/api/auth/google/status` → `configured: true`;
+  `/auth/google/start` → redirige a `accounts.google.com` con el client_id
+  real. (El JSON descargado no hace falta: son los mismos valores.)
+- Recordatorio: el *Authorized redirect URI* en Google Cloud debe ser
+  `https://nodochicohp.taildafbf0.ts.net/api/auth/google/callback` (ya está en
+  el `.env`).
+
+### STT (transcripciones): de "lamentables" a precisas
+- **Modelo**: `WHISPER_MODEL=small` en el HP (antes `tiny`→`base`).
+- **Voz en llamada**: `beam_size=5`, `speech_pad_ms=300`, fallback de
+  temperatura `[0.0, 0.2, 0.4]` (más robusto en audios cortos) e
+  `initial_prompt` en español (ya existía).
+- **Notas de voz de Telegram**: `beam_size=5`, `initial_prompt`,
+  `condition_on_previous_text=False`.
+- **Reuniones**: `initial_prompt` + `condition_on_previous_text=False`.
+- **Evidencia (piper → STT en el HP)**:
+  - «Hola Rafita, quiero que me digas qué tiempo hace mañana en Sevilla.» →
+    **exacto**.
+  - «Ponme un recordatorio para mañana a las nueve de la mañana.» → **exacto**.
+  - «Hola, ¿qué tal estás?» → «Hola, ¿qué tal le estás?» (mínimo).
+  - «Busca el correo de Soraya…» → «…de sol allá…» (nombre propio sintético).
+  - **Limitación honesta**: una palabra aislada de ~0,4 s («Hola» solo) es
+    inestable en Whisper-small (alucina «Bueno/Por favor» según la pasada);
+    con frases normales (≥1 s) es fiable. Documentado.
+
+### Llamada: contexto limpio y respuestas con sentido
+- **Causa del sinsentido** («…el correo de Soraya…» al decir «Hola»): el
+  historial de voz (chat_id 0) se acumulaba **entre llamadas** y contaminaba.
+  **Arreglo**: al iniciar cada llamada se limpia el historial de voz
+  (`delete_chat_history(0)`), así cada llamada empieza limpia.
+- **Evidencia**: llamada 1 («…llamar a Soraya mañana») → respuesta correcta;
+  llamada 2 («Hola») → «De acuerdo, ¿en qué puedo ayudarte hoy?» **sin
+  mencionar a Soraya**.
+- **Fillers**: el texto ya no dice «estoy buscando» (engañoso cuando solo
+  tarda el LLM); piscina neutra («Dame un momento, por favor…», «Un
+  segundo…»…) y umbral 2,2 s.
+- **Herramientas en voz**: lo dictado por llamada (tareas/eventos/gastos/CRM)
+  se guarda con el **chat del administrador** (`tool_chat_id`), no con
+  `chat_id 0` invisible. Con Google conectado, las tareas van a Google Tasks
+  (verificado en la prueba E2E).
+- **Guardia de honestidad ampliada**: «He **anotado**…» no se detectaba
+  (el modelo afirmó haber anotado una tarea sin llamar a la herramienta);
+  añadidas variantes («he anotado», «he tomado nota», «tomé nota»…) + test de
+  regresión.
+- **Latencia**: el LLM está en la **torre GPU** (verificado `backend=gpu`);
+  una llamada simple tardó ~4 s total.
+
+### Gate
+`ruff`/`mypy`/`biome` limpios; **1.326 tests** (regresión «He anotado»);
+desplegado y verificado en el HP.

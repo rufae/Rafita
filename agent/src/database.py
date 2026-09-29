@@ -365,6 +365,10 @@ class DatabaseManager:
         await self.execute(sql, (new_content, chat_id, role))
         await self._conn.commit()
 
+    async def delete_chat_history(self, chat_id: int) -> None:
+        await self.execute("DELETE FROM chat_history WHERE chat_id = ?", (chat_id,))
+        await self._conn.commit()
+
     async def get_chat_history(
         self, chat_id: int, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
