@@ -110,6 +110,38 @@ def date_context_line() -> str:
     )
 
 
+# Reglas de grounding compartidas por chat y voz (Bloque 1, 2026-09-29):
+# el modelo solo puede afirmar lo que devuelvan las herramientas o el usuario.
+GROUNDING_RULES = (
+    "GROUNDING_RULE (critica): responde SOLO con informacion que provenga de la "
+    "salida real de las herramientas o del mensaje del usuario. Si una "
+    "herramienta devuelve una lista vacia, un error o no esta disponible, di "
+    "exactamente que no hay resultados o que no pudiste comprobarlo; nunca "
+    "completes huecos con suposiciones ni ejemplos.\n"
+    "TRUTH_RULE (critica): NUNCA inventes datos. No inventes correos, "
+    "remitentes, direcciones, fechas, importes, eventos ni tareas. Si una "
+    "herramienta no devuelve resultados o falla, di exactamente que no hay "
+    "resultados (o que no pudiste comprobarlo); jamas rellenes con "
+    "suposiciones. Solo puedes afirmar algo si viene de una herramienta o "
+    "del propio mensaje del usuario.\n"
+    "TOOL_HONESTY_RULE: no afirmes haber hecho una accion (guardar, crear, "
+    "enviar, anadir, completar) si no la ha ejecutado una herramienta en "
+    "este turno. Si no puedes ejecutarla, dilo claramente.\n"
+    "TASK_RULE: cuando el usuario pida guardar, apuntar o recordar una "
+    "tarea ('guarda esta tarea', 'apunta que...', 'recuérdame...', 'para "
+    "mañana'), llama SIEMPRE a manage_google_tasks (action=create) con el "
+    "titulo completo y, si dio una fecha relativa, en `due` tal cual "
+    "('mañana', 'el viernes'). Confirma solo si la herramienta responde "
+    "con exito.\n"
+    "EMAIL_RULE: para cualquier pregunta sobre correos usa SIEMPRE "
+    "search_gmail antes de responder y cita unicamente remitente, asunto "
+    "y fecha que devuelva la herramienta. Si no hay resultados, dilo; "
+    "nunca inventes un correo ni un remitente. Busca de inmediato con lo "
+    "que el usuario haya dicho (nombre, parte del nombre, asunto...): NO "
+    "pidas confirmacion ni el nombre completo antes de buscar.\n"
+)
+
+
 def build_system_prompt(voice: bool = False) -> str:
     """Prompt del sistema con contexto dinámico (auditoría 2026-09-26).
 
@@ -140,28 +172,8 @@ def build_system_prompt(voice: bool = False) -> str:
         "ACTION_RULE: si la peticion del usuario esta cubierta por una "
         "herramienta, invocala directamente sin pedir confirmacion ni "
         "preguntar detalles que puedas asumir razonablemente.\n"
-        "TRUTH_RULE (critica): NUNCA inventes datos. No inventes correos, "
-        "remitentes, direcciones, fechas, importes, eventos ni tareas. Si una "
-        "herramienta no devuelve resultados o falla, di exactamente que no hay "
-        "resultados (o que no pudiste comprobarlo); jamas rellenes con "
-        "suposiciones. Solo puedes afirmar algo si viene de una herramienta o "
-        "del propio mensaje del usuario.\n"
-        "TOOL_HONESTY_RULE: no afirmes haber hecho una accion (guardar, crear, "
-        "enviar, anadir, completar) si no la ha ejecutado una herramienta en "
-        "este turno. Si no puedes ejecutarla, dilo claramente.\n"
-        "TASK_RULE: cuando el usuario pida guardar, apuntar o recordar una "
-        "tarea ('guarda esta tarea', 'apunta que...', 'recuérdame...', 'para "
-        "mañana'), llama SIEMPRE a manage_google_tasks (action=create) con el "
-        "titulo completo y, si dio una fecha relativa, en `due` tal cual "
-        "('mañana', 'el viernes'). Confirma solo si la herramienta responde "
-        "con exito.\n"
-        "EMAIL_RULE: para cualquier pregunta sobre correos usa SIEMPRE "
-        "search_gmail antes de responder y cita unicamente remitente, asunto "
-        "y fecha que devuelva la herramienta. Si no hay resultados, dilo; "
-        "nunca inventes un correo ni un remitente. Busca de inmediato con lo "
-        "que el usuario haya dicho (nombre, parte del nombre, asunto...): NO "
-        "pidas confirmacion ni el nombre completo antes de buscar.\n"
-        "CONTACT_RULE: si el usuario pide el telefono, movil, correo o "
+        + GROUNDING_RULES
+        + "CONTACT_RULE: si el usuario pide el telefono, movil, correo o "
         "direccion de una persona (mama, papa, Ana, un amigo...), usa SIEMPRE "
         "find_contact (Google Contacts) ANTES de responder. NUNCA uses "
         "search_knowledge ni search_second_brain para telefonos ni correos: "

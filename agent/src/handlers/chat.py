@@ -896,6 +896,8 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             logger.info("Write tool blocked (PERSIST_TO_BRAIN=false): %s", func_name)
             return {
                 "success": False,
+                "error": "write_disabled",
+                "tool": func_name,
                 "message": (
                     "Escritura deshabilitada: PERSIST_TO_BRAIN=false (modo depuracion). "
                     "No se modifico el segundo cerebro."
@@ -1858,6 +1860,8 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
         else:
             return {
                 "success": False,
+                "error": "unknown_tool",
+                "tool": func_name,
                 "message": f"Función desconocida: {func_name}",
             }
     except Exception as e:
@@ -1865,5 +1869,10 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
         metrics.inc("tool_calls_failed")
         return {
             "success": False,
-            "message": f"Error al ejecutar {func_name}: {e}",
+            "error": "tool_exception",
+            "tool": func_name,
+            "message": (
+                "Error al ejecutar %s: %s. Informa al usuario del fallo y no "
+                "inventes datos: si no hay resultado, dilo." % (func_name, e)
+            ),
         }
