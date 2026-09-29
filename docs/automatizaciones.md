@@ -205,7 +205,11 @@ disparo + entrega; endpoints HMAC `/automation/*`).
      fragmentos en el modo llamada).
 
 ### Automatizaciones aún no implementadas (catálogo A-D)
-- B. Secuencias de email con personalización dinámica.
+- ~~B. Secuencias de email con personalización dinámica~~ **Implementado
+  (2026-09-29)**: `sequence_service` con pasos escalonados (0/3/7 días), emails
+  redactados por el LLM con contexto, parada automática si el contacto
+  responde, registro en la nota CRM, tool `manage_sequences` en el chat y
+  flujo n8n 10 diario 09:30 (con `dry_run` para probar).
 - ~~C. Mini-CRM de ventas y gestión de clientes~~ **Implementado (2026-09-28)**:
   notas `CRM/<cliente>.md` con estado/valor/seguimiento, comando `/clientes`,
   tool `manage_crm` en el chat y flujo n8n 9 (seguimientos los lunes).

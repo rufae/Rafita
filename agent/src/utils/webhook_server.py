@@ -562,6 +562,24 @@ async def automation_crm_remind(request: Request):
     }
 
 
+@app.post("/automation/sequences-run")
+async def automation_sequences_run(request: Request):
+    """Ejecuta las secuencias de email vencidas (Fase 2)."""
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    from src.services.sequence_service import ejecutar_secuencias
+
+    return await ejecutar_secuencias(
+        dry_run=bool(payload.get("dry_run", False)),
+        max_envios=int(payload.get("max_envios", 3) or 3),
+    )
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,
