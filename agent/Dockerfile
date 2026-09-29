@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir --user --no-deps kokoro-onnx==0.6.1 && \
     pip install --no-cache-dir --user phonemizer==3.4.0 espeakng-loader==0.2.4
 
 
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 LABEL maintainer="RafAI-Rafita"
 LABEL rafita.version="0.2.0"
