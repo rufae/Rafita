@@ -1,6 +1,6 @@
 /* Service worker de Rafita: cachea el shell de la app para uso offline;
    la API siempre va a la red (datos frescos). */
-const CACHE = 'rafita-shell-v1';
+const CACHE = 'rafita-shell-v2';
 const SHELL = [
   './',
   './index.html',

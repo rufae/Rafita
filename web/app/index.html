@@ -42,6 +42,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-view="chat" role="tab">Chat</button>
         <button class="tab" data-view="vault" role="tab">Baúl</button>
+        <button class="tab" data-view="meetings" role="tab">Reuniones</button>
         <button class="tab" data-view="call" role="tab">Llamar</button>
       </nav>
       <div class="user">
@@ -79,6 +80,27 @@
             </div>
             <textarea id="note-content" placeholder="Contenido de la nota…"></textarea>
             <p id="note-status" class="muted"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Vista Reuniones -->
+      <section id="view-meetings" class="view">
+        <div class="vault-toolbar">
+          <input id="meet-title" type="text" placeholder="Título de la reunión (opcional)" />
+          <button id="meet-mic" class="primary">● Grabar micro</button>
+          <button id="meet-tab" class="ghost">Grabar pestaña</button>
+          <span id="meet-status" class="muted small"></span>
+        </div>
+        <div class="vault-grid">
+          <ul id="meet-list" class="note-list"></ul>
+          <div class="editor">
+            <h3 id="meet-detail-title">Detalle de la reunión</h3>
+            <p id="meet-detail-meta" class="muted small"></p>
+            <div id="meet-summary" class="meet-summary muted small">
+              Selecciona o graba una reunión para ver su resumen.
+            </div>
+            <textarea id="meet-transcript" readonly placeholder="Transcripción…"></textarea>
           </div>
         </div>
       </section>
