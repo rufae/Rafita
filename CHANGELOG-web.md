@@ -592,3 +592,49 @@ válido. Alternativa: NPM con 301 de `rafita.home` al ts.net (opcional).
 - **Verificación**: a 390 y 360 px las 4 pestañas dentro del viewport, sin
   scroll horizontal, **axe 0** en login/chat/baúl y E2E real **9/9**.
 - Capturas actualizadas en `docs/web-screenshots/` (móvil 390 y 360).
+
+---
+
+## LOGIN CON GOOGLE: diagnóstico y UX (2026-09-29)
+
+### Por qué no funcionaba
+`GOOGLE_WEB_CLIENT_ID` y `GOOGLE_WEB_CLIENT_SECRET` están **vacíos** en el
+`.env` del HP: no hay credenciales OAuth de la web. Además, al pulsar el botón
+la SPA caía al endpoint de redirect y mostraba **JSON crudo** (503).
+
+### Cambios
+- **`GET /api/auth/google/status`** (nuevo): la SPA sabe si Google está
+  configurado antes de ofrecer el botón.
+- **`/auth/google/start`** sin configurar → `307 /app/#google-error=no_config`
+  (antes: JSON 503). **Callback** con error/estado caducado/fallo de Google →
+  `307 /app/#google-error=denied|state|google` (antes: JSON 400/401).
+- **SPA**: clic en Google sin configurar → mensaje claro y se queda en la SPA
+  (sin navegar); si el flujo de dispositivo no está disponible, usa el redirect
+  (sus errores vuelven como fragmento y se explican); mensajes para
+  `no_config/denied/state/google` y limpieza del fragmento.
+- **Página de llamada** abierta sin token: además del aviso, enlace
+  «Ir a Rafita» cuando se sirve por HTTPS.
+- `deploy/hp/tailscale-serve.sh`: un solo `sudo bash …` para exponer SPA (443)
+  y voz (8443) por HTTPS con certificado válido de Tailscale (documentado en
+  `docs/web.md`).
+
+### Evidencia
+- HP: `status` → `{"configured":false,"login_ready":true}`;
+  `start` → `307 location: /app/#google-error=no_config`;
+  `callback?error=access_denied` → `307 … google-error=denied`.
+- SPA (Playwright): clic en Google → mensaje amigable, **sin navegación a
+  JSON**; `#google-error=denied` → «Has cancelado el acceso con Google…» y
+  fragmento limpiado.
+- Test nuevo `test_google_status_y_errores_vuelven_a_la_spa`; **1.325 tests**.
+
+### Para activarlo (usuario)
+1. Ejecutar una vez: `sudo bash ~/proyectos/rafita/deploy/hp/tailscale-serve.sh`
+   (deja la SPA en `https://nodochicohp.taildafbf0.ts.net/` y la voz en `:8443`).
+2. Google Cloud Console → Credenciales → crear cliente **Web application** con
+   *Authorized redirect URI*:
+   `https://nodochicohp.taildafbf0.ts.net/api/auth/google/callback`.
+3. Pegar en `.env`: `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_WEB_CLIENT_SECRET` y
+   `GOOGLE_WEB_REDIRECT_URI=https://nodochicohp.taildafbf0.ts.net/api/auth/google/callback`
+   y `docker compose … up -d rafita-agent-core`.
+   (Alternativa sin dominio: cliente *TVs and Limited Input devices* y flujo de
+   dispositivo con código — ya implementado.)

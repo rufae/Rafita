@@ -128,19 +128,20 @@ async def auth_me(user: dict[str, Any] = Depends(require_user)):
     return {"user": _user_public(user)}
 
 
+@router.get("/auth/google/status")
+async def auth_google_status():
+    """La SPA consulta esto para saber si ofrecer el boton de Google."""
+    return {
+        "configured": google_configured(),
+        "login_ready": bool((settings.web_auth_secret or "").strip()),
+    }
+
+
 @router.get("/auth/google/start")
 async def auth_google_start(request: Request):
     if not google_configured():
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "Google no configurado para la web",
-                "hint": (
-                    "Define GOOGLE_WEB_CLIENT_ID y GOOGLE_WEB_CLIENT_SECRET (y "
-                    "GOOGLE_WEB_REDIRECT_URI) en el .env para activar Sign in with Google."
-                ),
-            },
-        )
+        # Nunca un JSON crudo en el navegador: se vuelve a la SPA con el aviso.
+        return RedirectResponse("/app/#google-error=no_config")
     base = str(request.base_url)
     state = secrets.token_urlsafe(24)
     _GOOGLE_STATES[state] = time.time() + _STATE_TTL_S
@@ -148,13 +149,16 @@ async def auth_google_start(request: Request):
 
 
 @router.get("/auth/google/callback")
-async def auth_google_callback(request: Request, code: str = "", state: str = ""):
+async def auth_google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    # Cualquier fallo vuelve a la SPA con un aviso amigable (nunca JSON).
+    if error:
+        return RedirectResponse("/app/#google-error=denied")
     expira = _GOOGLE_STATES.pop(state, 0.0)
     if not state or expira < time.time():
-        raise HTTPException(status_code=400, detail="Estado OAuth invalido o caducado")
+        return RedirectResponse("/app/#google-error=state")
     info = await exchange_google_code(code, str(request.base_url))
     if not info or not info.get("email"):
-        raise HTTPException(status_code=401, detail="No se pudo validar la cuenta de Google")
+        return RedirectResponse("/app/#google-error=google")
     user = await _upsert_google_user(str(info["email"]))
     if not (settings.web_auth_secret or "").strip():
         raise HTTPException(status_code=503, detail="Login web deshabilitado (WEB_AUTH_SECRET)")

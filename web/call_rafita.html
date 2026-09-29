@@ -986,10 +986,21 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') {
   if (dbg) dbg.classList.remove('hidden');
 }
 
-// Sin token no se puede autorizar la llamada: se explica en vez de fallar.
+// Sin token no se puede autorizar la llamada: se explica en vez de fallar y
+// se ofrece el camino de vuelta a Rafita (mismo host en HTTPS).
 if (!authToken) {
   setStatus(STATUS.ERROR, 'Abre esta página desde la pestaña Llamar de Rafita para autorizar el micrófono.');
   log('Sin token de acceso: entra por la pestaña Llamar de Rafita.');
+  if (window.location.protocol === 'https:') {
+    const volver = document.createElement('a');
+    volver.href = `${window.location.protocol}//${window.location.hostname}/`;
+    volver.textContent = 'Ir a Rafita';
+    volver.className = 'mini';
+    volver.style.display = 'inline-block';
+    volver.style.marginTop = '10px';
+    const controles = document.querySelector('.controls');
+    if (controles) controles.appendChild(volver);
+  }
 }
 
 async function testTTS() {
