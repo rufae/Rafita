@@ -354,3 +354,16 @@ def test_call_page_security_headers(monkeypatch):
     assert headers["X-Content-Type-Options"] == "nosniff"
     assert headers["Referrer-Policy"] == "no-referrer"
     assert "camera=()" in headers["Permissions-Policy"]
+
+
+def test_tokens_css_servido_por_el_servidor_de_voz():
+    """El token de diseno unificado debe servirse en la pagina de llamada."""
+    from fastapi.testclient import TestClient
+
+    from src.voice_stream import server as vs
+
+    client = TestClient(vs.app)
+    resp = client.get("/tokens.css")
+    assert resp.status_code == 200
+    assert "--font-sans" in resp.text
+    assert resp.headers.get("content-type", "").startswith("text/css")

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mockup — Diseño Rafita (Fase 3)</title>
+<link rel="stylesheet" href="../app/tokens.css">
+<style>
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: var(--sp-6); display: grid; gap: var(--sp-6); }
+  .topbar {
+    display: flex; align-items: center; gap: var(--sp-4);
+    background: var(--panel); border-radius: var(--radius-lg);
+    padding: var(--sp-3) var(--sp-4); box-shadow: var(--shadow-md);
+  }
+  .brand { display: flex; align-items: center; gap: var(--sp-2); font-weight: 700; letter-spacing: -0.2px; }
+  .brand .dot { width: 28px; height: 28px; border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--brand-500), var(--indigo-500)); }
+  .tabs { display: flex; gap: var(--sp-1); }
+  .tab {
+    position: relative; border: 0; background: transparent; color: var(--muted);
+    font: 600 var(--fs-sm)/1 var(--font-sans); padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-sm); cursor: pointer; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .tab:hover { color: var(--text); background: var(--panel-2); }
+  .tab.active { color: var(--text); }
+  .tab.active::after {
+    content: ""; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: -2px;
+    height: 2px; border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, var(--brand-500), var(--indigo-500));
+  }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: var(--sp-6); }
+  .card { background: var(--panel); border-radius: var(--radius-lg); padding: var(--sp-4);
+    box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: var(--sp-3); }
+  h2 { margin: 0; font-size: var(--fs-lg); letter-spacing: -0.3px; }
+  .muted { color: var(--muted); font-size: var(--fs-sm); }
+  .fila { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-sm); transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+  .fila:hover { background: var(--panel-2); transform: translateX(2px); }
+  .fila .t { font-weight: 600; font-size: var(--fs-sm); }
+  .skeleton { border-radius: var(--radius-sm); background: linear-gradient(90deg,
+      var(--panel-2) 25%, rgba(148,163,184,0.25) 50%, var(--panel-2) 75%);
+    background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .vacio { text-align: center; padding: var(--sp-8) var(--sp-4); display: flex;
+    flex-direction: column; align-items: center; gap: var(--sp-3); }
+  .vacio .icono { width: 56px; height: 56px; border-radius: var(--radius-pill);
+    background: var(--panel-2); display: grid; place-items: center; font-size: 24px; }
+  .btn { border: 0; cursor: pointer; font: 600 var(--fs-sm)/1 var(--font-sans);
+    padding: var(--sp-3) var(--sp-4); border-radius: var(--radius); transition:
+      transform var(--t-fast) var(--ease), box-shadow var(--t) var(--ease), filter var(--t-fast) var(--ease); }
+  .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .btn:active { transform: translateY(0); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.primary { color: #04121f; background: linear-gradient(135deg, var(--accent-2), var(--brand-600)); }
+  .btn.danger { color: var(--danger); background: transparent; border: 1px solid var(--danger); }
+  .burbuja { max-width: 72%; padding: var(--sp-3) var(--sp-4); border-radius: 16px;
+    line-height: var(--lh); animation: entra var(--t) var(--ease); }
+  @keyframes entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .burbuja.yo { align-self: flex-end; background: linear-gradient(135deg, var(--accent-2), var(--brand-600));
+    color: #04121f; border-bottom-right-radius: 4px; }
+  .burbuja.ia { align-self: flex-start; background: var(--panel-2); border-bottom-left-radius: 4px; }
+  .chat { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .modal-card { background: var(--panel); border-radius: var(--radius-lg); padding: var(--sp-6);
+    box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: var(--sp-3);
+    animation: entra var(--t) var(--ease); }
+  .chip { display: inline-flex; gap: var(--sp-1); align-items: center; background: var(--panel-2);
+    border-radius: var(--radius-pill); padding: var(--sp-1) var(--sp-3); font-size: var(--fs-xs); }
+  .leyenda { color: var(--muted); font-size: var(--fs-xs); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand"><div class="dot"></div> Rafita</div>
+    <div class="tabs">
+      <button class="tab active">Chat</button>
+      <button class="tab">Baúl</button>
+      <button class="tab">Reuniones</button>
+      <button class="tab">Llamar</button>
+    </div>
+    <div class="muted" style="margin-left:auto">rafael@…</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Notas</h2>
+      <div class="fila"><span class="t">00-Inbox/ideas.md</span><span class="muted">hoy · 1,2 KB</span></div>
+      <div class="fila"><span class="t">Proyectos/rafita.md</span><span class="muted">ayer · 8,4 KB</span></div>
+      <div class="skeleton" style="height:38px"></div>
+      <div class="skeleton" style="height:38px"></div>
+      <div class="vacio">
+        <div class="icono">🗒️</div>
+        <strong>Aún no hay notas</strong>
+        <span class="muted">Crea tu primera nota para empezar tu bóveda.</span>
+        <button class="btn primary">Nueva nota</button>
+      </div>
+    </div>
+
+    <div style="display:grid; gap: var(--sp-6);">
+      <div class="card chat">
+        <h2>Chat</h2>
+        <div class="burbuja ia">Hola, soy Rafita. ¿En qué te ayudo hoy?</div>
+        <div class="burbuja ya">Busca el correo de Ana de ayer</div>
+        <div class="burbuja ia">No encuentro ningún correo de Ana desde ayer. ¿Lo moviste a otra carpeta?</div>
+        <div style="display:flex; gap: var(--sp-2)">
+          <button class="btn primary">Enviar</button>
+          <button class="btn danger">Borrar nota</button>
+          <span class="chip">⚡ tokens unificados</span>
+          <span class="chip">🎨 tema sistema</span>
+        </div>
+      </div>
+      <div class="modal-card">
+        <h2>Cambios sin guardar</h2>
+        <div class="muted">La nota actual tiene cambios sin guardar. ¿Descartarlos?</div>
+        <div style="display:flex; gap: var(--sp-2); justify-content:flex-end">
+          <button class="btn">Seguir editando</button>
+          <button class="btn primary">Descartar</button>
+        </div>
+      </div>
+      <div class="leyenda">Mockup Fase 3 · tokens: web/app/tokens.css · micro-interacciones con --ease/--t</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
