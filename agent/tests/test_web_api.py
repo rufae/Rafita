@@ -207,3 +207,66 @@ def test_call_token_y_spa(monkeypatch, tmp_path):
     assert client.get("/app/manifest.webmanifest").status_code == 200
     assert client.get("/app/sw.js").status_code == 200
     assert client.get("/").status_code in (200, 307)
+
+
+def test_meetings_api(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+
+    assert client.get("/api/meetings").status_code == 401
+
+    llamadas = {}
+
+    async def fake_crear(user_id, titulo, nombre, datos):
+        llamadas["crear"] = (user_id, titulo, nombre, len(datos))
+        return {"id": 5, "title": titulo or "Reunion", "status": "processing"}
+
+    async def fake_listar(user_id):
+        return [{"id": 5, "title": "Reunion", "status": "done", "duration_s": 60.0}]
+
+    async def fake_detalle(meeting_id, user_id):
+        if meeting_id != 5:
+            return None
+        return {"id": 5, "title": "Reunion", "status": "done", "tasks_list": ["t"]}
+
+    async def fake_borrar(meeting_id, user_id):
+        return meeting_id == 5
+
+    monkeypatch.setattr("src.services.meeting_service.crear_desde_subida", fake_crear)
+    monkeypatch.setattr("src.services.meeting_service.listar", fake_listar)
+    monkeypatch.setattr("src.services.meeting_service.detalle", fake_detalle)
+    monkeypatch.setattr("src.services.meeting_service.borrar", fake_borrar)
+
+    subida = client.post(
+        "/api/meetings",
+        files={"file": ("reunion.webm", b"audio-bytes", "audio/webm")},
+        data={"title": "Daily"},
+        headers=headers,
+    )
+    assert subida.status_code == 200
+    assert subida.json()["id"] == 5
+    assert llamadas["crear"][1] == "Daily"
+    assert llamadas["crear"][3] == len(b"audio-bytes")
+
+    listado = client.get("/api/meetings", headers=headers)
+    assert listado.status_code == 200 and listado.json()["meetings"][0]["id"] == 5
+
+    detalle = client.get("/api/meetings/5", headers=headers)
+    assert detalle.status_code == 200 and detalle.json()["tasks_list"] == ["t"]
+    assert client.get("/api/meetings/99", headers=headers).status_code == 404
+
+    assert client.delete("/api/meetings/5", headers=headers).status_code == 200
+    assert client.delete("/api/meetings/99", headers=headers).status_code == 404
+
+    vacio = client.post(
+        "/api/meetings",
+        files={"file": ("vacio.webm", b"", "audio/webm")},
+        headers=headers,
+    )
+    assert vacio.status_code == 400
