@@ -40,6 +40,64 @@ app.add_middleware(
 )
 
 
+# ---------- Frases de espera / fillers (Fase 2, 2026-09-29) ----------
+# Si la respuesta tarda mas de FILLER_DELAY_S en empezar (busquedas, tools),
+# se emite una frase natural para evitar el silencio. La piscina rota sin
+# repetir y un cooldown evita saturar si hay varias consultas seguidas.
+FILLER_PHRASES = (
+    "Dame un momento, estoy buscando...",
+    "Dejame consultar eso, un segundo...",
+    "Voy a mirarlo, dame un instante...",
+    "Un momento, lo compruebo...",
+    "Estoy en ello, enseguida te digo...",
+)
+FILLER_DELAY_S = 1.5
+FILLER_COOLDOWN_S = 25.0
+
+
+class _FillerController:
+    """Rotacion + cooldown de frases de espera por sesion de llamada."""
+
+    def __init__(self) -> None:
+        self._last_at = 0.0
+        self._index = 0
+
+    def should_speak(self, now: float) -> bool:
+        return (now - self._last_at) >= FILLER_COOLDOWN_S
+
+    def next_phrase(self, now: float) -> str:
+        frase = FILLER_PHRASES[self._index % len(FILLER_PHRASES)]
+        self._index += 1
+        self._last_at = now
+        return frase
+
+
+async def _filler_si_tarda(websocket: WebSocket, session: dict[str, Any]) -> None:
+    """Emite una frase de espera si la respuesta no ha empezado a tiempo."""
+    try:
+        await asyncio.sleep(FILLER_DELAY_S)
+    except asyncio.CancelledError:
+        return
+    if session.get("state") == "ended" or session.get("respuesta_iniciada"):
+        return
+    controller = session.get("filler")
+    if not isinstance(controller, _FillerController):
+        return
+    ahora = time.time()
+    if not controller.should_speak(ahora):
+        return
+    frase = controller.next_phrase(ahora)
+    session["respuesta_iniciada"] = True  # una sola frase por turno
+    audio = await _synthesize_speech_bytes(frase)
+    if not audio:
+        return
+    logger.info("VoiceStream: filler emitido [%s]", frase)
+    await _safe_send_json(
+        websocket, session, {"type": "filler", "text": frase, "timestamp": time.time()}
+    )
+    await _safe_send_bytes(websocket, session, audio)
+
+
 def _call_token_valid(token: str | None) -> bool:
     """Token de acceso de la pagina de llamadas (VOICE_CALL_TOKEN en .env).
 
@@ -501,6 +559,7 @@ async def _process_utterance(
 
         async def _emit_fragment(fragment: str) -> None:
             nonlocal t_tts_total, t_first_audio, fragment_count
+            session["respuesta_iniciada"] = True
             spoken = sanitize_for_tts(fragment)
             await _safe_send_json(
                 websocket,
@@ -528,18 +587,28 @@ async def _process_utterance(
                 )
             fragment_count += 1
 
-        async for token in generate_response_stream(
-            transcript, session.get("chat_id", 0), voice=True
-        ):
-            if session.get("state") == "ended":
-                return
-            full_response += token
-            fragment_buffer += token
-            await _safe_send_json(websocket, session, {"type": "token", "text": token})
+        # Fase 2: frase de espera si la respuesta tarda en arrancar (tools,
+        # busquedas). Se cancela en cuanto llega el primer token/respuesta.
+        if not isinstance(session.get("filler"), _FillerController):
+            session["filler"] = _FillerController()
+        session["respuesta_iniciada"] = False
+        filler_task = asyncio.create_task(_filler_si_tarda(websocket, session))
+        try:
+            async for token in generate_response_stream(
+                transcript, session.get("chat_id", 0), voice=True
+            ):
+                if session.get("state") == "ended":
+                    return
+                session["respuesta_iniciada"] = True
+                full_response += token
+                fragment_buffer += token
+                await _safe_send_json(websocket, session, {"type": "token", "text": token})
 
-            fragment, fragment_buffer = _split_fragment(fragment_buffer)
-            if fragment:
-                await _emit_fragment(fragment)
+                fragment, fragment_buffer = _split_fragment(fragment_buffer)
+                if fragment:
+                    await _emit_fragment(fragment)
+        finally:
+            filler_task.cancel()
 
         if fragment_buffer.strip():
             await _emit_fragment(fragment_buffer.strip())
