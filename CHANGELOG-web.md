@@ -422,3 +422,55 @@ Herramienta: **Lighthouse 13.5.0** (Node 20 + chrome-headless-shell real).
 `ruff`/`mypy` limpios; **1.316 tests** (3 nuevos: build, paginación de notas,
 offset de chat); Lighthouse sin regresiones y con el único limitador restante
 (HTTPS) documentado.
+
+---
+
+## FASE 5 — Calidad de código y mantenibilidad (2026-09-29)
+
+### 5.1 Linter/formateador para JS/CSS — IMPLEMENTADO
+- **Cambio**: **Biome 2.5.14** (`biome.json` en la raíz) para `web/**/*.js|css`
+  + manifest; `biome check --write web/` formatea (una vez aplicado sobre
+  todo el código) y `biome ci web/` queda como comprobación. **Nuevo job
+  `web` en `.github/workflows/ci.yml`**. Regla `complexity/noImportantStyles`
+  desactivada a propósito (`.hidden` necesita `!important`); el HTML no lo
+  cubre Biome (documentado; su JS inline se prueba con tests).
+- **Evidencia**: `biome check web/` → `Checked 6 files. No fixes applied.`
+  (0 errores, 0 warnings; antes: 21 errores + 14 warnings, todo corregido —
+  formato, `useTemplate`, `useLiteralKeys`, y 5 callbacks de `forEach` que
+  devolvían valor: `lint/suspicious/useIterableCallbackReturn`).
+- **Verificación tras formatear** (el formateo no debe romper nada): smoke
+  real con Playwright → `errores de consola: ninguno`, `axe: 0 violaciones`,
+  `estado vacío con CTA: True`, build regenerado y servido.
+
+### 5.2 Tests automatizados del JS — IMPLEMENTADOS
+- **`agent/tests/test_web_js_functions.py`** (unitarios de funciones puras,
+  en navegador real, sin backend): `formatDuration` (0/90/3600 s),
+  `escapeHtml` (no deja `<img` vivo), `debounce` (3 llamadas → 1),
+  `mejorMimeGrabacion`, `rmsFromAnalyser(null)`, `authHeaders()` sin/con
+  token, `getWsBase()` sin `token=` en la URL, `fetchConTimeout` (aborta y
+  dice «tardó demasiado»).
+- **`agent/tests/test_web_e2e.py`** (E2E mínimo real): login → enviar mensaje
+  de chat → **respuesta del cerebro real** → crear/abrir/guardar/borrar una
+  nota del Baúl con el modal propio; exige `RAFITA_WEB_URL/EMAIL/PASSWORD` y
+  se salta sin ellas (comportamiento CI).
+- **Evidencia**: sin entorno (como CI): `8 passed, 1 skipped` (el E2E);
+  **contra el HP real: `9 passed`** (incluido el E2E completo, sin errores de
+  página).
+
+### 5.3 `call_rafita.html` monolito — DECISIÓN: se MANTIENE a propósito
+- **Decisión**: HTML+CSS+JS inline en un solo fichero **a propósito**: una sola
+  petición, sin build ni rutas extra, despliegue trivial en un origen
+  independiente (CSP/token/micro propios), y lo compartido ya vive fuera
+  (`tokens.css` servido por el servidor de voz). Documentado en
+  `web/README.md`; si crece, el primer paso sería extraer `call.js` en el
+  mismo servidor de voz.
+
+### 5.4 `web/README.md` — IMPLEMENTADO
+- Cómo se sirven las dos superficies y **por qué dos orígenes** (micrófono,
+  WebSocket, CSP/token independientes, reinicios aislados), qué espera
+  `config.js`, el build (`scripts/build_web.py` + copia de `config.js`),
+  formato/lint (Biome), tests (unitarios + E2E con env) y el estado PWA.
+
+### Gate de la Fase 5
+`ruff`/`mypy` limpios; **1.324 tests** (8 unitarios JS + 1 E2E, que se salta sin entorno);
+`biome ci web/` limpio y añadido a CI; smoke post-formateo sin regresiones.

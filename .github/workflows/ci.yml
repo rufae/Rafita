@@ -11,6 +11,16 @@ env:
   POETRY_VERSION: ""
 
 jobs:
+  web:
+    name: Web — Biome (JS/CSS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-biome@v2
+        with:
+          version: 2.5.14
+      - name: Biome check (formato + lint)
+        run: biome ci web/
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest

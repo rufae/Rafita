@@ -23,8 +23,8 @@
   --danger: #f87171;
 
   /* --- tipografía --- */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", sans-serif;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --fs-xs: 12px;
   --fs-sm: 14px;
   --fs-md: 16px;

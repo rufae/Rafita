@@ -3,14 +3,14 @@
    Decision (Fase 3): call_rafita.html queda FUERA de la experiencia
    instalable a proposito: vive en otro origen (voz.*) y se embebe desde la
    vista Llamada; aqui solo va el shell de la SPA. */
-const CACHE = 'rafita-shell-6d5fd6be';
+const CACHE = 'rafita-shell-292e9db9';
 const SHELL = [
   './',
   './index.html',
-  './styles-fd29ea6d.css',
-  './app-62e39d05.js',
+  './styles-cc6580e7.css',
+  './app-f9a05624.js',
   './config.js',
-  './tokens-1c80d23c.css',
+  './tokens-11a1e442.css',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -21,7 +21,7 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE)
       .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -30,7 +30,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
             }
             return resp;
           })
-          .catch(() => caches.match('./index.html'))
-    )
+          .catch(() => caches.match('./index.html')),
+    ),
   );
 });
