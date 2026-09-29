@@ -738,3 +738,70 @@ Nuevos: `test_editar_reunion_actualiza_nota_y_conserva_secciones`,
 `test_borrar_reunion_borra_su_acta`, `test_meetings_editar_y_borrar`
 (API). **1.329 tests**, ruff/mypy/biome limpios, desplegado y verificado en
 el HP.
+
+---
+
+## CHAT PROFESIONAL + COHERENCIA LLAMADA + BATERÍA DE HERRAMIENTAS (2026-09-30)
+
+### Chat: burbujas, agrupación y composición — IMPLEMENTADO
+- Burbuja real para Rafita (fondo `--surface-2`, borde, radios asimétricos),
+  avatar por grupo (`reagruparBurbujas()`: los mensajes consecutivos del mismo
+  emisor van en `.continuacion` sin repetir avatar/nombre), columna de lectura
+  de 820 px centrada, ritmo vertical por emisor/turno, indicador de escritura
+  con 3 puntos animados en burbuja, compositor sticky y **render de tablas
+  Markdown** seguro (`renderizarMarkdown`: escape + tablas + negritas + código).
+- Evidencia (Playwright, ambos temas y 390 px): agrupación correcta, tabla con
+  1 tabla/2 th, 3 puntos, columna 820 px, axe 0, sin overflow, horas AA
+  (4,68–11,22). Capturas: `chat-antes-*.png` / `chat-despues-*.png`.
+- Fixes encontrados al verificar: `--panel-2` inexistente (la burbuja quedaba
+  transparente) → `--surface-2`; hora del bot/usuario a `--ink-soft`/`--ink`
+  (2,93/1,52 → 4,68/5,62 y 10,78/11,22); data-URIs SVG con espacios que el
+  minificador rompía (avatar invisible) → codificados `%20` (verificado en el
+  CSS minificado: `svg%20xmlns`).
+
+### Timeout del chat — CORREGIDO
+- `api()` tenía 10 s fijos (Fase 1): las respuestas RAG tardaban 10,5 s y el
+  cliente abortaba dejando burbujas cruzadas. Ahora `api(path, opts, ms)` y el
+  chat usa 180 s. (Regresión detectada por la batería.)
+
+### Llamada: coherencia visual
+- Componente `.notice` (info/warn/error/ok con icono) para la zona de avisos;
+  checkboxes VAD/eco → interruptores `.switch`; botones unificados `.ctl`
+  (Iniciar/Parar/Mantener + «Ir a Rafita» ghost). Presencias verificadas:
+  misma técnica en ambas (fondo plano + morph), solo cambia el color. axe 0
+  en ambos temas. Capturas `llamada-antes-*.png` / `llamada-despues-*.png`.
+
+### Batería de herramientas (chat web real, 24 casos)
+- VERIFICADAS con efecto real: Google Calendar crear/listar/borrar (evento
+  creado, listado y eliminado — comprobado por API), n8n `trigger_n8n`
+  (ejecución 97 en el flujo «Rafita · 7 Automatizacion · Ejecutable desde
+  chat/voz»), Gmail búsqueda (encuentra el correo de prueba), Google Drive
+  listar, nota en el Baúl, `save_expense` y `manage_google_tasks` en contexto
+  fresco (comprobado en BD), `get_finance_summary` (BD: 3 transacciones).
+- HALLAZGOS (reportados, no arreglados en esta tanda):
+  1. Tool-calling **no determinista** de qwen2.5:7b: el mismo mensaje funciona
+     o no según la ejecución (p. ej. «Registra un gasto de 5 €» falló y
+     «7 €» funcionó seguido; con 106 mensajes de historial empeora). La
+     guardia de honestidad evita datos falsos (respuesta honesta) pero la
+     acción se pierde.
+  2. Guardia de honestidad (`orchestrator.py:33-40`): **falsos positivos**
+     (`encontr[eé]`, `resultados?`, `busc\w+`, `aquí tienes`, `te muestro`,
+     `un momento` matan respuestas honestas «no encontré nada») y **falsos
+     negativos** (`he eliminado`, `he borrado`, «ya he programado el envío»,
+     «he marcan») → llegó a afirmar tareas borradas/completadas y correos
+     enviados sin tool call.
+  3. `create_event` (chat.py:950-958): espera `event_datetime` «YYYY-MM-DD
+     HH:MM» sin parseo relativo; el modelo le pasa `when` (nombre de otras
+     tools) y el error dice «No se proporcionó una fecha válida» (engañoso).
+  4. `manage_google_tasks` gestiona la **BD local** aunque Google esté
+     conectado (tarea creada en local, no aparece en Google Tasks); el nombre
+     induce a error.
+  5. No existe tool para **listar alertas** (`create_alert` solo crea):
+     «¿qué alertas tengo?» acabó creando una alerta duplicada y respondiendo
+     con eventos de Calendar.
+  6. No existe tool meteorológica en el chat (AEMET solo en el briefing);
+     responde con honestidad o busca en web.
+  7. `get_finance_summary` devuelve **texto plano**, no tabla Markdown (el
+     chat sí renderiza tablas: verificado con DOM real).
+  8. Chroma: warnings «Add of existing embedding ID» re-indexando
+     `Calendario Semanal.md` + errores de telemetría posthog (ruido).
