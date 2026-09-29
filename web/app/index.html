@@ -122,6 +122,18 @@
     </main>
   </section>
 
+  <!-- Modal propio (Fase 1.6): confirmaciones y avisos sin dialogos nativos -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <div class="modal-card">
+      <h3 id="modal-titulo">Rafita</h3>
+      <p id="modal-mensaje"></p>
+      <div class="modal-actions">
+        <button id="modal-cancelar" class="ghost">Cancelar</button>
+        <button id="modal-aceptar" class="primary">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
