@@ -16,6 +16,7 @@ valores sensibles se sustituyen desde el `.env` del proyecto.
 | `07-ejecutable-chat-voz.json` | Automatización | Webhook | Permite lanzar un flujo desde el chat o la llamada de Rafita. |
 | `08-plantilla-aviso-programado.json` | Plantillas | Cron (inactivo) | Ejemplo mínimo: aviso programado a Telegram. |
 | `09-crm-seguimiento.json` | Clientes | Lunes 09:00 | Avisa de clientes del CRM sin contacto reciente o con seguimiento vencido. |
+| `10-secuencias-email.json` | Secuencias | Diario 09:30 | Envía los emails vencidos de las secuencias y avisa si algún contacto respondió (secuencia detenida). |
 
 Los flujos están etiquetados por categoría (Briefing, Correo, Bóveda, Google,
 Infra, Radar, Automatización, Plantillas) para poder filtrarlos en n8n.

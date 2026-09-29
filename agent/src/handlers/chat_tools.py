@@ -515,6 +515,61 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "manage_sequences",
+            "description": "Gestiona secuencias de email automaticas para un contacto "
+            "(seguimiento de propuestas, onboarding...): create (crea la "
+            "secuencia con pasos escalonados; los emails los redacta Rafita "
+            "con el contexto), list (lista secuencias), stop/resume (pausar o "
+            "reactivar), run (ejecuta ahora los envios vencidos). La secuencia "
+            "se detiene sola si el contacto responde. Usalo con 'crea una "
+            "secuencia para Maria (propuesta web)', 'como van las "
+            "secuencias', 'para la secuencia de Juan'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create", "list", "stop", "resume", "run"],
+                    },
+                    "nombre": {
+                        "type": "string",
+                        "description": "Nombre de la secuencia (p. ej. 'Propuesta web Maria')",
+                    },
+                    "contacto": {
+                        "type": "string",
+                        "description": "Nombre del contacto o cliente",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Email del contacto",
+                    },
+                    "contexto": {
+                        "type": "string",
+                        "description": "Contexto para personalizar los emails (proyecto, "
+                        "propuesta, ultima conversacion...)",
+                    },
+                    "pasos": {
+                        "type": "string",
+                        "description": "Opcional: pasos 'dias:objetivo' separados por comas "
+                        "(ej: '0:presentacion,3:seguimiento,7:ultimo aviso'). Si no "
+                        "se indica, se usan 0/3/7 dias.",
+                    },
+                    "sequence_id": {
+                        "type": "number",
+                        "description": "ID de la secuencia (stop/resume)",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Solo redactar sin enviar (action=run)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_recurring_reminder",
             "description": "Configura un recordatorio recurrente con patron "
             "temporal. Patrones soportados: daily (cada 24h), "

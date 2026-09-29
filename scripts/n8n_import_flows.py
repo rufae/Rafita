@@ -39,6 +39,7 @@ ETIQUETAS = {
     "07-ejecutable-chat-voz.json": "Automatizacion",
     "08-plantilla-aviso-programado.json": "Plantillas",
     "09-crm-seguimiento.json": "Clientes",
+    "10-secuencias-email.json": "Secuencias",
 }
 # Las plantillas de ejemplo no se activan nunca.
 NO_ACTIVAR = {"08-plantilla-aviso-programado.json"}
