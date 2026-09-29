@@ -1,6 +1,8 @@
 {
+  "id": "/app/",
   "name": "Rafita — Asistente personal",
   "short_name": "Rafita",
+  "categories": ["productivity", "utilities", "business"],
   "description": "Chat, bóveda de conocimiento y llamadas de voz con tu asistente personal.",
   "lang": "es",
   "start_url": "/app/",
@@ -13,5 +15,21 @@
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "icons/shot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Rafita en escritorio: chat, baúl y reuniones"
+    },
+    {
+      "src": "icons/shot-mobile.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Rafita en móvil"
+    }
   ]
 }

@@ -1,5 +1,8 @@
 /* Service worker de Rafita: cachea el shell de la app para uso offline;
-   la API siempre va a la red (datos frescos). */
+   la API siempre va a la red (datos frescos).
+   Decision (Fase 3): call_rafita.html queda FUERA de la experiencia
+   instalable a proposito: vive en otro origen (voz.*) y se embebe desde la
+   vista Llamada; aqui solo va el shell de la SPA. */
 const CACHE = 'rafita-shell-v2';
 const SHELL = [
   './',
@@ -7,6 +10,7 @@ const SHELL = [
   './styles.css',
   './app.js',
   './config.js',
+  './tokens.css',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

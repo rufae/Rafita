@@ -280,3 +280,80 @@ contraste WCAG desde tokens (`getComputedStyle`). Puntuación antes/después:
 ### Gate de la Fase 2
 `ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP y
 verificado con axe-core contra el servidor real.
+
+---
+
+## FASE 3 — Coherencia visual y de producto (2026-09-29)
+
+### 3.3 Primero: referencias y mockup (antes de tocar el CSS en bloque)
+- **`docs/diseno-web.md`**: brief con referencias (Linear: tipografía compacta
+  y jerarquía; Raycast: glass sutil + degradados de marca; Things/Notion:
+  estados vacíos con CTA y skeletons) y decisiones (paleta slate+cian→índigo,
+  escala tipográfica 12/14/16/20/28, espaciado 4-48, radios 8/12/20/píldora,
+  sombras 3 niveles + glow, movimiento `--ease` 120-200 ms).
+- **`web/mockup/diseno.html`** + captura `/tmp/f3_mockup.png`: estado objetivo
+  (barra con marca, pestañas con indicador, skeleton, vacío con CTA, burbujas,
+  modal). Con este mockup aprobado se aplicó a la app real.
+
+### 3.1 Sistema de diseño unificado — IMPLEMENTADO
+- **Hallazgo**: dos paletas distintas redefinidas de cero
+  (`--bg/--panel/--accent` en la SPA; `--bg-1/--glass/--user-1/…` en la
+  llamada), sin fuente común.
+- **Cambio**: **`web/app/tokens.css` es la fuente única** (color semántico,
+  marca, tipografía, espaciado, radios, sombras, movimiento, ambos temas). La
+  SPA lo sirve en `/app/tokens.css` y lo consume (`tokens.css` antes de
+  `styles.css`, tokens duplicados eliminados); la página de llamada lo consume
+  desde su origen (`GET /tokens.css` nuevo en el servidor de voz) con alias de
+  sus variables decorativas (`--err: var(--danger)`, orbes sobre `--brand-500/
+  --indigo-500/--violet-500`). `call_rafita.html` sigue siendo fichero aparte.
+- **Evidencia**: `tokens.css cargados: True` en la página de llamada (medido
+  con `getComputedStyle`); misma paleta semántica en ambas superficies.
+
+### 3.2 Tema de la página de llamada — DECISIÓN EXPLÍCITA + IMPLEMENTADA
+- **Decisión**: **ambas superficies respetan `prefers-color-scheme`** (antes la
+  llamada era oscuro fijo por omisión). Motivo: coherencia de producto;
+  el degradado, el cristal y los orbes se adaptan al tema claro.
+- **Cambio**: bloque `@media (prefers-color-scheme: light)` en la página de
+  llamada (fondo claro, cristal blanco, `--ok/--warn` del tema, transcripción
+  con azul/índigo oscuros para el contraste) — documentado en
+  `docs/diseno-web.md`.
+- **Evidencia**: contraste y axe en **ambos temas** de la llamada:
+  min 5.71:1 (oscuro) / 6.33:1 (claro), 0 violaciones axe. Capturas
+  `/tmp/f3_despues_llamada_dark.png` y `_light.png`.
+
+### 3.3b Aplicación del diseño (micro-interacciones con propósito)
+- Tipografía con `font-feature-settings: "tnum"`; degradado de marca en
+  botones primarios e indicador de pestañas; `focus-visible` con `--glow`;
+  hover con elevación y `translateX` en listas; entrada animada de burbujas y
+  modal; transiciones con `--ease` (120-200 ms).
+- **Evidencia visual**: capturas antes (`/tmp/f3_antes_*.png`) y después
+  (`/tmp/f3_despues_chat_dark.png`, `_light.png`, `f3_mockup.png`).
+  **Sin regresión de accesibilidad**: axe 0 en chat/baúl/reuniones/llamada
+  tras los cambios (Fase 2 mantenida).
+
+### 3.4 Estados vacíos y de carga — IMPLEMENTADO
+- **Cambio** (`web/app/app.js`, `styles.css`): `skeletonHTML()` con shimmer
+  en las tres listas (chat, baúl, reuniones) y estados vacíos con
+  **icono + texto + CTA real** («Nueva nota» → editor; «Grabar una reunión» →
+  grabación; «Limpiar búsqueda» → resetea filtros).
+- **Evidencia (Playwright)**: `skeleton visibles durante la carga: 4` (captura
+  `/tmp/f3_despues_skeleton.png`); estado vacío de reuniones con CTA:
+  `True | 🎙️ / Aún no hay reuniones / Graba tu primera reunión…`
+  (`/tmp/f3_despues_vacio_reuniones.png`); el CTA «Limpiar búsqueda» vacía el
+  filtro (`True`).
+
+### 3.5 manifest.webmanifest — REVISADO Y COMPLETADO
+- **Cambio**: `id: "/app/"`, `categories: [productivity, utilities,
+  business]`, `screenshots` reales generadas de la SPA
+  (`icons/shot-desktop.png` 1280x720 wide + `icons/shot-mobile.png` 540x720
+  narrow) y **decisión documentada**: `call_rafita.html` queda **fuera** de la
+  experiencia instalable a propósito (otro origen, fuera del `scope`; la vista
+  Llamada lo embebe) — comentado en `sw.js` y `docs/diseno-web.md`. `tokens.css`
+  añadido al `SHELL` del service worker (offline).
+- **Evidencia**: `manifest: id=/app/ categories=[...] screenshots=2
+  (accesibles: True) display=standalone`.
+
+### Gate de la Fase 3
+`ruff`/`mypy` limpios; **1.312 tests** en verde; desplegado en el HP con
+`tokens.css` servido por ambos orígenes; axe sin regresión (0/0/0/0) y
+contraste ≥5.71:1 en ambos temas.

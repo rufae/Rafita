@@ -172,6 +172,16 @@ async def serve_call_page():
     )
 
 
+@app.get("/tokens.css")
+async def serve_tokens_css():
+    """Tokens de diseño compartidos (fuente unica, Fase 3): la pagina de
+    llamada y la SPA consumen el mismo fichero."""
+    for path in (Path("/workspace/web/app/tokens.css"), Path("/workspace/web/tokens.css")):
+        if path.exists():
+            return FileResponse(str(path), media_type="text/css")
+    return JSONResponse(status_code=404, content={"error": "tokens.css not found"})
+
+
 def _call_page_security_headers() -> dict[str, str]:
     """Cabeceras de la pagina de llamada (Fase 0, 2026-09-29).
 

@@ -1,32 +1,10 @@
-:root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --panel-2: #273449;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #38bdf8;
-  --accent-2: #0ea5e9;
-  --ok: #22c55e;
-  --danger: #f87171;
-  --radius: 12px;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f1f5f9;
-    --panel: #ffffff;
-    --panel-2: #e2e8f0;
-    --text: #0f172a;
-    --muted: #4e5a72;
-    --danger: #b91c1c;
-  }
-}
-
+/* Los tokens viven en tokens.css (fuente unica, Fase 3). */
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum";
   background: var(--bg);
   color: var(--text);
   min-height: 100dvh;
@@ -40,11 +18,21 @@ body {
 button {
   font: inherit;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 10px 16px;
   cursor: pointer;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t) var(--ease),
+    background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
 }
-button.primary { background: var(--accent-2); color: #04121f; font-weight: 600; }
+button:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+button:active { transform: translateY(0); box-shadow: none; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: var(--glow);
+}
+button.primary { background: linear-gradient(135deg, var(--accent-2), var(--brand-600)); color: #04121f; font-weight: 600; }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--panel-2); }
 button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 
@@ -53,9 +41,10 @@ input, textarea {
   color: var(--text);
   background: var(--panel-2);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   width: 100%;
+  transition: box-shadow var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
 input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
@@ -96,8 +85,18 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: tr
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .brand img { border-radius: 8px; }
 .tabs { display: flex; gap: 6px; }
-.tab { background: transparent; color: var(--muted); }
+.tab {
+  position: relative;
+  background: transparent; color: var(--muted);
+  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.tab:hover { color: var(--text); background: var(--panel-2); }
 .tab.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+.tab.active::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: -2px; height: 2px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--brand-500), var(--indigo-500));
+}
 .user { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 main { padding: 16px; max-width: 1100px; margin: 0 auto; }
@@ -121,7 +120,9 @@ main { padding: 16px; max-width: 1100px; margin: 0 auto; }
   white-space: pre-wrap;
   word-wrap: break-word;
   line-height: 1.45;
+  animation: entra var(--t) var(--ease);
 }
+@keyframes entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .bubble.user { align-self: flex-end; background: var(--accent-2); color: #04121f; border-bottom-right-radius: 4px; }
 .bubble.bot { align-self: flex-start; background: var(--panel); border-bottom-left-radius: 4px; }
 .bubble.typing { color: var(--muted); font-style: italic; }
@@ -142,7 +143,10 @@ main { padding: 16px; max-width: 1100px; margin: 0 auto; }
   padding: 9px 10px; border-radius: 8px; cursor: pointer;
   display: flex; flex-direction: column; gap: 2px;
 }
-.note-list li:hover { background: var(--panel-2); }
+.note-list li {
+  transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.note-list li:hover { background: var(--panel-2); transform: translateX(2px); }
 .note-list li.active { background: var(--panel-2); outline: 1px solid var(--accent); }
 .note-list .title { font-weight: 600; }
 .editor {
@@ -196,12 +200,13 @@ main { padding: 16px; max-width: 1100px; margin: 0 auto; }
   display: grid; place-items: center; padding: 20px;
 }
 .modal-card {
-  background: var(--panel); border-radius: var(--radius);
+  background: var(--panel); border-radius: var(--radius-lg);
   padding: 22px 20px; width: min(420px, 100%);
   display: flex; flex-direction: column; gap: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-lg);
+  animation: entra var(--t) var(--ease);
 }
-.modal-card h3 { margin: 0; }
+.modal-card h2 { margin: 0; }
 .modal-card p { margin: 0; white-space: pre-wrap; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
@@ -211,3 +216,24 @@ main { padding: 16px; max-width: 1100px; margin: 0 auto; }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+
+/* ---------- estados de carga y vacios (Fase 3.4) ---------- */
+.skeleton {
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--panel-2) 25%,
+    rgba(148, 163, 184, 0.22) 50%, var(--panel-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.vacio {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
+  text-align: center; padding: var(--sp-8) var(--sp-4);
+}
+.vacio .icono {
+  width: 56px; height: 56px; border-radius: var(--radius-pill);
+  background: var(--panel-2); display: grid; place-items: center; font-size: 24px;
+}
+.vacio strong { font-size: var(--fs-md); }
