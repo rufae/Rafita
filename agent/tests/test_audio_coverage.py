@@ -136,7 +136,7 @@ async def test_transcribe_file_joins_segments(monkeypatch):
     result = await audio._transcribe_file(Path("/tmp/voice.ogg"))
 
     assert result == "Hola mundo"
-    assert model.kwargs["beam_size"] == 1
+    assert model.kwargs["beam_size"] == 5
     assert model.kwargs["language"] == settings.language
     assert model.kwargs["vad_filter"] is True
 

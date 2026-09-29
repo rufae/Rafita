@@ -31,10 +31,11 @@ from src.vault_config import get_taxonomy
 # sin guardarla). Si el modelo afirma una accion y no hubo tool_calls, se
 # reintenta una vez obligandole a usar la herramienta o a desdecirse.
 _ACTION_CLAIM_RE = re.compile(
-    r"\b(?:he guardado|he creado|he a[nñ]adido|he apuntado|he enviado|he completado|"
-    r"he registrado|he encontrado|guardando|buscando|search\w*|busc\w+|encontr[eé]|"
-    r"enviando|apuntando|completando|un momento|te muestro|te busco|aqu[ií] tienes|"
-    r"resultados?)\b",
+    r"\b(?:he guardado|he creado|he a[nñ]adido|he apuntado|he anotado|he tomado nota|"
+    r"he enviado|he completado|he registrado|he encontrado|tom[oé] nota|"
+    r"guardando|buscando|search\w*|busc\w+|encontr[eé]|"
+    r"enviando|apuntando|anotando|completando|un momento|te muestro|te busco|"
+    r"aqu[ií] tienes|resultados?)\b",
     re.IGNORECASE,
 )
 # Correo electronico en la respuesta: si no lo dijo el usuario, es inventado.
@@ -217,7 +218,14 @@ async def _prepare_tool_phase(
     Devuelve (messages_for_llm, content, tool_calls, tools_for_call). Si hubo
     herramientas, `messages_for_llm` ya incluye sus resultados para que cada
     interfaz haga su composicion final (chat normal o streaming de voz).
+
+    En voz (chat_id 0) las herramientas que guardan datos (tareas, eventos,
+    gastos, CRM) se ejecutan con el chat del administrador, para que lo
+    apuntado por llamada aparezca en Telegram y en el briefing.
     """
+    tool_chat_id = chat_id
+    if voice and chat_id == 0 and settings.admin_ids:
+        tool_chat_id = settings.admin_ids[0]
     await db.save_chat_message(chat_id, MessageRole.user.value, text)
 
     history = await db.get_chat_history(chat_id, 6)
@@ -358,7 +366,7 @@ async def _prepare_tool_phase(
             )
             from src.handlers.chat import _execute_tool
 
-            result = await _execute_tool(chat_id, func_name, args)
+            result = await _execute_tool(tool_chat_id, func_name, args)
             results.append(
                 {
                     "role": "tool",
