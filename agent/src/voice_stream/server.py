@@ -2,6 +2,7 @@ import asyncio
 import audioop
 import io
 import json
+import re
 import time
 import uuid
 from collections import deque
@@ -51,8 +52,22 @@ FILLER_PHRASES = (
     "Ahora mismo te digo...",
     "Vale, dame un instante...",
 )
-FILLER_DELAY_S = 2.2
+FILLER_DELAY_S = 5.5  # por defecto; configurable con VOICE_FILLER_DELAY_S
 FILLER_COOLDOWN_S = 25.0
+# Saludos/cortesias: no merecen frase de espera (la respuesta es inmediata).
+_SALUDOS_CORTOS = {"hola", "buenas", "buenos", "gracias", "adios", "tal", "hey"}
+
+
+def _es_saludo_corto(texto: str | None) -> bool:
+    import unicodedata
+
+    if not texto:
+        return False
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFKD", texto.lower()) if not unicodedata.combining(c)
+    )
+    palabras = re.findall(r"[a-z]+", sin_acentos)
+    return len(palabras) <= 3 and any(w in _SALUDOS_CORTOS for w in palabras)
 
 
 class _FillerController:
@@ -73,12 +88,19 @@ class _FillerController:
 
 
 async def _filler_si_tarda(websocket: WebSocket, session: dict[str, Any]) -> None:
-    """Emite una frase de espera si la respuesta no ha empezado a tiempo."""
+    """Emite una frase de espera si la respuesta no ha empezado a tiempo.
+
+    2026-09-30: el retardo por defecto subio a 5,5 s (configurable) y los
+    saludos cortos ("hola", "gracias") no la reciben: su respuesta es
+    inmediata y la frase molestaba.
+    """
     try:
-        await asyncio.sleep(FILLER_DELAY_S)
+        await asyncio.sleep(float(getattr(settings, "voice_filler_delay_s", FILLER_DELAY_S)))
     except asyncio.CancelledError:
         return
     if session.get("state") == "ended" or session.get("respuesta_iniciada"):
+        return
+    if _es_saludo_corto(session.get("ultimo_transcript")):
         return
     controller = session.get("filler")
     if not isinstance(controller, _FillerController):
@@ -696,6 +718,7 @@ async def _process_utterance(
             return
 
         session["transcript"] += transcript + " "
+        session["ultimo_transcript"] = transcript
         logger.info("VoiceStream: STT done [%.1fs] text=%s", t_stt, transcript[:100])
         await _safe_send_json(
             websocket,

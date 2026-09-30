@@ -60,8 +60,10 @@ def currency_symbol(code: str | None = None) -> str:
 
 
 _STT_PROMPTS: dict[str, str] = {
-    "es": "A continuacion, una conversacion en espanol.",
-    "en": "The following is a conversation in English.",
+    "es": "A continuacion, una conversacion en espanol. Los correos se "
+    "dictan con palabras: juan arroba gmail punto com, con guion bajo.",
+    "en": "The following is a conversation in English. Emails are dictated "
+    "with words: john at gmail dot com, underscore.",
 }
 
 

@@ -499,3 +499,30 @@ async def test_list_drive_filters_folders_and_files():
     assert "mimeType !=" in captured["q"]
     await manager.list_drive(kind="all")
     assert "q" not in captured
+
+
+async def test_find_contact_prioriza_contactos_con_email():
+    """Bug 2026-09-30: con varias 'Ana', la que tiene correo debe ir primero."""
+    manager = _manager()
+
+    class _Connections:
+        def list(self, **_kwargs):
+            return _Req(
+                {
+                    "connections": [
+                        {"names": [{"displayName": "Ana Museo"}]},
+                        {
+                            "names": [{"displayName": "Ana!!"}],
+                            "emailAddresses": [{"value": "anabel.84.amg@gmail.com"}],
+                        },
+                        {"names": [{"displayName": "Aitana"}]},
+                    ]
+                }
+            )
+
+    manager._people = SimpleNamespace(
+        people=lambda: SimpleNamespace(connections=lambda: _Connections())
+    )
+    result = await manager.find_contact("Ana")
+    assert result["contacts"]
+    assert result["contacts"][0]["email"] == "anabel.84.amg@gmail.com"

@@ -787,9 +787,18 @@ class GoogleServicesManager:
     async def send_email(self, to: str, subject: str, body: str) -> dict[str, Any]:
         """Envia un correo desde la cuenta del usuario (scope gmail.send)."""
         import base64
+        import re
         from email.message import EmailMessage
 
         to = (to or "").strip()
+        # Red de seguridad (bug 2026-09-30): si el STT dejo el correo dictado
+        # ("anabel arroba gmail punto com") se normaliza aqui tambien.
+        if " arroba " in " %s " % to.lower():
+            to = re.sub(r"\s+arroba\s+", "@", to, flags=re.IGNORECASE)
+            to = re.sub(r"\s+punto\s+", ".", to, flags=re.IGNORECASE)
+            to = re.sub(r"\s+guion\s+bajo\s+", "_", to, flags=re.IGNORECASE)
+            to = re.sub(r"(\w)\s*@\s*(\w)", r"\1@\2", to)
+            to = re.sub(r"(\w)\s*\.\s*(\w)", r"\1.\2", to)
         if to and "@" not in to:
             # El usuario suele dar solo el nombre ("manda un correo a mama"):
             # resolvemos su direccion desde los contactos.
@@ -1069,14 +1078,16 @@ class GoogleServicesManager:
             variant_list = [n for n in variant_list if n]
             found = _search(variant_list)
         # Relevancia: primero cuantas palabras de la consulta aparecen en el
-        # nombre ('Mama Raulito' gana a 'Aa Mama' para 'mama raulito') y, en
-        # empate, el nombre mas corto ('Aa Mama' antes que 'Mama Raulito').
+        # nombre ('Mama Raulito' gana a 'Aa Mama' para 'mama raulito'); en
+        # empate, los que TIENEN correo (bug 2026-09-30: "Ana... la que tiene
+        # correo" quedaba enterrada entre homonimos sin datos) y, despues, el
+        # nombre mas corto ('Aa Mama' antes que 'Mama Raulito').
         query_words = [w for w in self._normalize_match(query or "").split() if len(w) >= 3]
 
-        def _relevance(contact: dict[str, str]) -> tuple[int, int, str]:
+        def _relevance(contact: dict[str, str]) -> tuple[int, int, int, str]:
             name = self._normalize_match(contact["name"])
             score = sum(1 for w in query_words if w in name)
-            return (-score, len(name), name)
+            return (-score, 0 if contact.get("email") else 1, len(name), name)
 
         found.sort(key=_relevance)
         found = found[: max(1, int(max_results))]

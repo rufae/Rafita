@@ -108,3 +108,46 @@ async def test_filler_habla_una_vez_y_respeta_cooldown(monkeypatch):
     await vs._filler_si_tarda(None, session)  # type: ignore[arg-type]
     nuevos = [p.get("text") for p in enviados if isinstance(p, dict)]
     assert nuevos and nuevos[0] != vs.FILLER_PHRASES[0]
+
+
+def test_es_saludo_corto():
+    assert vs._es_saludo_corto("Hola") is True
+    assert vs._es_saludo_corto("gracias") is True
+    assert vs._es_saludo_corto("¿qué tal?") is True
+    assert vs._es_saludo_corto("buenas") is True
+    assert vs._es_saludo_corto("busca el informe del proyecto") is False
+    assert vs._es_saludo_corto("hola, dime las tareas que tengo pendientes") is False
+    assert vs._es_saludo_corto("") is False
+
+
+async def test_filler_no_habla_para_saludos_cortos(monkeypatch):
+    enviados: list = []
+
+    async def fake_json(ws, session, payload):
+        enviados.append(payload)
+        return True
+
+    async def fake_bytes(ws, session, data):
+        enviados.append(data)
+
+    monkeypatch.setattr(vs, "_safe_send_json", fake_json)
+    monkeypatch.setattr(vs, "_safe_send_bytes", fake_bytes)
+
+    async def fake_synth(text):
+        return b"wav"
+
+    monkeypatch.setattr(vs, "_synthesize_speech_bytes", fake_synth)
+    monkeypatch.setattr(vs, "FILLER_DELAY_S", 0.01)
+    monkeypatch.setattr(vs.settings, "voice_filler_delay_s", 0.01)
+
+    session = {
+        "state": "processing",
+        "filler": vs._FillerController(),
+        "ultimo_transcript": "hola",
+    }
+    await vs._filler_si_tarda(None, session)
+    assert enviados == [], "no debe emitir filler para un saludo"
+
+    session["ultimo_transcript"] = "busca los archivos de mi drive"
+    await vs._filler_si_tarda(None, session)
+    assert any(isinstance(e, dict) and e.get("type") == "filler" for e in enviados)
