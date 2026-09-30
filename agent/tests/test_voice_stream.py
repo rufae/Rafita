@@ -288,3 +288,38 @@ def test_sanitize_removes_stray_markdown_and_leading_symbols():
     assert sanitize_for_tts("hola * mundo _ raro #") == "hola mundo raro"
     assert sanitize_for_tts("🎉🎉 Hola Rafael") == "Hola Rafael"
     assert sanitize_for_tts("--- ¿Qué tal?") == "¿Qué tal?"
+
+
+# ---------- VAD adaptativo (2026-09-30) ----------
+
+
+def _pcm_rms(rms_objetivo: int, n_muestras: int = 128) -> bytes:
+    import struct as _struct
+
+    return _struct.pack("<%dh" % n_muestras, *([int(rms_objetivo)] * n_muestras))
+
+
+def test_vad_adaptativo_aprende_el_ruido_ambiente():
+    from src.voice_stream.server import _ms_del_chunk, _vad_adaptativo
+
+    session = {"sample_rate": 16000}
+    # Silencio/ruido suave: nunca es voz.
+    for _ in range(50):
+        assert _vad_adaptativo(_pcm_rms(200), session) is False
+    # Voz clara: supera el umbral adaptado (200*3=600, tope 1000).
+    assert _vad_adaptativo(_pcm_rms(1500), session) is True
+    # Sala ruidosa: el piso sube (umbral 1000) y 900 ya no es voz; 2500 si.
+    for _ in range(200):
+        _vad_adaptativo(_pcm_rms(700), session)
+    assert _vad_adaptativo(_pcm_rms(900), session) is False
+    assert _vad_adaptativo(_pcm_rms(2500), session) is True
+    # Chunks de 8 ms (128 muestras a 16 kHz).
+    assert abs(_ms_del_chunk(_pcm_rms(100), session) - 8.0) < 0.01
+
+
+def test_vad_adaptativo_no_confunde_silencio_con_voz():
+    from src.voice_stream.server import _vad_adaptativo
+
+    session = {"sample_rate": 16000}
+    for _ in range(20):
+        assert _vad_adaptativo(_pcm_rms(50), session) is False

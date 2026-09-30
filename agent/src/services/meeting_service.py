@@ -69,27 +69,31 @@ async def guardar_subida(nombre: str, datos: bytes) -> Path:
     return ruta
 
 
-def transcribir(audio_wav: Path) -> tuple[list[dict[str, Any]], str]:
-    """Segmenta y transcribe con Whisper local; devuelve (segmentos, idioma)."""
-    from src.handlers.audio import _get_whisper_model
+async def transcribir(audio_wav: Path) -> tuple[list[dict[str, Any]], str]:
+    """Segmenta y transcribe (servicio remoto GPU torre; local si no esta).
 
-    modelo = _get_whisper_model()
-    if modelo is None:
-        return [], ""
-    segmentos_iter, info = modelo.transcribe(
-        str(audio_wav),
+    2026-09-30: antes usaba Whisper `small` local con beam_size=1 y sin filtro
+    de ruido: una reunion real se transcribio como basura. Ahora usa
+    large-v3 en la torre (beam 5 + filtros) con fallback local.
+    """
+    from src.services.stt_service import transcribe_bytes
+
+    resultado = await transcribe_bytes(
+        audio_wav.read_bytes(),
         language="es",
-        vad_filter=True,
-        beam_size=1,
-        condition_on_previous_text=False,
-        initial_prompt="Conversación en español con un asistente personal.",
+        prompt="Conversación en español con un asistente personal.",
+        beam_size=5,
     )
     segmentos = [
-        {"start": float(s.start), "end": float(s.end), "text": (s.text or "").strip()}
-        for s in segmentos_iter
-        if (s.text or "").strip()
+        {
+            "start": float(s.get("start", 0.0)),
+            "end": float(s.get("end", 0.0)),
+            "text": (s.get("text") or "").strip(),
+        }
+        for s in resultado.get("segments", [])
+        if (s.get("text") or "").strip()
     ]
-    return segmentos, getattr(info, "language", "es") or "es"
+    return segmentos, "es"
 
 
 def _f0_mediana(muestras: np.ndarray, sr: int) -> float:
@@ -304,12 +308,12 @@ async def _procesar(meeting_id: int, audio_path: Path) -> None:
         wav = audio_path.with_suffix(".wav")
         if not await _convertir_a_wav(audio_path, wav):
             raise RuntimeError("no se pudo convertir el audio a wav")
-        loop = asyncio.get_event_loop()
-        segmentos, _idioma = await loop.run_in_executor(None, transcribir, wav)
+        segmentos, _idioma = await transcribir(wav)
         if not segmentos:
             await db.update_meeting(meeting_id, status="error", transcript="")
             logger.warning("Reuniones #%d: sin transcripcion", meeting_id)
             return
+        loop = asyncio.get_event_loop()
         etiquetas = await loop.run_in_executor(None, etiquetar_interlocutores, wav, segmentos)
         transcripcion = construir_transcripcion(segmentos, etiquetas)
         duracion = segmentos[-1]["end"] if segmentos else 0.0
