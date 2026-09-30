@@ -32,9 +32,13 @@ def _patch_common(monkeypatch, history=None):
     async def select_tools(text):
         return []
 
+    async def best_tools(text, k=3):
+        return [], 0.0
+
     monkeypatch.setattr(orch.db, "save_chat_message", save)
     monkeypatch.setattr(orch.db, "get_chat_history", get_history)
     monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
 
 
 def _plain(content, tool_calls=None):
@@ -345,6 +349,38 @@ async def test_hallucination_risk_detecta_emails_y_afirmaciones():
     assert not orch._hallucination_risk("No encuentro nada.", "busca un correo")
 
 
+async def test_hallucination_risk_cubre_verbos_que_faltaban():
+    # El 2026-09-30 afirmo tareas borradas/completadas y correos programados
+    # sin llamar a ninguna herramienta: eran falsos negativos de la guardia.
+    assert orch._hallucination_risk("He eliminado la tarea.", "borra la tarea")
+    assert orch._hallucination_risk("He borrado el evento.", "borra el evento")
+    assert orch._hallucination_risk("He marcan como hecha la tarea.", "completa la tarea")
+    assert orch._hallucination_risk("Ya he programado el envio.", "envia un correo")
+    assert orch._hallucination_risk("He movido la cita.", "mueve la cita")
+    assert orch._hallucination_risk("He actualizado el evento.", "cambia el evento")
+
+
+async def test_hallucination_risk_no_confunde_negaciones_ni_negativas():
+    # Falsos positivos del 2026-09-30: respuestas honestas castigadas.
+    assert not orch._hallucination_risk("No he encontrado nada.", "busca en mis notas")
+    assert not orch._hallucination_risk("No encontre resultados.", "busca en mis notas")
+    assert not orch._hallucination_risk("Sin resultados en tus notas.", "busca en mis notas")
+    assert not orch._hallucination_risk(
+        "No tengo nada apuntado sobre eso.", "tengo algo apuntado sobre eso"
+    )
+    assert not orch._hallucination_risk(
+        "No he podido comprobar esa informacion.", "que tiempo hace"
+    )
+    assert not orch._hallucination_risk("No puedo buscar en internet.", "busca noticias")
+    # Sin negacion, sigue avisando:
+    assert orch._hallucination_risk("Encontre dos notas tuyas.", "busca en mis notas")
+    assert orch._hallucination_risk("Aqui tienes la lista.", "que tareas tengo")
+    # "Busqueda realizada..." sin acento cazado (2026-09-30: el modelo
+    # invento un diagrama mermaid de los pinguinos del Sahara).
+    assert orch._hallucination_risk("Busqueda realizada en tus notas:", "busca notas")
+    assert orch._hallucination_risk("Búsqueda realizada en tus notas:", "busca notas")
+
+
 async def test_prepare_tool_phase_fallback_honesto_si_reintento_tambien_inventa(monkeypatch):
     _patch_common(monkeypatch)
 
@@ -353,6 +389,133 @@ async def test_prepare_tool_phase_fallback_honesto_si_reintento_tambien_inventa(
 
     monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
     _, content, tool_calls, _ = await orch._prepare_tool_phase("busca un correo sobre anabel", 1)
+    assert tool_calls == []
+    assert content == orch.HONEST_FALLBACK
+
+
+async def test_prepare_tool_phase_fuerza_top_tool_si_el_modelo_no_llama(monkeypatch):
+    """El mismo mensaje funcionaba o no segun la ejecucion (2026-09-30): si el
+    modelo no llama ni con el aviso, se le ofrece UNA sola herramienta."""
+    _patch_common(monkeypatch)
+    fake_tool = {
+        "type": "function",
+        "function": {"name": "manage_google_tasks", "description": "tareas"},
+    }
+
+    async def best_tools(text, k=3):
+        return [fake_tool], 0.8
+
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+
+    respuestas = [
+        ("He borrado la tarea.", None),
+        ("No he podido comprobar esa informacion.", None),
+        (
+            None,
+            [
+                {
+                    "id": "1",
+                    "function": {"name": "manage_google_tasks", "arguments": "{}"},
+                }
+            ],
+        ),
+    ]
+
+    class _Respuestas:
+        def __init__(self):
+            self.calls = []
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.calls.append(tools)
+            return respuestas[len(self.calls) - 1]
+
+    fake = _Respuestas()
+    monkeypatch.setattr(orch, "llm", fake)
+
+    ejecutadas = []
+
+    async def fake_exec(chat_id, name, args):
+        ejecutadas.append(name)
+        return {"success": True, "message": "borrada"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("borra la tarea", 1)
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"
+    assert ejecutadas == ["manage_google_tasks"]
+    assert len(fake.calls) == 3
+    assert len(fake.calls[2]) == 1  # el reintento forzado ofrece una sola tool
+
+
+async def test_prepare_tool_phase_forzado_sin_confianza_ofrece_top3(monkeypatch):
+    """Si el top-1 no es fiable (0.50-0.60) se ofrecen el top-3 con aviso
+    duro: 'borra el evento' daba create_google_calendar_event 0.55."""
+    _patch_common(monkeypatch)
+    fake_tool = {
+        "type": "function",
+        "function": {"name": "create_google_calendar_event", "description": "crear"},
+    }
+    manage_tool = {"type": "function", "function": {"name": "manage_google_calendar"}}
+
+    async def best_tools(text, k=3):
+        return [fake_tool, manage_tool], 0.55
+
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+
+    async def select_tools(text):
+        return [fake_tool, manage_tool]
+
+    monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
+
+    class _Respuestas:
+        def __init__(self):
+            self.calls = []
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.calls.append(tools)
+            if len(self.calls) < 3:
+                return "He borrado el evento.", None
+            return None, [
+                {
+                    "id": "1",
+                    "function": {"name": "manage_google_calendar", "arguments": "{}"},
+                }
+            ]
+
+    fake = _Respuestas()
+    monkeypatch.setattr(orch, "llm", fake)
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": True, "message": "borrado"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("borra el evento", 1)
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_calendar"
+    assert len(fake.calls[2]) == 2  # todas las seleccionadas, no solo el top-1
+
+
+async def test_prepare_tool_phase_fuerza_y_si_falla_responde_honesto(monkeypatch):
+    _patch_common(monkeypatch)
+    fake_tool = {
+        "type": "function",
+        "function": {"name": "save_expense", "description": "gastos"},
+    }
+
+    async def best_tools(text, k=3):
+        return [fake_tool], 0.7
+
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+
+    async def respond(messages, tools):
+        return "He registrado el gasto.", None
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    _, content, tool_calls, _ = await orch._prepare_tool_phase("registra 5 euros", 1)
     assert tool_calls == []
     assert content == orch.HONEST_FALLBACK
 
@@ -407,4 +570,197 @@ async def test_guardia_caza_he_anotado(monkeypatch):
     monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
     _, _content, tool_calls, _ = await orch._prepare_tool_phase("apunta comprar pilas", 1)
     assert len(llamadas) == 2
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"
+
+
+async def test_generate_response_composicion_vacia_reintenta_sin_tools(monkeypatch):
+    """Visto 2026-09-30: tras usar una herramienta el modelo devolvio texto
+    vacio ("No pude generar una respuesta"). Se reintenta sin herramientas."""
+    _patch_common(monkeypatch)
+
+    class _FakeComposicion:
+        def __init__(self):
+            self.llamadas = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.llamadas += 1
+            if self.llamadas == 1:
+                return None, [{"id": "1", "function": {"name": "get_weather", "arguments": "{}"}}]
+            return None, None
+
+        async def chat(self, messages, max_tokens=512):
+            return "Hoy hace sol en Sevilla."
+
+    monkeypatch.setattr(orch, "llm", _FakeComposicion())
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": True, "message": "sol"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("que tiempo hace", 1)
+    assert reply == "Hoy hace sol en Sevilla."
+
+
+async def test_generate_response_composicion_vacia_total_responde_honesto(monkeypatch):
+    _patch_common(monkeypatch)
+
+    class _FakeVacio:
+        def __init__(self):
+            self.llamadas = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.llamadas += 1
+            if self.llamadas == 1:
+                return None, [{"id": "1", "function": {"name": "get_weather", "arguments": "{}"}}]
+            return None, None
+
+        async def chat(self, messages, max_tokens=512):
+            return ""
+
+    monkeypatch.setattr(orch, "llm", _FakeVacio())
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": True, "message": "sol"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("que tiempo hace", 1)
+    assert "no he podido redactar" in reply
+
+
+async def test_prepare_tool_phase_forzado_elige_por_texto(monkeypatch):
+    """Sin confianza en el ranking (0.50-0.60), el modelo elige la herramienta
+    en texto y se fuerza esa (el ranking por embeddings es ruidoso)."""
+    _patch_common(monkeypatch)
+    tool_a = {"type": "function", "function": {"name": "create_event", "description": "citas"}}
+    tool_b = {"type": "function", "function": {"name": "manage_google_tasks"}}
+
+    async def best_tools(text, k=3):
+        return [tool_a], 0.52
+
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+
+    async def select_tools(text):
+        return [tool_a, tool_b]
+
+    monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
+
+    class _FakeSelector:
+        def __init__(self):
+            self.tools_calls = []
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.tools_calls.append(tools)
+            if len(self.tools_calls) < 3:
+                return "He apuntado la cita.", None
+            return None, [
+                {
+                    "id": "1",
+                    "function": {"name": "manage_google_tasks", "arguments": "{}"},
+                }
+            ]
+
+        async def chat(self, messages, max_tokens=24):
+            return "manage_google_tasks"
+
+    fake = _FakeSelector()
+    monkeypatch.setattr(orch, "llm", fake)
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": True, "message": "tarea"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase(
+        "apunta que tengo que comprar pilas", 1
+    )
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"
+    assert fake.tools_calls[2] == [tool_b]
+
+
+async def test_generate_response_tool_fallida_no_permite_afirmar_exito(monkeypatch):
+    """Visto 2026-09-30: manage_google_calendar create fallo (sin fecha) y el
+    modelo respondio 'He anadido una cita...'. Si TODAS las tools fallan y el
+    texto afirma exito, se responde con el error real."""
+    _patch_common(monkeypatch)
+
+    class _FakeFallo:
+        def __init__(self):
+            self.llamadas = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.llamadas += 1
+            if self.llamadas == 1:
+                return None, [
+                    {"id": "1", "function": {"name": "manage_google_calendar", "arguments": "{}"}}
+                ]
+            return "He anadido una cita para manana a las 10.", None
+
+    monkeypatch.setattr(orch, "llm", _FakeFallo())
+
+    async def fake_exec(chat_id, name, args):
+        return {
+            "success": False,
+            "message": "Título y fecha/hora son obligatorios para crear un evento.",
+        }
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("apunta una cita manana", 1)
+    assert "No he podido completar la acción" in reply
+    assert "obligatorios" in reply
+
+
+async def test_prepare_tool_phase_recuperacion_si_todas_fallan(monkeypatch):
+    """Si todas las tools fallan, el modelo elige otra en texto (catalogo
+    completo) y se fuerza; si acierta, se usan esos resultados."""
+    _patch_common(monkeypatch)
+    tool_mala = {"type": "function", "function": {"name": "create_event", "description": "eventos"}}
+
+    async def select_tools(text):
+        return [tool_mala]
+
+    monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
+
+    class _FakeRecuperacion:
+        def __init__(self):
+            self.llamadas = []
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.llamadas.append(tools)
+            if len(self.llamadas) == 1:
+                return None, [{"id": "1", "function": {"name": "create_event", "arguments": "{}"}}]
+            return None, [
+                {"id": "2", "function": {"name": "manage_google_tasks", "arguments": "{}"}}
+            ]
+
+        async def chat(self, messages, max_tokens=24):
+            return "manage_google_tasks"
+
+    fake = _FakeRecuperacion()
+    monkeypatch.setattr(orch, "llm", fake)
+
+    ejecutadas = []
+
+    async def fake_exec(chat_id, name, args):
+        ejecutadas.append(name)
+        if name == "create_event":
+            return {"success": False, "message": "fecha no valida"}
+        return {"success": True, "message": "tarea borrada"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("borra la tarea X", 1)
+    assert ejecutadas == ["create_event", "manage_google_tasks"]
     assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"

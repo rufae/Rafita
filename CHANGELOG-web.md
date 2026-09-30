@@ -793,9 +793,11 @@ el HP.
   3. `create_event` (chat.py:950-958): espera `event_datetime` «YYYY-MM-DD
      HH:MM» sin parseo relativo; el modelo le pasa `when` (nombre de otras
      tools) y el error dice «No se proporcionó una fecha válida» (engañoso).
-  4. `manage_google_tasks` gestiona la **BD local** aunque Google esté
-     conectado (tarea creada en local, no aparece en Google Tasks); el nombre
-     induce a error.
+  4. ~~`manage_google_tasks` gestiona la BD local aunque Google esté
+     conectado~~ **CORREGIDO EL DIAGNÓSTICO (2026-09-30)**: la tool SÍ usa
+     Google Tasks cuando está conectado; la tarea local fue un artefacto de
+     mi script de prueba (proceso sin `google_services.initialize()`).
+     Verificado en la app real: crear/listar/completar/borrar van a Google.
   5. No existe tool para **listar alertas** (`create_alert` solo crea):
      «¿qué alertas tengo?» acabó creando una alerta duplicada y respondiendo
      con eventos de Calendar.
@@ -805,3 +807,81 @@ el HP.
      chat sí renderiza tablas: verificado con DOM real).
   8. Chroma: warnings «Add of existing embedding ID» re-indexando
      `Calendario Semanal.md` + errores de telemetría posthog (ruido).
+
+---
+
+## ARREGLOS DE LA BATERÍA DE HERRAMIENTAS (2026-09-30)
+
+Petición del usuario: los datos de prueba seguían en Google Calendar/Tasks y
+había que arreglar los hallazgos anteriores "al 100% real". Hecho:
+
+### Limpieza de datos visibles
+- **Google Calendar**: eliminado el evento "Prueba bateria" (30/09 10:00) que
+  las baterías dejaron atrás (CAL-3 había alucinado el borrado). Verificado
+  por API: solo quedan eventos reales.
+- **Google Tasks**: eliminadas "Revisar los documentos de la carpeta docs/…"
+  y "Test Audit Google Services" (de auditorías previas). Lista vacía.
+- Además se limpiaron los datos creados durante esta sesión (eventos/tareas/
+  alertas/gastos de prueba y la nota `Control_Financiero_2026.md`).
+
+### Guardia de honestidad — corregida (falsos positivos y negativos)
+- `orchestrator.py` `_ACTION_CLAIM_RE`: cubre ahora `he eliminado/borrado/
+  marcado/programado/movido/actualizado` (y variantes con raíz, p. ej. "he
+  marcan") y el sustantivo "búsqueda"; `_NEGACION_RE` evita falsos positivos
+  ("no he encontrado", "sin resultados", "no puedo buscar"). Tests:
+  `test_hallucination_risk_cubre_verbos_que_faltaban` y
+  `..._no_confunde_negaciones_ni_negativas`.
+- **Guardia de tool fallida** (`generate_response`): si TODAS las tools
+  devolvieron `success=False` y el texto afirma éxito, se responde con el
+  error real ("No he podido completar la acción: …").
+
+### Reintentos de tool-calling (qwen2.5:7b no determinista)
+- Umbrales semánticos calibrados con mensajes reales (bge-m3): reintento
+  suave ≥0.45; forzado ≥0.50; con confianza ≥0.60 se ofrece **una sola**
+  tool, si no el **top-3**.
+- **Selector por texto**: cuando el ranking no es fiable, el modelo elige la
+  herramienta viendo el catálogo con descripciones (sin embeddings).
+- El reintento forzado usa **contexto limpio** (system + petición + aviso):
+  el historial sesgaba al modelo a responder sin herramientas.
+- **Recuperación**: si todas las tools fallan, se pregunta por la correcta
+  viendo el catálogo COMPLETO y se fuerza una vez; si acierta, se usan esos
+  resultados.
+- **Composición vacía**: reintento sin herramientas (evita "No pude generar
+  una respuesta").
+- `ACTION_RULE` añadida al prompt: si una herramienta puede hacerlo, llámala
+  en el mismo turno.
+
+### Herramientas nuevas y corregidas
+- `create_event`: acepta `when`/`start_datetime`/`datetime_str` (el modelo
+  pasaba `when` y fallaba con "fecha no válida") y parsea fechas relativas
+  con `parse_relative_datetime` (+ fallback ISO). Tests nuevos.
+- `manage_google_tasks`: complete/delete por `task_title`/`title` (además de
+  `task_id`) — el modelo no suele tener el ID.
+- `get_alerts` (nueva): lista alertas pendientes en tabla Markdown.
+- `get_weather` (nueva): AEMET si hay clave (ciudad conocida) u open-meteo
+  (geocoding + forecast), caché 15 min; nunca inventa.
+- `get_finance_summary`: devuelve tabla Markdown (2 tablas en el DOM real:
+  resumen + gastos por categoría).
+- `manage_google_calendar`/`create_google_calendar_event`/`create_event`/
+  `manage_google_tasks`: descripciones afinadas (borrar/eliminar, cita vs
+  tarea) calibradas con el selector real.
+- `google_services.list_events`: `timeMin=now` por defecto (sin él devolvía
+  eventos de 2001).
+- Chroma: `upsert` en `index_chunks` (adiós "Add of existing embedding ID")
+  y logger de posthog silenciado (adiós errores de telemetría).
+
+### Evidencia (batería final, chat web real)
+- Calendario: crear (relativo) → listar → **borrar** ✓ (verificado por API).
+- Tareas: crear → listar → borrar por título ✓ (verificado en Google Tasks).
+- Alertas: `get_alerts` lista ✓. Tiempo: AEMET/open-meteo responde ✓.
+- Finanzas: tabla renderizada en el DOM ✓. Contactos: teléfono ✓.
+- Gmail: encuentra correos reales ✓. Negativas: "no encontré" honesto sin
+  alucinar ✓. Small talk sin herramientas ✓.
+- Logs: se ven los reintentos suaves/forzados y la recuperación actuando.
+
+### Limitación honesta que queda
+qwen2.5:7b sigue teniendo varianza de redacción (a veces convierte la tabla
+de finanzas en prosa, o dice "no encontré" aunque la tool devolvió datos, o
+elige "evento" para un recado ambiguo). Las **herramientas** ejecutan y se
+verifican al 100% (API/BD); lo que varía es cómo lo cuenta el modelo. El
+selector + recuperación reducen el problema, pero no lo eliminan con un 7B.

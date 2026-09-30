@@ -42,6 +42,7 @@ def _patch_db(monkeypatch, **results):
         "search_personal_knowledge": [],
         "get_all_personal_knowledge": [],
         "add_recurring_alert": 9,
+        "get_active_alerts": [],
     }
     for name, result in defaults.items():
         monkeypatch.setattr(chat_mod.db, name, _fn(results.get(name, result)))
@@ -117,7 +118,9 @@ async def test_create_event_uses_google_when_ready(monkeypatch):
     assert calls
 
 
-async def test_create_event_uses_google_with_unparseable_datetime(monkeypatch):
+async def test_create_event_parses_relative_datetime_for_google(monkeypatch):
+    # Antes "el viernes a las 8" llegaba en crudo a Google y fallaba; ahora se
+    # parsea con parse_relative_datetime (mismo parser que la tool de Google).
     calls = []
     google = SimpleNamespace(
         is_ready=True, create_event=_fn({"success": True, "message": "ok"}, calls=calls)
@@ -127,7 +130,23 @@ async def test_create_event_uses_google_with_unparseable_datetime(monkeypatch):
         1, "create_event", {"title": "Cena", "event_datetime": "el viernes a las 8"}
     )
     assert result["success"]
-    assert calls[0][0][1] == "el viernes a las 8"
+    assert "T08:00:00" in calls[0][0][1]
+
+
+async def test_create_event_acepta_alias_when(monkeypatch):
+    # Bug 2026-09-30: el modelo pasaba 'when' (parametro de otras tools) y
+    # create_event respondia "no se proporciono una fecha valida" aunque la
+    # fecha era perfectamente valida.
+    calls = []
+    google = SimpleNamespace(
+        is_ready=True, create_event=_fn({"success": True, "message": "ok"}, calls=calls)
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "create_event", {"title": "Cena", "when": "mañana a las 10"}
+    )
+    assert result["success"]
+    assert "T10:00:00" in calls[0][0][1]
 
 
 async def test_create_event_falls_back_to_local(monkeypatch):
@@ -147,10 +166,67 @@ async def test_create_event_local_when_google_not_ready(monkeypatch):
     _patch_db(monkeypatch)
     monkeypatch.setattr(chat_mod, "google_services", SimpleNamespace(is_ready=False))
     result = await chat_mod._execute_tool(
-        1, "create_event", {"title": "Cena", "event_datetime": "manana por la tarde"}
+        1, "create_event", {"title": "Cena", "event_datetime": "2026-10-01 20:00"}
     )
     assert result["success"]
-    assert "manana por la tarde" in result["message"]
+    assert "01/10/2026 20:00" in result["message"]
+
+
+async def test_get_finance_summary_devuelve_tabla_markdown(monkeypatch):
+    _patch_db(
+        monkeypatch,
+        get_finance_summary={
+            "transaction_count": 3,
+            "total_income": 100.0,
+            "total_expenses": 40.0,
+            "balance": 60.0,
+            "expense_by_category": {"comida": 25.0, "transporte": 15.0},
+        },
+    )
+    cur = settings.default_currency
+    result = await chat_mod._execute_tool(1, "get_finance_summary", {})
+    assert "| Concepto | Importe |" in result["message"]
+    assert f"| comida | 25.00 {cur} |" in result["message"]
+    assert f"| **Balance** | **60.00 {cur}** |" in result["message"]
+
+
+async def test_get_alerts_lista_pendientes_y_vacio(monkeypatch):
+    _patch_db(monkeypatch, get_active_alerts=[])
+    empty = await chat_mod._execute_tool(1, "get_alerts", {})
+    assert "No tienes alertas" in empty["message"]
+
+    _patch_db(
+        monkeypatch,
+        get_active_alerts=[
+            {"id": 5, "message": "pagar la luz", "alert_type": "urgent", "expires_at": None},
+            {
+                "id": 6,
+                "message": "renovar dni",
+                "alert_type": "info",
+                "expires_at": "2026-10-02 00:00:00",
+            },
+        ],
+    )
+    full = await chat_mod._execute_tool(1, "get_alerts", {})
+    assert "| ID | Alerta | Tipo | Vence |" in full["message"]
+    assert "| 5 | pagar la luz | urgent | - |" in full["message"]
+    assert "| 6 | renovar dni | info | 2026-10-02 00:00:00 |" in full["message"]
+
+
+async def test_get_weather_delega_en_weather_report(monkeypatch):
+    calls = []
+
+    async def fake_report(ciudad="", dia="hoy"):
+        calls.append((ciudad, dia))
+        return {"success": True, "message": "🌤 En Sevilla hoy: 18-28 °C"}
+
+    monkeypatch.setattr("src.services.automation_service.weather_report", fake_report)
+    result = await chat_mod._execute_tool(1, "get_weather", {"ciudad": "Sevilla", "dia": "mañana"})
+    assert result["success"]
+    assert calls == [("Sevilla", "mañana")]
+
+    result = await chat_mod._execute_tool(1, "get_weather", {})
+    assert calls[-1] == ("", "hoy")
 
 
 async def test_create_alert_expires_variants(monkeypatch):
@@ -992,3 +1068,28 @@ async def test_tool_exception_is_captured(monkeypatch):
     result = await chat_mod._execute_tool(1, "save_expense", {"amount": 1})
     assert not result["success"]
     assert "db caida" in result["message"]
+
+
+async def test_manage_google_tasks_delete_por_titulo(monkeypatch):
+    llamadas = []
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn({"success": True, "tasks": [{"id": "abc", "title": "Comprar pilas"}]}),
+        delete_task=_fn({"success": True, "message": "Tarea borrada"}, calls=llamadas),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "delete", "task_title": "comprar pilas"}
+    )
+    assert result["success"]
+    assert llamadas and llamadas[0][0][0] == "abc"
+
+
+async def test_manage_google_tasks_delete_titulo_no_encontrado(monkeypatch):
+    google = SimpleNamespace(is_ready=True, list_tasks=_fn({"success": True, "tasks": []}))
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "delete", "task_title": "no existe"}
+    )
+    assert not result["success"]
+    assert "No encontre" in result["message"]

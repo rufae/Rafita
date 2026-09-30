@@ -49,11 +49,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_event",
-            "description": "Crea un evento o cita CON fecha y hora en la agenda local del "
-            "asistente (base de datos propia). Usalo cuando el usuario mencione "
-            "una fecha, cita, reunion o evento con hora. Si solo pide un aviso "
-            "o recordatorio sin fecha/hora, usa create_alert. Si menciona "
-            "Google Calendar, usa create_google_calendar_event.",
+            "description": "Crea una cita, evento o reunion CON fecha y hora en la agenda "
+            "(ej: cita el viernes a las 10, reunion manana a las 9). Para "
+            "tareas, recados o cosas que tengo que hacer sin hora concreta usa "
+            "manage_google_tasks; para avisos sin fecha usa create_alert; si "
+            "menciona Google Calendar usa create_google_calendar_event.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -112,6 +112,45 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "description": "Obtiene un resumen financiero del mes actual. "
             "Úsalo cuando el usuario pregunte por su situación "
             "financiera, balance, ingresos o gastos.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Consulta el tiempo (hoy o mañana) para la ciudad del "
+            "usuario o para otra ciudad. Usalo cuando pregunte por el tiempo, "
+            "la temperatura, la lluvia o la prevision meteorologica.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ciudad": {
+                        "type": "string",
+                        "description": "Ciudad opcional (ej: Sevilla). Si no se indica, "
+                        "se usa la del usuario.",
+                    },
+                    "dia": {
+                        "type": "string",
+                        "enum": ["hoy", "mañana"],
+                        "description": "Dia de la prediccion (por defecto hoy)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_alerts",
+            "description": "Lista las alertas y recordatorios pendientes del usuario "
+            "(con su ID). Usalo cuando pregunte '¿qué alertas tengo?', "
+            "'¿qué recordatorios tengo?' o similar.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -403,12 +442,12 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_google_calendar",
-            "description": "Gestiona eventos del calendario del usuario (Google Calendar si "
-            "esta conectado; si no, el calendario LOCAL integrado, igual de "
-            "funcional). Acciones: create (crea evento), list (lista proximos), "
-            "delete (elimina por ID o titulo), move (cambia fecha/hora: usa "
-            "title y when). Usalo para anadir eventos, citas, reuniones o "
-            "consultar/mover la agenda.",
+            "description": "Borra, elimina, cancela, mueve, lista o crea eventos y "
+            "citas en el calendario del usuario (Google Calendar o local). "
+            "Acciones: create (crear), list (listar), delete (borrar/eliminar "
+            "un evento por titulo o ID), move (cambiar fecha/hora). Usalo "
+            "cuando diga borra el evento, elimina la cita, mueve la reunion o "
+            "apunta una cita.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -664,11 +703,10 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_google_calendar_event",
-            "description": "Crea un evento en Google Calendar. Usalo SOLO cuando el usuario "
-            "mencione Google Calendar o 'mi calendario de Google'. Si dice "
-            "'agendame', 'apuntame una cita' o similar SIN mencionar Google, usa "
-            "create_event (agenda local). Despues de crear el evento, sincroniza "
-            "en Obsidian.",
+            "description": "Anade un evento NUEVO a Google Calendar (crear). Usalo SOLO "
+            "cuando el usuario mencione Google Calendar para CREAR algo. Para "
+            "borrar o mover usa manage_google_calendar; para la agenda local usa "
+            "create_event.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -826,14 +864,14 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_google_tasks",
-            "description": "Gestiona las tareas del usuario (Google Tasks si esta conectado; "
-            "si no, tareas LOCALES integradas, igual de funcional): list (listar), "
-            "create (crear con titulo y, si la dio, fecha en due), complete "
-            "(marcar hecha por task_id), delete (borrar por task_id). Usalo "
-            "SIEMPRE que el usuario pida guardar, apuntar o recordar algo: "
-            "'guarda esta tarea', 'apunta que...', 'recuérdame...', 'anademe "
-            "una tarea', 'para mañana tengo que...', 'que tareas tengo', "
-            "'marca como hecha la tarea...'.",
+            "description": "Gestiona las tareas pendientes del usuario (Google Tasks si esta "
+            "conectado; si no, locales): list, create (con titulo y fecha en "
+            "due), complete y delete (por task_id o title/task_title). Usalo "
+            "cuando pida guardar, apuntar o recordar una TAREA o recado: "
+            "apunta que tengo que comprar pilas, recuerdame llamar a mama, "
+            "guarda esta tarea, que tareas tengo, borra la tarea X. NO lo uses "
+            "para citas, reuniones o eventos con fecha y hora (eso es "
+            "create_event o manage_google_calendar).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -853,6 +891,11 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     "task_id": {
                         "type": "string",
                         "description": "ID de la tarea (para complete/delete)",
+                    },
+                    "task_title": {
+                        "type": "string",
+                        "description": "Titulo de la tarea si no tienes su ID "
+                        "(para complete/delete; tambien vale 'title')",
                     },
                 },
                 "required": ["action"],
@@ -998,6 +1041,12 @@ async def select_tools_semantic(text: str, k: int = 10) -> list[dict[str, Any]]:
     descripciones de las herramientas (bge-m3) y se ofrecen las `k` más
     parecidas; **el modelo decide** cuál usar entre ellas. Si el embedding
     falla, se ofrecen todas (comportamiento previo).
+
+    Nota (2026-09-30): el ranking por embeddings puede dejar fuera la tool
+    correcta en frases cortas ("apunta que tengo que comprar pilas" excluia
+    manage_google_tasks). Subir k a 15 empeoro la eleccion del modelo; el
+    caso se cubre con la recuperacion del orquestador (si todas las tools
+    fallan, el modelo elige en texto viendo el catalogo completo).
     """
     import asyncio
 
@@ -1017,6 +1066,49 @@ async def select_tools_semantic(text: str, k: int = 10) -> list[dict[str, Any]]:
     except Exception:
         return tools
     return rank_tools_by_similarity(message_vec, _TOOL_EMBEDDINGS, tools, k)
+
+
+async def best_tools_for_message(text: str, k: int = 3) -> tuple[list[dict[str, Any]], float]:
+    """Top-k herramientas por similitud y el score del top-1 (reintentos).
+
+    El tool-calling de modelos pequenos es no determinista: a veces responden
+    sin llamar a la herramienta aunque la peticion sea claramente una accion.
+    El orquestador usa esto para decidir si merece la pena reintentar y con
+    que herramientas forzar. Se devuelve una lista (no solo el top-1) porque
+    el ranking por embeddings tiene ruido (~0.02 por el padding del batch):
+    con top-3 la herramienta correcta casi siempre esta incluida y el modelo
+    tiene menos donde perderse que con las 10. Devuelve ([], 0.0) si el
+    embedding falla: en ese caso no se fuerza nada.
+    """
+    import asyncio
+
+    from src.ollama_client import llm
+
+    tools = get_tools_with_date_context()
+    global _TOOL_EMBEDDINGS
+    try:
+        if _TOOL_EMBEDDINGS is None or len(_TOOL_EMBEDDINGS) != len(tools):
+            vectors = await asyncio.to_thread(
+                llm.embed_texts, [_tool_catalog_text(t) for t in tools]
+            )
+            _TOOL_EMBEDDINGS = {
+                t["function"]["name"]: v for t, v in zip(tools, vectors, strict=False)
+            }
+        message_vec = (await asyncio.to_thread(llm.embed_texts, [text]))[0]
+    except Exception:
+        return [], 0.0
+
+    def dot(a: list[float], b: list[float]) -> float:
+        return sum(x * y for x, y in zip(a, b))
+
+    ranked = sorted(
+        tools,
+        key=lambda t: dot(message_vec, _TOOL_EMBEDDINGS.get(t["function"]["name"], [])),
+        reverse=True,
+    )
+    top = ranked[: max(1, min(k, len(ranked)))]
+    score = dot(message_vec, _TOOL_EMBEDDINGS.get(top[0]["function"]["name"], []))
+    return top, score
 
 
 def get_tools_for_message(text: str) -> list[dict[str, Any]]:

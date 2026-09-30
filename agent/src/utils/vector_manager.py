@@ -105,6 +105,13 @@ class VectorManager:
         self._initialized = False
 
     async def initialize(self) -> None:
+        # Chroma crea su cliente posthog aunque anonymized_telemetry=False y la
+        # version instalada falla al enviar (ruido en los logs). Se silencia
+        # ANTES de crear el cliente: el primer evento (ClientStartEvent) se
+        # dispara dentro de PersistentClient().
+        import logging as _logging
+
+        _logging.getLogger("chromadb.telemetry.product.posthog").setLevel(_logging.CRITICAL)
         db_path = settings.vector_db_path
         db_path.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
@@ -230,9 +237,11 @@ class VectorManager:
             )
             for attempt in range(3):
                 try:
+                    # upsert (no add): reindexar la misma nota es idempotente y
+                    # chroma deja de avisar "Add of existing embedding ID".
                     await loop.run_in_executor(
                         None,
-                        lambda c=chunk, cid=chunk_id: self._collection.add(
+                        lambda c=chunk, cid=chunk_id: self._collection.upsert(
                             ids=[cid],
                             documents=[c["text"]],
                             metadatas=[c["metadata"]],

@@ -136,14 +136,11 @@ def _normalize_location(text: str) -> str:
 # ---------------------------------------------------------------- tiempo
 
 
-async def _aemet_weather() -> str:
-    """Prediccion de hoy con AEMET (gratis, requiere AEMET_API_KEY)."""
+async def _aemet_forecast(code: str, day_index: int = 0) -> str:
+    """Prediccion AEMET para un municipio (dia 0=hoy, 1=mañana)."""
     key = (settings.aemet_api_key or "").strip()
-    if not key:
-        return ""
-    code, _area, _nombre = await _location()
     code = (code or "").strip()
-    if not code:
+    if not key or not code:
         return ""
     try:
         import httpx
@@ -164,7 +161,8 @@ async def _aemet_weather() -> str:
                 )
                 return ""
             payload = json.loads((await client.get(datos_url)).content.decode("latin-1"))
-        dia = payload[0]["prediccion"]["dia"][0]
+        dias = payload[0]["prediccion"]["dia"]
+        dia = dias[min(max(day_index, 0), len(dias) - 1)]
         # AEMET devuelve numeros (no strings) para las temperaturas.
         tmax = str(dia.get("temperatura", {}).get("maxima") or "").strip()
         tmin = str(dia.get("temperatura", {}).get("minima") or "").strip()
@@ -186,12 +184,145 @@ async def _aemet_weather() -> str:
 
 async def _weather() -> str:
     """Tiempo: AEMET si hay clave; si no, open-meteo (sin clave)."""
-    aemet = await _aemet_weather()
+    code, _area, _nombre = await _location()
+    aemet = await _aemet_forecast(code, 0)
     if aemet:
         return "AEMET: " + aemet
     from src.utils.proactive_briefing import _weather_summary
 
     return await _weather_summary()
+
+
+# ------------------------------------------------------------------ tiempo
+# Cache en memoria (TTL 15 min): AEMET tiene limites de peticiones y el
+# briefing ya consume su cuota.
+_WEATHER_CACHE: dict[str, tuple[float, str]] = {}
+_WEATHER_TTL_S = 900.0
+
+# Codigos WMO de open-meteo -> descripcion en espanol.
+_WMO_ES = {
+    0: "despejado",
+    1: "poco nuboso",
+    2: "nubes y claros",
+    3: "nublado",
+    45: "niebla",
+    48: "niebla helada",
+    51: "llovizna debil",
+    53: "llovizna",
+    55: "llovizna fuerte",
+    61: "lluvia debil",
+    63: "lluvia",
+    65: "lluvia fuerte",
+    71: "nieve debil",
+    73: "nieve",
+    75: "nieve fuerte",
+    80: "chubascos",
+    81: "chubascos moderados",
+    82: "chubascos fuertes",
+    95: "tormenta",
+    96: "tormenta con granizo",
+    99: "tormenta fuerte con granizo",
+}
+
+
+def _norm_ciudad(texto: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", (texto or "").lower().strip())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+async def _openmeteo_forecast(lat: float, lon: float, day_index: int) -> str:
+    import httpx
+
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        "?latitude=%s&longitude=%s"
+        "&daily=temperature_2m_max,temperature_2m_min,"
+        "precipitation_probability_max,weathercode"
+        "&timezone=auto&forecast_days=%d" % (lat, lon, max(1, day_index + 1))
+    )
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        data = (await client.get(url)).json()
+    daily = data.get("daily", {}) or {}
+    idx = min(day_index, max(0, len(daily.get("time", [])) - 1))
+    tmax = (daily.get("temperature_2m_max") or [None])[idx]
+    tmin = (daily.get("temperature_2m_min") or [None])[idx]
+    rain = (daily.get("precipitation_probability_max") or [None])[idx]
+    wmo = (daily.get("weathercode") or [None])[idx]
+    if tmax is None:
+        return ""
+    parts = ["🌡 %.0f-%.0f °C" % (tmin if tmin is not None else tmax, tmax)]
+    if rain is not None:
+        parts.append("%.0f%% de lluvia" % rain)
+    if wmo is not None and wmo in _WMO_ES:
+        parts.append(_WMO_ES[wmo])
+    return ", ".join(parts)
+
+
+async def _geocode(ciudad: str) -> tuple[float, float, str] | None:
+    import httpx
+
+    url = (
+        "https://geocoding-api.open-meteo.com/v1/search"
+        "?name=%s&count=1&language=es&format=json" % ciudad
+    )
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        data = (await client.get(url)).json()
+    results = data.get("results") or []
+    if not results:
+        return None
+    top = results[0]
+    return float(top["latitude"]), float(top["longitude"]), top.get("name", ciudad)
+
+
+async def weather_report(ciudad: str = "", dia: str = "hoy") -> dict[str, Any]:
+    """Tiempo para el chat: AEMET (ciudad conocida y clave) u open-meteo.
+
+    Devuelve {"success", "message"}; nunca lanza (el tool responde honesto).
+    """
+    import time as _time
+
+    day_index = 1 if _norm_ciudad(dia).startswith("ma") else 0
+    cache_key = "%s|%d" % (_norm_ciudad(ciudad), day_index)
+    cached = _WEATHER_CACHE.get(cache_key)
+    if cached and (_time.monotonic() - cached[0]) < _WEATHER_TTL_S:
+        return {"success": True, "message": cached[1]}
+
+    nombre = ""
+    code = ""
+    if ciudad.strip():
+        nombre = ciudad.strip()
+        code = CIUDADES.get(_norm_ciudad(nombre), ("", ""))[0]
+    else:
+        code, _area, nombre = await _location()
+        nombre = nombre or "tu zona"
+
+    texto = ""
+    if code:
+        texto = await _aemet_forecast(code, day_index)
+        if texto:
+            texto = "AEMET: " + texto
+    if not texto:
+        try:
+            if ciudad.strip():
+                geo = await _geocode(nombre)
+            elif settings.briefing_lat and settings.briefing_lon:
+                geo = (float(settings.briefing_lat), float(settings.briefing_lon), nombre)
+            else:
+                geo = await _geocode(nombre)
+            if geo:
+                texto = await _openmeteo_forecast(geo[0], geo[1], day_index)
+        except Exception as e:
+            logger.warning("Tiempo: open-meteo no disponible (%s)", str(e)[:120])
+
+    if not texto:
+        return {
+            "success": False,
+            "message": "No he podido consultar el tiempo ahora mismo. Intentalo de nuevo en un momento.",
+        }
+    cuando = "mañana" if day_index else "hoy"
+    mensaje = "🌤 En %s %s: %s" % (nombre, cuando, texto)
+    _WEATHER_CACHE[cache_key] = (_time.monotonic(), mensaje)
+    return {"success": True, "message": mensaje}
 
 
 # ---------------------------------------------------------------- datos

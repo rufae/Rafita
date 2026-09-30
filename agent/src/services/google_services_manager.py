@@ -484,8 +484,12 @@ class GoogleServicesManager:
             "singleEvents": True,
             "orderBy": "startTime",
         }
-        if time_min:
-            params["timeMin"] = self._normalize_time(time_min)
+        # Por defecto solo eventos proximos: sin timeMin Google devuelve los
+        # eventos mas antiguos (cumpleanos de 2001 en la verificacion del
+        # 2026-09-30) y el listado parecia roto.
+        if time_min is None:
+            time_min = datetime.now(UTC).isoformat()
+        params["timeMin"] = self._normalize_time(time_min)
         data = await self._run(lambda: self._calendar.events().list(**params), "listar eventos")
         return data.get("items", [])
 
