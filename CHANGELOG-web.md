@@ -885,3 +885,60 @@ de finanzas en prosa, o dice "no encontré" aunque la tool devolvió datos, o
 elige "evento" para un recado ambiguo). Las **herramientas** ejecutan y se
 verifican al 100% (API/BD); lo que varía es cómo lo cuenta el modelo. El
 selector + recuperación reducen el problema, pero no lo eliminan con un 7B.
+
+---
+
+## VOZ Y MODELO: gemma4:12b + STT large-v3 en GPU + VAD anti-ruido (2026-09-30)
+
+Petición: todas las herramientas al 100%, gemma4:12b en la GPU de la torre
+con fallback al Dell, llamada coherente, y transcripciones limpias (una
+reunión real se transcribió como basura). Análisis y arreglos:
+
+### Diagnóstico (¿era el modelo?)
+- **Transcripción**: NO era solo el modelo. La reunión usaba Whisper `small`
+  en CPU (HP: 6 GB, 4 núcleos) con `beam_size=1`, sin filtro de ruido y sin
+  diarización de confianza. El audio real de prueba (`229bf9f1….wav`) con
+  `small+beam1` daba basura ("¿Tú estás a la mierda, asistente?"); con
+  **large-v3 + VAD en la GPU** da `"¡Gracias!"` (nsp=0.07) y descarta el
+  ruido. Además el HP no puede con modelos grandes.
+- **Tool-calling**: comparativa real con el catálogo completo:
+  gemma4:12b 10/16 y qwen2.5:7b 10/16 en primera pasada (fallos similares en
+  alertas/tiempo/finanzas), pero gemma es **más coherente al redactar** y
+  similar en latencia en GPU (1,7-10 s vs 0,6-8,6 s). En CPU (Dell) gemma
+  tarda 80-140 s/turno: aceptable como fallback de chat, no para llamada.
+
+### Modelo: gemma4:12b con GPU de la torre y fallback al Dell
+- `OLLAMA_MODEL=gemma4:12b` en el HP. `_pick_backend` ya prefería la torre
+  (`OLLAMA_GPU_HOST`) y cae al Dell si la torre está apagada (mismo modelo en
+  CPU, más lento). Verificado en logs: `model=gemma4:12b backend=gpu`.
+- Batería real por el chat web con gemma: tarea crear/borrar, evento
+  crear/borrar, tiempo, alertas, finanzas, contacto y negativas honestas ✓.
+
+### STT: servicio large-v3 en la GPU de la torre + fallback local
+- Nuevo `deploy/tower/whisper_service.{py,sh}` + unidad systemd de usuario:
+  faster-whisper **large-v3** en la RTX 3060, endpoint `/transcribe` con
+  filtros (nsp/logprob) y `/health`. Inferencia ~0,7 s para 7,5 s de audio.
+- Nuevo `agent/src/services/stt_service.py`: STT unificado (remoto primero,
+  local si no responde) con filtros anti-ruido y lista negra de
+  alucinaciones ("suscríbete", "subtítulos realizados…").
+- Lo usan: llamada (`voice_stream`), reuniones (`meeting_service`, ahora
+  beam 5 + prompt) y voz de Telegram (`handlers/audio`).
+- **E2E real**: conversación sintética de 2 voces (Piper + Kokoro) con ruido
+  de fondo al 3% → transcrita en 4 s, texto casi exacto y **diarización
+  correcta** (Hablante 1 / Hablante 2). Antes: basura.
+- El HP mantiene `WHISPER_MODEL=small` como fallback (si la torre está off).
+
+### Llamada: VAD adaptativo y anti-ruido
+- `_vad_adaptativo`: umbral = percentil 20 del RMS de los últimos 3 s × 3,
+  con suelo 200 y **tope 1000** (sin tope, un monólogo continuo convertía la
+  voz en su propio umbral y recortaba el inicio).
+- **Barge-in solo con voz sostenida** (~160 ms); un pico de ruido ya no corta
+  a Rafita. Fin de turno con ~320 ms de silencio real; blips <120 ms se
+  descartan; turno máximo 30 s.
+- Los segmentos sin voz (nsp alto) se descartan en el STT: el ruido no genera
+  respuesta.
+- **E2E real contra el servidor de llamada**: pregunta hablada → transcripción
+  exacta (`"¿Qué tiempo hace en Sevilla?"`), ruido de fondo durante la
+  respuesta → **no corta**, voz sostenida → **corta (barge-in)** ✓.
+- Tests nuevos: VAD (2), stt_service (6), meeting async, y los de la
+  llamada adaptados al VAD por milisegundos. **1.357 tests**.

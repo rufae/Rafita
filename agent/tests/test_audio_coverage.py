@@ -123,36 +123,52 @@ class FakeTranscribeModel:
 
 
 async def test_transcribe_file_without_model(monkeypatch):
-    monkeypatch.setattr(audio, "_get_whisper_model", lambda: None)
+    # Desde 2026-09-30 _transcribe_file usa stt_service (remoto/local).
+    async def sin_voz(*args, **kwargs):
+        return {"text": "", "segments": [], "source": "none"}
+
+    monkeypatch.setattr("src.services.stt_service.transcribe_bytes", sin_voz)
     assert await audio._transcribe_file(Path("/tmp/nope.ogg")) is None
 
 
 async def test_transcribe_file_joins_segments(monkeypatch):
-    model = FakeTranscribeModel(
-        segments=[SimpleNamespace(text="Hola"), SimpleNamespace(text="mundo")]
-    )
-    monkeypatch.setattr(audio, "_get_whisper_model", lambda: model)
+    capturado = {}
 
-    result = await audio._transcribe_file(Path("/tmp/voice.ogg"))
+    async def fake_stt(audio_bytes, language=None, prompt="", beam_size=5):
+        capturado["beam"] = beam_size
+        capturado["language"] = language
+        return {"text": "Hola mundo", "segments": [], "source": "local"}
+
+    monkeypatch.setattr("src.services.stt_service.transcribe_bytes", fake_stt)
+    with open("/tmp/voice_test.ogg", "wb") as f:
+        f.write(b"OggS")
+
+    result = await audio._transcribe_file(Path("/tmp/voice_test.ogg"))
 
     assert result == "Hola mundo"
-    assert model.kwargs["beam_size"] == 5
-    assert model.kwargs["language"] == settings.language
-    assert model.kwargs["vad_filter"] is True
+    assert capturado["beam"] == 5
+    assert capturado["language"] == settings.language
 
 
 async def test_transcribe_file_empty_segments(monkeypatch):
-    model = FakeTranscribeModel(segments=[])
-    monkeypatch.setattr(audio, "_get_whisper_model", lambda: model)
+    async def fake_stt(*args, **kwargs):
+        return {"text": "", "segments": [], "source": "local"}
 
-    assert await audio._transcribe_file(Path("/tmp/voice.ogg")) is None
+    monkeypatch.setattr("src.services.stt_service.transcribe_bytes", fake_stt)
+    with open("/tmp/voice_empty.ogg", "wb") as f:
+        f.write(b"OggS")
+    assert await audio._transcribe_file(Path("/tmp/voice_empty.ogg")) is None
 
 
 async def test_transcribe_file_error_returns_none(monkeypatch):
-    model = FakeTranscribeModel(error=RuntimeError("audio corrupto"))
-    monkeypatch.setattr(audio, "_get_whisper_model", lambda: model)
+    async def fake_stt(*args, **kwargs):
+        raise RuntimeError("audio corrupto")
 
-    assert await audio._transcribe_file(Path("/tmp/voice.ogg")) is None
+    monkeypatch.setattr("src.services.stt_service.transcribe_bytes", fake_stt)
+    with open("/tmp/voice_err.ogg", "wb") as f:
+        f.write(b"OggS")
+
+    assert await audio._transcribe_file(Path("/tmp/voice_err.ogg")) is None
 
 
 # ---------------------------------------------------------------------------

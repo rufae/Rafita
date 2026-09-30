@@ -2,9 +2,9 @@ import asyncio
 import audioop
 import io
 import json
-import struct
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -278,6 +278,11 @@ async def start_call(request: Request):
         "sample_rate": 48000,
         "processing_task": None,
         "spec_stt": None,
+        # VAD adaptativo: piso de ruido aprendido + contadores en ms.
+        "ruido_rms": None,
+        "speech_ms": 0.0,
+        "silencio_ms": 0.0,
+        "barge_ms": 0.0,
     }
 
     logger.info("VoiceStream: call started session=%s chat=%d", session_id, chat_id)
@@ -430,40 +435,72 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
             if "bytes" in data and data["bytes"]:
                 audio_chunk = data["bytes"]
                 task = session.get("processing_task")
+                chunk_ms = _ms_del_chunk(audio_chunk, session)
 
                 if task and not task.done():
-                    # Rafita esta respondiendo: si el usuario habla, se corta
-                    # (barge-in) y su voz pasa a ser el nuevo turno.
-                    if not session.get("ptt_mode") and _simple_vad(audio_chunk):
-                        await _interrupt(session, websocket, reason="barge_in")
-                        session["audio_buffer"] = io.BytesIO()
-                        session["audio_buffer"].write(audio_chunk)
-                        session["vad_chunks"] = 1
+                    # Rafita esta respondiendo: solo se corta (barge-in) con voz
+                    # SOSTENIDA del usuario; un pico de ruido ya no la para.
+                    if not session.get("ptt_mode"):
+                        if _vad_adaptativo(audio_chunk, session):
+                            session["barge_ms"] = session.get("barge_ms", 0.0) + chunk_ms
+                            if session["barge_ms"] >= BARGE_MIN_MS:
+                                await _interrupt(session, websocket, reason="barge_in")
+                                session["audio_buffer"] = io.BytesIO()
+                                session["audio_buffer"].write(audio_chunk)
+                                session["vad_chunks"] = 1
+                                session["speech_ms"] = chunk_ms
+                                session["silencio_ms"] = 0.0
+                                session["barge_ms"] = 0.0
+                        else:
+                            session["barge_ms"] = 0.0
                     continue
 
                 if session.get("ptt_mode", False):
                     session["audio_buffer"].write(audio_chunk)
                     session["vad_chunks"] += 1
+                    # end_speech decide con speech_ms: en PTT tambien cuenta.
+                    session["speech_ms"] = session.get("speech_ms", 0.0) + chunk_ms
                 else:
-                    is_speech = _simple_vad(audio_chunk)
+                    is_speech = _vad_adaptativo(audio_chunk, session)
                     if is_speech:
                         session["audio_buffer"].write(audio_chunk)
                         session["vad_chunks"] += 1
+                        session["speech_ms"] = session.get("speech_ms", 0.0) + chunk_ms
+                        session["silencio_ms"] = 0.0
                         _maybe_schedule_speculative_stt(session, session.get("sample_rate", 48000))
-                    elif session["vad_chunks"] > 0:
-                        _start_utterance(websocket, session, session_id)
-                        session["audio_buffer"] = io.BytesIO()
-                        session["vad_chunks"] = 0
+                        if session["speech_ms"] >= MAX_TURNO_MS:
+                            # Turno larguisimo: se procesa ya para no crecer sin fin.
+                            _start_utterance(websocket, session, session_id)
+                            session["audio_buffer"] = io.BytesIO()
+                            session["vad_chunks"] = 0
+                            session["speech_ms"] = 0.0
+                    elif session.get("speech_ms", 0.0) > 0.0:
+                        session["silencio_ms"] = session.get("silencio_ms", 0.0) + chunk_ms
+                        if session["silencio_ms"] >= SILENCIO_FIN_MS:
+                            if session["speech_ms"] >= MIN_VOZ_MS:
+                                _start_utterance(websocket, session, session_id)
+                            else:
+                                logger.info(
+                                    "VoiceStream: blip descartado (%.0f ms) session=%s",
+                                    session["speech_ms"],
+                                    session_id,
+                                )
+                            session["audio_buffer"] = io.BytesIO()
+                            session["vad_chunks"] = 0
+                            session["speech_ms"] = 0.0
+                            session["silencio_ms"] = 0.0
 
             elif "text" in data and data["text"]:
                 try:
                     msg = json.loads(data["text"])
                     msg_type = msg.get("type")
                     if msg_type == "end_speech":
-                        if session.get("vad_chunks", 0) > 0:
+                        if session.get("speech_ms", 0.0) > 0.0:
                             _start_utterance(websocket, session, session_id)
                         session["audio_buffer"] = io.BytesIO()
                         session["vad_chunks"] = 0
+                        session["speech_ms"] = 0.0
+                        session["silencio_ms"] = 0.0
                         session["ptt_mode"] = False
                     elif msg_type == "ptt_start":
                         task = session.get("processing_task")
@@ -471,6 +508,8 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                             await _interrupt(session, websocket, reason="barge_in")
                         session["ptt_mode"] = True
                         session["vad_chunks"] = 0
+                        session["speech_ms"] = 0.0
+                        session["silencio_ms"] = 0.0
                         session["audio_buffer"] = io.BytesIO()
                     elif msg_type == "stop_speaking":
                         await _interrupt(session, websocket, reason="user_stop")
@@ -523,6 +562,51 @@ def _simple_vad(audio_bytes: bytes, threshold: int = 300) -> bool:
         return rms_val > threshold
     except Exception:
         return False
+
+
+# VAD adaptativo (2026-09-30). El cliente manda chunks de 8 ms (128 muestras a
+# 16 kHz); con un umbral fijo el ruido de fondo cortaba a Rafita (barge-in con
+# cualquier golpe) y una pausa de 8 ms cerraba el turno. Ahora:
+#  - el umbral se adapta al ruido ambiente (percentil 20 de los ultimos ~3 s)
+#    con un TOPE duro: sin tope, en un monologo continuo el propio habla se
+#    convertia en el umbral (p30=voz -> 2500) y se recortaba el principio;
+#  - el barge-in exige voz SOSTENIDA (~160 ms), no un pico de ruido;
+#  - el turno termina tras ~320 ms de silencio real y se descartan blips.
+VAD_MIN_RMS = 200
+VAD_MAX_RMS = 1000  # tope del umbral: la voz (RMS>1000) nunca se filtra
+VAD_FACTOR_RUIDO = 3.0
+BARGE_MIN_MS = 160
+SILENCIO_FIN_MS = 320
+MIN_VOZ_MS = 120
+MAX_TURNO_MS = 30000
+
+
+def _ms_del_chunk(audio_bytes: bytes, session: dict) -> float:
+    rate = float(session.get("sample_rate", 16000) or 16000)
+    return (len(audio_bytes) / 2.0) / rate * 1000.0
+
+
+def _vad_adaptativo(audio_bytes: bytes, session: dict) -> bool:
+    """True si el chunk parece voz, con umbral adaptado al ruido ambiente.
+
+    El piso de ruido es el percentil 30 de los ultimos ~2 s de RMS (una EMA
+    fallaba si el ruido ambiente ya superaba el umbral: nunca aprendia).
+    """
+    if len(audio_bytes) < 4:
+        return False
+    try:
+        rms_val = float(audioop.rms(audio_bytes, 2))
+    except Exception:
+        return False
+    historial = session.get("rms_hist")
+    if historial is None:
+        historial = deque(maxlen=375)  # 375 x 8 ms = 3 s a 16 kHz
+        session["rms_hist"] = historial
+    historial.append(rms_val)
+    ordenados = sorted(historial)
+    p20 = float(ordenados[int(len(ordenados) * 0.2)])
+    umbral = max(VAD_MIN_RMS, min(VAD_MAX_RMS, p20 * VAD_FACTOR_RUIDO))
+    return bool(rms_val > umbral)
 
 
 async def _process_utterance(
@@ -783,83 +867,31 @@ def _split_fragment(buffer: str) -> tuple[str, str]:
 
 
 async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) -> str | None:
-    model = _get_whisper()
-    if model is None:
-        return None
+    """STT del turno: servicio remoto (GPU torre) con fallback local.
 
-    import os
-    import tempfile
+    2026-09-30: el HP no puede con modelos grandes y `small` en CPU alucinaba
+    con ruido; ahora se delega en la torre cuando esta encendida y el filtro
+    de ruido descarta segmentos sin voz (ver services/stt_service.py).
+    """
+    from src.services.stt_service import transcribe_pcm
 
-    fd, tmp_path = tempfile.mkstemp(suffix=".wav", prefix="voicestream_")
-    os.close(fd)
     try:
-        if source_rate != TARGET_SAMPLE_RATE:
-            resampled, _ = audioop.ratecv(audio_bytes, 2, 1, source_rate, TARGET_SAMPLE_RATE, None)
-            logger.info(
-                "VoiceStream: resampled %d -> %d Hz (%d -> %d bytes)",
-                source_rate,
-                TARGET_SAMPLE_RATE,
-                len(audio_bytes),
-                len(resampled),
-            )
-        else:
-            resampled = audio_bytes
-
-        byte_rate = TARGET_SAMPLE_RATE * 2
-        block_align = 2
-        data_size = len(resampled)
-        header = struct.pack(
-            "<4sI4s4sIHHIihh4sI",
-            b"RIFF",
-            36 + data_size,
-            b"WAVE",
-            b"fmt ",
-            16,
-            1,
-            1,
-            TARGET_SAMPLE_RATE,
-            byte_rate,
-            block_align,
-            16,
-            b"data",
-            data_size,
+        resultado = await transcribe_pcm(
+            audio_bytes,
+            source_rate,
+            language=settings.language,
+            prompt=stt_prompt(),
         )
-
-        with open(tmp_path, "wb") as f:
-            f.write(header)
-            f.write(resampled)
-
-        loop = asyncio.get_event_loop()
-
-        def _do():
-            segments, info = model.transcribe(
-                tmp_path,
-                beam_size=5,
-                language=settings.language,
-                # Fallback de temperatura: mas robusto en audios muy cortos
-                # ("Hola" aislado) sin degradar las frases normales.
-                temperature=[0.0, 0.2, 0.4],
-                vad_filter=True,
-                vad_parameters={
-                    "min_silence_duration_ms": 300,
-                    "speech_pad_ms": 300,
-                },
-                condition_on_previous_text=False,
-                no_speech_threshold=0.6,
-                compression_ratio_threshold=2.4,
-                log_prob_threshold=-1.0,
-                initial_prompt=stt_prompt(),
-            )
-            parts = [seg.text for seg in segments]
-            return " ".join(parts).strip() if parts else None
-
-        return await loop.run_in_executor(None, _do)
     except Exception as e:
         logger.warning("VoiceStream STT error: %s", e)
         return None
-    finally:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    texto = (resultado.get("text") or "").strip()
+    logger.info(
+        "VoiceStream STT (%s): %s",
+        resultado.get("source"),
+        texto[:100] if texto else "(sin voz)",
+    )
+    return texto or None
 
 
 def _compute_rms(audio_bytes: bytes) -> float:

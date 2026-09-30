@@ -66,6 +66,13 @@ class Settings(BaseSettings):
 
     whisper_model: str = Field("tiny", alias="WHISPER_MODEL")
     whisper_cpu_threads: int = Field(4, alias="WHISPER_CPU_THREADS", ge=1, le=32)
+    # STT remoto (2026-09-30): servicio faster-whisper large-v3 en la GPU de
+    # la torre (deploy/tower/whisper_service.sh). El HP no puede con modelos
+    # grandes (6 GB, sin GPU) y `small` en CPU alucina con ruido. Si esta
+    # vacio o no responde, se usa el Whisper local como fallback.
+    whisper_remote_url: str = Field("", alias="WHISPER_REMOTE_URL")
+    whisper_remote_token: str = Field("", alias="WHISPER_REMOTE_TOKEN")
+    whisper_remote_timeout: float = Field(600.0, alias="WHISPER_REMOTE_TIMEOUT", ge=5.0, le=3600.0)
     # Voz de Piper (calidad media suena mucho mas humana que x_low).
     # Formato: es_ES-davefx-medium, es_ES-sharvard-medium, es_ES-carlfm-x_low...
     tts_voice: str = Field("es_ES-davefx-medium", alias="TTS_VOICE")

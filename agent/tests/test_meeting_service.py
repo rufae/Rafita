@@ -153,11 +153,11 @@ async def test_crear_y_procesar_reunion(monkeypatch, tmp_path):
         return True
 
     monkeypatch.setattr(ms, "_convertir_a_wav", fake_convertir)
-    monkeypatch.setattr(
-        ms,
-        "transcribir",
-        lambda wav: ([{"start": 0.0, "end": 3.0, "text": "hola a todos"}], "es"),
-    )
+
+    async def fake_transcribir(wav):
+        return [{"start": 0.0, "end": 3.0, "text": "hola a todos"}], "es"
+
+    monkeypatch.setattr(ms, "transcribir", fake_transcribir)
     monkeypatch.setattr(
         ms, "etiquetar_interlocutores", lambda wav, segs: ["Hablante 1"] * len(segs)
     )
