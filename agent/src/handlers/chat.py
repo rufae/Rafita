@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -784,6 +785,62 @@ _KINSHIP_KEYS = (
 )
 
 
+_RELLENO_TAREA_RE = re.compile(
+    r"\b(?:marca|marcala|marcalo|marcar|marcada|completa|completala|completar|"
+    r"borra|borrala|borralo|borrar|elimina|eliminala|eliminar|quita|quitarla|"
+    r"como|hecha|hecho|realizada|realizado|pendiente|la|el|los|las|una|un|"
+    r"tarea|tareas|de|del|que|por favor)\b",
+    re.IGNORECASE,
+)
+
+
+def _limpiar_consulta_contacto(query: str) -> str:
+    """Quita relleno de la consulta de contactos (bug 2026-09-30).
+
+    El modelo a veces pasa la frase entera ("busca un contacto con el nombre
+    Ana que tiene puesto su correo") y el buscador no encontraba nada. Se
+    quita el relleno de delante/detras y, si queda vacio, se usa la original.
+    """
+    original = (query or "").strip()
+    if not original:
+        return original
+    q = original
+    q = re.sub(
+        r"^\s*(?:busca|búscame|buscame|buscar|encuentra|encuéntrame|encuentrame)\s+",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    )
+    q = re.sub(r"^\s*(?:un|una|el|la)?\s*contactos?\s+", "", q, flags=re.IGNORECASE)
+    q = re.sub(
+        r"^\s*(?:con\s+el\s+nombre\s+|que\s+se\s+llama\s+|llamad[oa]\s+|de\s+nombre\s+)",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    )
+    q = re.sub(
+        r"\s+(?:que\s+)?(?:tiene|tienen)\s+(?:puesto\s+)?(?:su\s+)?"
+        r"(?:correo|email|e-mail|tel[eé]fono).*$",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    )
+    q = re.sub(r"\s+(?:en|de)\s+mis\s+contactos.*$", "", q, flags=re.IGNORECASE)
+    q = re.sub(r"\s+por\s+favor\s*$", "", q, flags=re.IGNORECASE)
+    q = q.strip(" ,.;:¡!¿?")
+    return q or original
+
+
+def _limpiar_titulo_tarea(titulo: str) -> str:
+    """Quita palabras de instruccion del 'titulo' que pasa el modelo.
+
+    Bug 2026-09-30: llegaba 'Marcala como realizada' como titulo de tarea; el
+    nombre real era otro. Se usa como aguja de busqueda, no como titulo final.
+    """
+    limpio = _RELLENO_TAREA_RE.sub(" ", (titulo or "").lower())
+    return " ".join(limpio.split()).strip()
+
+
 def _local_vault_files(query: str = "") -> list[dict[str, str]]:
     """Lista ficheros de la boveda (modo local sin Google, 2026-09-28)."""
     from src.utils.obsidian_manager import OBSIDIAN_VAULT
@@ -1378,6 +1435,24 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "manage_google_calendar":
             action = args.get("action", "").strip().lower()
+            # Alias de accion (mismo motivo que en tareas: gemma usa otros
+            # nombres como 'add'/'create_event'/'update').
+            action = {
+                "add": "create",
+                "create_event": "create",
+                "add_event": "create",
+                "new": "create",
+                "remove": "delete",
+                "delete_event": "delete",
+                "remove_event": "delete",
+                "update": "move",
+                "reschedule": "move",
+                "move_event": "move",
+                "get": "list",
+                "list_events": "list",
+                "show": "list",
+                "agenda": "list",
+            }.get(action, action)
             # Google opcional (2026-09-28): si Google no esta conectado, el
             # calendario local de Rafita (SQLite) ofrece las mismas acciones.
             use_google = google_services.is_ready
@@ -1394,7 +1469,9 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 return dt_str
 
             if action == "create":
-                title = args.get("title", "").strip()
+                title = str(
+                    args.get("title") or args.get("task_name") or args.get("name") or ""
+                ).strip()
                 dt_str = _parse_when()
                 description = args.get("description", "").strip()
                 if not title or not dt_str:
@@ -1726,7 +1803,12 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return await _trigger_n8n(args)
 
         elif func_name == "send_gmail":
-            to = args.get("to", "").strip()
+            from src.utils.voice_text import normalize_dictated_email
+
+            # Bug 2026-09-30: el correo dictado llegaba como "anabel arroba
+            # gmail punto com" y el envio fallaba.
+            to = normalize_dictated_email(args.get("to", "")) or ""
+            to = to.strip()
             subject = args.get("subject", "").strip()
             body = args.get("body", "").strip()
             if not to or not body:
@@ -1736,6 +1818,31 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "manage_google_tasks":
             action = args.get("action", "").strip().lower()
+            # gemma4:12b usa nombres de accion propios (2026-09-30:
+            # 'complete_task', 'add', action vacia): se aceptan como alias.
+            action = {
+                "add": "create",
+                "create_task": "create",
+                "add_task": "create",
+                "new": "create",
+                "apuntar": "create",
+                "complete_task": "complete",
+                "mark_done": "complete",
+                "done": "complete",
+                "completar": "complete",
+                "marcar": "complete",
+                "finish": "complete",
+                "delete_task": "delete",
+                "remove": "delete",
+                "remove_task": "delete",
+                "borrar": "delete",
+                "eliminar": "delete",
+                "list_tasks": "list",
+                "listar": "list",
+                "all": "list",
+                "get": "list",
+                "show": "list",
+            }.get(action, action)
             use_google = google_services.is_ready
             if action == "list":
                 if use_google:
@@ -1752,7 +1859,9 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     lines.append("  • %s (id: %s)" % (task["title"], task["id"]))
                 return {"success": True, "message": "\n".join(lines)}
             if action == "create":
-                title = args.get("title", "").strip()
+                title = str(
+                    args.get("title") or args.get("task_name") or args.get("name") or ""
+                ).strip()
                 if not title:
                     return {"success": False, "message": "Indica el título de la tarea."}
                 due_date = ""
@@ -1778,53 +1887,96 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "message": "Tarea guardada localmente%s: %s (id: %s)" % (aviso, title, task_id),
                 }
             if action in ("complete", "delete"):
-                task_id = str(args.get("task_id", "") or "").strip()
-                task_title = str(args.get("task_title", "") or args.get("title", "") or "").strip()
-                if not task_id and task_title:
-                    # El modelo suele saber el titulo, no el ID (bug
-                    # 2026-09-30: "borra la tarea comprar pilas" pedia el ID).
-                    needle = task_title.lower()
+                tarea_id = str(args.get("task_id", "") or "").strip()
+                task_title = str(
+                    args.get("task_title")
+                    or args.get("title")
+                    or args.get("task_name")
+                    or args.get("name")
+                    or ""
+                ).strip()
+                # Bug 2026-09-30: el modelo mete el TITULO en task_id
+                # ('Programa Buena Tierra') o la instruccion entera como
+                # titulo ('Marcala como realizada') y la tarea no se marcaba.
+                # Un task_id real (Google) no tiene espacios.
+                if tarea_id and " " in tarea_id and not task_title:
+                    task_title = tarea_id
+                    tarea_id = ""
+
+                async def _pendientes() -> list[dict[str, str]]:
                     if use_google:
-                        pendientes = (await google_services.list_tasks()).get("tasks", [])
-                        matches = [
-                            t for t in pendientes if needle in (t.get("title") or "").lower()
+                        return [
+                            {"id": str(t.get("id") or ""), "title": t.get("title") or ""}
+                            for t in (await google_services.list_tasks()).get("tasks", [])
                         ]
-                    else:
-                        rows = await db.list_tasks(chat_id)
-                        matches = [
-                            {"id": str(r.get("id")), "title": r.get("title", "")}
-                            for r in rows
-                            if needle in (r.get("title") or "").lower()
-                        ]
-                    if matches:
-                        task_id = str(matches[0].get("id") or "")
-                    else:
+                    return [
+                        {"id": str(r.get("id")), "title": r.get("title", "")}
+                        for r in await db.list_tasks(chat_id)
+                    ]
+
+                def _buscar_por_titulo(titulo: str, tareas: list[dict[str, str]]) -> str:
+                    needle = _limpiar_titulo_tarea(titulo)
+                    if not needle:
+                        needle = titulo.lower().strip()
+                    for t in tareas:
+                        if needle and needle in (t["title"] or "").lower():
+                            return t["id"]
+                    # Segundo intento: todas las palabras (>=3) presentes.
+                    palabras = [w for w in needle.split() if len(w) >= 3]
+                    if len(palabras) >= 2:
+                        for t in tareas:
+                            titulo_t = (t["title"] or "").lower()
+                            if all(w in titulo_t for w in palabras):
+                                return t["id"]
+                    return ""
+
+                if not tarea_id and task_title:
+                    tareas = await _pendientes()
+                    tarea_id = _buscar_por_titulo(task_title, tareas)
+                    if not tarea_id:
+                        nombres = ", ".join(t["title"] for t in tareas[:10]) or "ninguna"
                         return {
                             "success": False,
-                            "message": "No encontre ninguna tarea pendiente llamada '%s'."
-                            % task_title,
+                            "message": "No encontre ninguna tarea pendiente llamada '%s'. "
+                            "Tareas pendientes: %s. Pide al usuario cual es."
+                            % (task_title, nombres),
                         }
-                if not task_id:
+                if not tarea_id:
                     return {
                         "success": False,
                         "message": "Necesito el task_id o el titulo de la tarea.",
                     }
                 if use_google:
-                    if action == "complete":
-                        return await google_services.complete_task(task_id)
-                    return await google_services.delete_task(task_id)
+                    try:
+                        if action == "complete":
+                            resultado = await google_services.complete_task(tarea_id)
+                        else:
+                            resultado = await google_services.delete_task(tarea_id)
+                    except Exception as e:
+                        resultado = {"success": False, "message": str(e)[:150]}
+                    if resultado.get("success") is False and task_title:
+                        # El id era invalido (p. ej. era el titulo): reintento
+                        # resolviendo por titulo.
+                        tareas = await _pendientes()
+                        alt_id = _buscar_por_titulo(task_title, tareas)
+                        if alt_id and alt_id != tarea_id:
+                            if action == "complete":
+                                return await google_services.complete_task(alt_id)
+                            return await google_services.delete_task(alt_id)
+                    return resultado
                 if action == "complete":
-                    await db.complete_task(chat_id, int(task_id))
+                    await db.complete_task(chat_id, int(tarea_id))
                     return {"success": True, "message": "Tarea completada (local)."}
-                await db.delete_task(chat_id, int(task_id))
+                await db.delete_task(chat_id, int(tarea_id))
                 return {"success": True, "message": "Tarea eliminada (local)."}
             return {
                 "success": False,
-                "message": "Acción no válida: list, create, complete, delete.",
+                "message": "Acción no válida o vacía: usa exactamente list, create, "
+                "complete o delete (no inventes otros nombres).",
             }
 
         elif func_name == "find_contact":
-            query = args.get("query", "")
+            query = _limpiar_consulta_contacto(args.get("query", ""))
             # Alias aprendidos (2026-09-27): 'mi madre' -> 'Aa Mama' (guardado
             # con remember_fact) resuelve sin ambiguedades. Solo se aplica a
             # expresiones con posesivo ('mi madre'), no a 'Mama Raulito'.

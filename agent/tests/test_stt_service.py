@@ -143,3 +143,59 @@ async def test_meeting_transcribir_usa_stt_service(monkeypatch, tmp_path: Path):
     assert capturado["beam"] == 5
     assert idioma == "es"
     assert [s["text"] for s in segmentos] == ["Hola", "¿Qué tal?"]
+
+
+def test_normaliza_correo_dictado():
+    from src.utils.voice_text import normalize_dictated_email
+
+    assert (
+        normalize_dictated_email("mi correo es anabel arroba gmail punto com")
+        == "mi correo es anabel@gmail.com"
+    )
+    assert (
+        normalize_dictated_email("escribe a juan guion bajo perez arroba hotmail punto es")
+        == "escribe a juan_perez@hotmail.es"
+    )
+    # Sin 'arroba' no se toca nada.
+    assert normalize_dictated_email("hola punto com esto no es un correo") == (
+        "hola punto com esto no es un correo"
+    )
+
+
+async def test_transcribe_remoto_normaliza_correo(monkeypatch):
+    monkeypatch.setattr(settings, "whisper_remote_url", "http://torre:9001")
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "text": "mi correo es anabel arroba gmail punto com",
+                "segments": [
+                    {
+                        "text": "mi correo es anabel arroba gmail punto com",
+                        "no_speech_prob": 0.05,
+                        "avg_logprob": -0.2,
+                    }
+                ],
+            }
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    resultado = await stt_service.transcribe_bytes(b"x" * 2000)
+    assert resultado["text"] == "mi correo es anabel@gmail.com"

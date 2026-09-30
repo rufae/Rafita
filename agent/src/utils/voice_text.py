@@ -110,6 +110,37 @@ def _collapse_word_loop(words: list[str]) -> list[str]:
     return out
 
 
+_DICTADO_ARROBA_RE = re.compile(r"\s+(?:arroba|at)\s+", re.IGNORECASE)
+_DICTADO_PUNTO_RE = re.compile(r"\s+(?:punto|dot)\s+", re.IGNORECASE)
+_DICTADO_GUION_BAJO_RE = re.compile(r"\s+guion\s+bajo\s+", re.IGNORECASE)
+_DICTADO_GUION_RE = re.compile(r"\s+guion\s+", re.IGNORECASE)
+
+
+def normalize_dictated_email(text: str | None) -> str | None:
+    """Convierte un correo dictado a su forma real (bug 2026-09-30).
+
+    El STT transcribia 'anabel arroba gmail punto com' tal cual (o perdia la
+    arroba: 'anabel.84.amg.gmail.com') y send_gmail fallaba. Solo se aplica
+    cuando aparece 'arroba' (senal clara de dictado), para no tocar texto
+    normal.
+    """
+    if not text:
+        return text
+    bajo = " %s " % text.lower()
+    if " arroba " not in bajo and " at " not in bajo:
+        return text
+    resultado = " %s " % text
+    resultado = _DICTADO_ARROBA_RE.sub("@", resultado)
+    resultado = _DICTADO_GUION_BAJO_RE.sub("_", resultado)
+    resultado = _DICTADO_GUION_RE.sub("-", resultado)
+    resultado = _DICTADO_PUNTO_RE.sub(".", resultado)
+    # Espacios alrededor de @ y . SOLO entre caracteres de palabra (para no
+    # tocar la puntuacion normal de la frase).
+    resultado = re.sub(r"(\w)\s*@\s*(\w)", r"\1@\2", resultado)
+    resultado = re.sub(r"(\w)\s*\.\s*(\w)", r"\1.\2", resultado)
+    return " ".join(resultado.split()).strip()
+
+
 def clean_stt_transcript(text: str | None) -> str | None:
     """Limpia la transcripcion del STT y rechaza alucinaciones por bucle.
 

@@ -19,7 +19,7 @@ import struct
 from typing import Any
 
 from src.config import settings
-from src.utils.voice_text import clean_stt_transcript
+from src.utils.voice_text import clean_stt_transcript, normalize_dictated_email
 
 logger = logging.getLogger("rafita")
 
@@ -142,6 +142,7 @@ async def _transcribir_remoto(
     if _es_alucinacion(texto):
         logger.info("STT remoto: alucinacion descartada (%r)", texto[:80])
         texto = ""
+    texto = normalize_dictated_email(texto) or ""
     return {
         "text": texto,
         "segments": segmentos,
@@ -206,6 +207,7 @@ async def transcribe_bytes(
         logger.info("STT local: alucinacion descartada (%r)", texto[:80])
         texto = ""
     texto = clean_stt_transcript(texto) or ""
+    texto = normalize_dictated_email(texto) or ""
     return {"text": texto, "segments": segmentos, "source": "local"}
 
 
