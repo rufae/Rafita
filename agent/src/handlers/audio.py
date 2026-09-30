@@ -1,4 +1,3 @@
-import asyncio
 import io
 import tempfile
 import time
@@ -150,35 +149,25 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def _transcribe_file(audio_path: Path) -> str | None:
-    model = _get_whisper_model()
-    if model is None:
-        return None
+    """STT de un audio de Telegram (OGG): remoto (GPU torre) o local."""
+    from src.i18n import stt_prompt
+    from src.services.stt_service import transcribe_bytes
 
     try:
-        loop = asyncio.get_event_loop()
-
-        def _do_transcribe():
-            from src.i18n import stt_prompt
-
-            segments, info = model.transcribe(
-                str(audio_path),
-                beam_size=5,
-                language=settings.language,
-                initial_prompt=stt_prompt(),
-                condition_on_previous_text=False,
-                vad_filter=True,
-                vad_parameters={
-                    "min_silence_duration_ms": 300,
-                    "threshold": 0.5,
-                },
-            )
-            parts = []
-            for seg in segments:
-                parts.append(seg.text)
-            return " ".join(parts) if parts else None
-
-        result = await loop.run_in_executor(None, _do_transcribe)
-        return result
+        audio_bytes = audio_path.read_bytes()
+        resultado = await transcribe_bytes(
+            audio_bytes,
+            language=settings.language,
+            prompt=stt_prompt(),
+            beam_size=5,
+        )
+        texto = (resultado.get("text") or "").strip()
+        logger.info(
+            "[AUDIO] STT (%s): %s",
+            resultado.get("source"),
+            texto[:100] if texto else "(sin voz)",
+        )
+        return texto or None
     except Exception as e:
         logger.exception("[AUDIO ERROR] Transcripción falló: %s", e)
         return None

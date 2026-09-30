@@ -20,6 +20,10 @@ from src.voice_stream.server import (
 
 LOUD = struct.pack("<100h", *([20000] * 100))
 SILENT = struct.pack("<100h", *([10] * 100))
+# Chunks de 100 ms (1600 muestras a 16 kHz): el VAD adaptativo razona en
+# milisegundos (barge-in >=160 ms; fin de turno >=320 ms de silencio).
+LOUD_BIG = struct.pack("<1600h", *([20000] * 1600))
+SILENT_BIG = struct.pack("<1600h", *([10] * 1600))
 
 
 class _FakeTask:
@@ -260,7 +264,7 @@ def test_ws_ping_and_audio_config(client, monkeypatch):
 
 def test_ws_buffers_speech_and_utterance_on_silence(client, monkeypatch):
     monkeypatch.setattr(settings, "voice_speculative_stt", False)
-    _seed_session("w2")
+    _seed_session("w2", sample_rate=16000)
     processed = []
     started = threading.Event()
 
@@ -271,14 +275,16 @@ def test_ws_buffers_speech_and_utterance_on_silence(client, monkeypatch):
     monkeypatch.setattr(voice_server, "_process_utterance", fake_process)
     with client.websocket_connect("/call/ws/w2") as ws:
         assert ws.receive_json()["type"] == "ready"
-        ws.send_bytes(LOUD)
-        ws.send_bytes(SILENT)
+        ws.send_bytes(LOUD_BIG)
+        ws.send_bytes(LOUD_BIG)
+        for _ in range(4):  # 400 ms de silencio real cierran el turno
+            ws.send_bytes(SILENT_BIG)
         assert started.wait(2), "el turno no llego a procesarse"
         ws.send_text('{"type": "stop_speaking"}')
         assert ws.receive_json() == {"type": "interrupted", "reason": "user_stop"}
         assert voice_server._active_sessions["w2"]["state"] == "listening"
     assert processed and processed[0][0] == "w2"
-    assert processed[0][1] == LOUD
+    assert processed[0][1] == LOUD_BIG * 2
 
 
 def test_ws_end_speech_starts_utterance(client, monkeypatch):
@@ -305,7 +311,7 @@ def test_ws_end_speech_starts_utterance(client, monkeypatch):
 
 def test_ws_barge_in_interrupts_running_response(client, monkeypatch):
     monkeypatch.setattr(settings, "voice_speculative_stt", False)
-    _seed_session("w4")
+    _seed_session("w4", sample_rate=16000)
     cancelled = []
 
     async def fake_process(websocket, session, session_id, audio_data):
@@ -320,7 +326,10 @@ def test_ws_barge_in_interrupts_running_response(client, monkeypatch):
         assert ws.receive_json()["type"] == "ready"
         ws.send_bytes(LOUD)
         ws.send_text('{"type": "end_speech"}')
-        ws.send_bytes(LOUD)
+        # El barge-in exige voz sostenida (>=160 ms): un solo pico de ruido ya
+        # no corta a Rafita.
+        ws.send_bytes(LOUD_BIG)
+        ws.send_bytes(LOUD_BIG)
         assert ws.receive_json() == {"type": "interrupted", "reason": "barge_in"}
     assert cancelled == ["w4"]
 
@@ -751,28 +760,26 @@ async def test_process_utterance_propagates_cancellation(monkeypatch):
 async def test_transcribe_audio_bytes_with_fake_whisper(tmp_path, monkeypatch):
     captured = {}
 
-    class _Seg:
-        def __init__(self, text):
-            self.text = text
+    async def fake_transcribe_pcm(pcm, source_rate, language=None, prompt="", beam_size=5):
+        captured["source_rate"] = source_rate
+        captured["language"] = language
+        return {"text": "hola mundo", "segments": [], "source": "local"}
 
-    class _Model:
-        def transcribe(self, path, **kwargs):
-            captured["path"] = path
-            captured["kwargs"] = kwargs
-            return [_Seg("hola"), _Seg("mundo")], None
-
-    monkeypatch.setattr(voice_server, "_get_whisper", lambda: _Model())
+    monkeypatch.setattr("src.services.stt_service.transcribe_pcm", fake_transcribe_pcm)
     text = await voice_server._transcribe_audio_bytes(LOUD * 100, source_rate=48000)
     assert text == "hola mundo"
-    assert captured["path"].endswith(".wav")
-    assert captured["kwargs"]["language"] == settings.language
+    assert captured["source_rate"] == 48000
+    assert captured["language"] == settings.language
 
     text = await voice_server._transcribe_audio_bytes(LOUD * 100, source_rate=16000)
     assert text == "hola mundo"
 
 
 async def test_transcribe_audio_bytes_failure_paths(monkeypatch):
-    monkeypatch.setattr(voice_server, "_get_whisper", lambda: None)
+    async def sin_voz(*args, **kwargs):
+        return {"text": "", "segments": [], "source": "none"}
+
+    monkeypatch.setattr("src.services.stt_service.transcribe_pcm", sin_voz)
     assert await voice_server._transcribe_audio_bytes(b"x") is None
 
     class _BrokenModel:
