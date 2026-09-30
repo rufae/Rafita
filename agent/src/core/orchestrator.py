@@ -17,7 +17,11 @@ from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database import db
-from src.handlers.chat_tools import TOOLS_DEFINITIONS, select_tools_semantic
+from src.handlers.chat_tools import (
+    TOOLS_DEFINITIONS,
+    best_tools_for_message,
+    select_tools_semantic,
+)
 from src.i18n import language_name, language_rule, reply_instruction
 from src.logger import logger
 from src.models.schemas import MessageRole
@@ -30,16 +34,39 @@ from src.vault_config import get_taxonomy
 # dijo "Buscando un correo..." sin buscar y el chat dijo "He guardado la tarea"
 # sin guardarla). Si el modelo afirma una accion y no hubo tool_calls, se
 # reintenta una vez obligandole a usar la herramienta o a desdecirse.
+# Verbos de accion en primera persona ("he guardado", "he borrado"...). Se
+# aceptan variantes/typos con la raiz ("he marcan", "he programado"): el
+# 2026-09-30 el modelo afirmo tareas borradas y correos enviados que nunca
+# ocurrieron y la lista anterior no cubria eliminar/programar/marcar.
 _ACTION_CLAIM_RE = re.compile(
-    r"\b(?:he guardado|he creado|he a[nñ]adido|he apuntado|he anotado|he tomado nota|"
-    r"he enviado|he completado|he registrado|he encontrado|tom[oé] nota|"
-    r"guardando|buscando|search\w*|busc\w+|encontr[eé]|"
-    r"enviando|apuntando|anotando|completando|un momento|te muestro|te busco|"
-    r"aqu[ií] tienes|resultados?)\b",
+    r"\b(?:"
+    r"he (?:guard|cre|a[nñ]ad|apunt|anot|tom|envi|complet|registr|encontr|"
+    r"elimin|borr|marc|program|actualiz|mov|reserv|cancel|dej|puest)\w*"
+    r"|tom[oé] nota"
+    r"|(?:guardando|apuntando|anotando|completando|enviando|eliminando|borrando)"
+    r"|aqu[ií] tienes|te muestro|te busco|un momento"
+    r"|resultados?:"
+    r"|busc\w+"
+    r"|b[uú]squed\w*"
+    r"|search\w*"
+    r"|encontr[eé]"
+    r")\b",
     re.IGNORECASE,
 )
+# Negacion delante de la supuesta accion ("no he encontrado", "sin resultados",
+# "no puedo buscar"): es honestidad, no alucinacion.
+_NEGACION_RE = re.compile(r"\b(?:no|sin|nunca|tampoco)\b[^.!?]{0,24}$", re.IGNORECASE)
 # Correo electronico en la respuesta: si no lo dijo el usuario, es inventado.
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+# Umbrales de similitud (bge-m3, calibrados con mensajes reales el
+# 2026-09-30: small talk <= 0.44; acciones 0.51-0.66).
+TOOL_RETRY_MIN_SCORE = 0.45
+TOOL_FORCE_MIN_SCORE = 0.50
+# Con confianza alta se ofrece SOLO esa herramienta; si no, todas con un
+# aviso duro (el top-1 puede ser otra parecida: p.ej. "borra el evento" daba
+# create_google_calendar_event 0.55 y manage_google_calendar 0.58).
+TOOL_CONFIDENT_SCORE = 0.60
 
 HONEST_FALLBACK = (
     "No he podido comprobar esa informacion con mis herramientas y no quiero "
@@ -49,13 +76,14 @@ HONEST_FALLBACK = (
 
 def _hallucination_risk(content: str, user_text: str) -> bool:
     """True si la respuesta afirma acciones o cita correos que no vinieron de tools."""
-    if _ACTION_CLAIM_RE.search(content or ""):
+    texto = content or ""
+    for match in _ACTION_CLAIM_RE.finditer(texto):
+        prefix = texto[max(0, match.start() - 40) : match.start()]
+        if _NEGACION_RE.search(prefix):
+            continue
         return True
     texto_usuario = (user_text or "").lower()
-    for match in _EMAIL_RE.finditer(content or ""):
-        if match.group().lower() not in texto_usuario:
-            return True
-    return False
+    return any(match.group().lower() not in texto_usuario for match in _EMAIL_RE.finditer(texto))
 
 
 SYSTEM_PROMPT_VOICE = (
@@ -89,6 +117,7 @@ SYSTEM_PROMPT_VOICE = (
     "- search_web / remember_fact / search_knowledge\n"
     "- create_event / create_alert / manage_google_calendar\n"
     "- manage_google_tasks (tareas: guardar, listar, completar)\n"
+    "- get_weather (tiempo) / get_alerts (alertas pendientes)\n"
     "- search_gmail / send_gmail (correo)\n"
     "- find_contact (telefonos y correos de contactos)\n"
     "- manage_crm (clientes y pipeline)\n"
@@ -140,6 +169,12 @@ GROUNDING_RULES = (
     "nunca inventes un correo ni un remitente. Busca de inmediato con lo "
     "que el usuario haya dicho (nombre, parte del nombre, asunto...): NO "
     "pidas confirmacion ni el nombre completo antes de buscar.\n"
+    "ACTION_RULE (critica): si el usuario pide una accion o una consulta "
+    "que alguna herramienta puede hacer (guardar, apuntar, crear, borrar, "
+    "listar, buscar, enviar, consultar el tiempo...), llama a la "
+    "herramienta adecuada en este mismo turno. No respondas con texto "
+    "diciendo que no puedes, ni pidiendo datos que ya tienes; solo pide un "
+    "dato si de verdad falta y es imprescindible.\n"
 )
 
 
@@ -208,6 +243,48 @@ VOICE_RULE = (
     "repitas palabras ni frases (evita bucles). Termina siempre con una frase "
     "completa.\n"
 )
+
+
+async def _elegir_herramienta_por_texto(
+    mensaje_actual: dict[str, Any],
+    system_prompt: dict[str, Any],
+    candidatas: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Pide al modelo (en texto, sin embeddings) la herramienta mas adecuada.
+
+    El ranking por embeddings tiene ruido (~0.02) y en frases cortas falla;
+    el modelo, viendo el catalogo con descripciones, elige mejor.
+    Devuelve la tool elegida o None.
+    """
+    catalogo = "\n".join(
+        "- %s: %s" % (t["function"]["name"], (t["function"].get("description") or "")[:110])
+        for t in candidatas
+    )
+    try:
+        eleccion = await asyncio.wait_for(
+            llm.chat(
+                messages=[
+                    system_prompt,
+                    mensaje_actual,
+                    {
+                        "role": "system",
+                        "content": (
+                            "Responde SOLO con el nombre de la herramienta mas "
+                            "adecuada de esta lista para la peticion del usuario "
+                            "(o NINGUNA si no hace falta):\n" + catalogo
+                        ),
+                    },
+                ],
+                max_tokens=24,
+            ),
+            timeout=60.0,
+        )
+    except Exception:
+        return None
+    return next(
+        (t for t in candidatas if t["function"]["name"] in (eleccion or "")),
+        None,
+    )
 
 
 async def _prepare_tool_phase(
@@ -303,52 +380,131 @@ async def _prepare_tool_phase(
         bool(tool_calls),
     )
 
-    # Guardia de honestidad: si afirma una accion sin haber usado herramienta,
-    # reintentar una vez para que la ejecute o se desdecida.
-    if not tool_calls and _hallucination_risk(content or "", text):
-        logger.warning(
-            "[ORCHESTRATOR] accion afirmada sin herramienta (chat_id=%d); reintentando",
-            chat_id,
-        )
-        messages_for_llm.append(
-            {
-                "role": "system",
-                "content": (
-                    "AVISO: has respondido como si hubieras hecho una accion o has "
-                    "citado datos (correos) sin llamar a ninguna herramienta. Si el "
-                    "usuario pidio buscar, guardar, crear, completar o enviar algo, "
-                    "llama AHORA a la herramienta adecuada (search_gmail para correos, "
-                    "manage_google_tasks para tareas). No inventes datos; si no puedes, "
-                    "di claramente que no lo has hecho."
-                ),
-            }
-        )
+    # Guardia de honestidad + reintentos. El tool-calling de modelos pequenos
+    # es no determinista (el 2026-09-30 el mismo mensaje funcionaba o no segun
+    # la ejecucion): si la respuesta afirma una accion sin herramienta (riesgo)
+    # o la peticion encaja con una herramienta por similitud (score), se
+    # reintenta; y si aun asi no llama, se fuerza esa herramienta con una sola
+    # tool ofrecida. Nunca se devuelven datos inventados.
+    if not tool_calls:
+        risk = _hallucination_risk(content or "", text)
         try:
-            content_retry, tool_calls_retry = await asyncio.wait_for(
-                llm.chat_with_tools(
-                    messages=messages_for_llm,
-                    tools=tools_for_call,
-                    max_tokens=512,
-                ),
-                timeout=600.0,
+            # Limite corto: si el embedding se atasca, no se bloquea la respuesta.
+            top_tools, top_score = await asyncio.wait_for(best_tools_for_message(text), timeout=8.0)
+        except Exception:
+            top_tools, top_score = [], 0.0
+        top_tool = top_tools[0] if top_tools else None
+        probable = top_tool is not None and top_score >= TOOL_RETRY_MIN_SCORE
+        if risk or probable:
+            logger.warning(
+                "[ORCHESTRATOR] sin herramienta (riesgo=%s score=%.3f top=%s); reintentando",
+                risk,
+                top_score,
+                top_tool["function"]["name"] if top_tool else "-",
             )
-            if tool_calls_retry:
-                content, tool_calls = content_retry, tool_calls_retry
-                logger.info(
-                    "[ORCHESTRATOR] reintento con herramienta: %s",
-                    [tc["function"]["name"] for tc in tool_calls],
+            messages_for_llm.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "AVISO: has respondido como si hubieras hecho una accion o has "
+                        "citado datos (correos) sin llamar a ninguna herramienta. Si el "
+                        "usuario pidio buscar, guardar, crear, completar o enviar algo, "
+                        "llama AHORA a la herramienta adecuada (search_gmail para correos, "
+                        "manage_google_tasks para tareas). No inventes datos; si no puedes, "
+                        "di claramente que no lo has hecho."
+                    ),
+                }
+            )
+            try:
+                content_retry, tool_calls_retry = await asyncio.wait_for(
+                    llm.chat_with_tools(
+                        messages=messages_for_llm,
+                        tools=tools_for_call,
+                        max_tokens=512,
+                    ),
+                    timeout=600.0,
                 )
-            elif _hallucination_risk(content_retry or "", text):
-                # El reintento tampoco uso herramientas: mejor honestidad que datos falsos.
-                logger.warning(
-                    "[ORCHESTRATOR] reintento sin herramienta; respuesta honesta (chat_id=%d)",
-                    chat_id,
-                )
-                content = HONEST_FALLBACK
-            elif content_retry:
-                content = content_retry
-        except Exception as e:
-            logger.warning("[ORCHESTRATOR] reintento de herramienta fallo: %s", e)
+                if tool_calls_retry:
+                    content, tool_calls = content_retry, tool_calls_retry
+                    logger.info(
+                        "[ORCHESTRATOR] reintento con herramienta: %s",
+                        [tc["function"]["name"] for tc in tool_calls],
+                    )
+                else:
+                    risk_retry = _hallucination_risk(content_retry or "", text)
+                    if top_tool is not None and (
+                        risk or risk_retry or top_score >= TOOL_FORCE_MIN_SCORE
+                    ):
+                        # Contexto limpio (system + peticion actual + aviso): el
+                        # historial sesga al modelo a seguir respondiendo sin
+                        # herramientas (verificado 2026-09-30: en limpio llama
+                        # a create_event y con historial no).
+                        mensaje_actual = next(
+                            (m for m in reversed(messages_for_llm) if m.get("role") == "user"),
+                            {"role": "user", "content": text},
+                        )
+                        confiado = top_score >= TOOL_CONFIDENT_SCORE
+                        herramientas_forzadas = [top_tool] if confiado else []
+                        nombre_top = top_tool["function"]["name"]
+                        if not confiado:
+                            # El ranking por embeddings tiene ruido en frases
+                            # cortas ('apunta que tengo que...' daba get_alerts
+                            # 0.466): que el modelo ELIJA en texto, sin
+                            # embeddings, entre las herramientas ofrecidas.
+                            elegida = await _elegir_herramienta_por_texto(
+                                mensaje_actual, messages_for_llm[0], tools_for_call
+                            )
+                            if elegida is not None:
+                                herramientas_forzadas = [elegida]
+                                nombre_top = elegida["function"]["name"]
+                            else:
+                                # top-3: mas contexto que 1, menos ruido que 10
+                                herramientas_forzadas = top_tools or tools_for_call
+                        aviso = (
+                            "ULTIMO AVISO: DEBES llamar ahora a la herramienta "
+                            "'%s' con los datos del usuario. No respondas con "
+                            "texto." % nombre_top
+                        )
+                        mensajes_forzados = [
+                            messages_for_llm[0],
+                            mensaje_actual,
+                            {"role": "system", "content": aviso},
+                        ]
+                        logger.info(
+                            "[ORCHESTRATOR] reintento forzado: %s (tools=%d)",
+                            nombre_top,
+                            len(herramientas_forzadas),
+                        )
+                        content_forced, calls_forced = await asyncio.wait_for(
+                            llm.chat_with_tools(
+                                messages=mensajes_forzados,
+                                tools=herramientas_forzadas,
+                                max_tokens=512,
+                            ),
+                            timeout=600.0,
+                        )
+                        if calls_forced:
+                            content, tool_calls = content_forced, calls_forced
+                            logger.info(
+                                "[ORCHESTRATOR] forzado acepto %s",
+                                [tc["function"]["name"] for tc in tool_calls],
+                            )
+                        elif risk or risk_retry:
+                            content = HONEST_FALLBACK
+                        elif content_retry:
+                            content = content_retry
+                    elif risk or risk_retry:
+                        # El reintento tampoco uso herramientas: mejor honestidad
+                        # que datos falsos.
+                        logger.warning(
+                            "[ORCHESTRATOR] reintento sin herramienta; respuesta honesta (chat_id=%d)",
+                            chat_id,
+                        )
+                        content = HONEST_FALLBACK
+                    elif content_retry:
+                        content = content_retry
+            except Exception as e:
+                logger.warning("[ORCHESTRATOR] reintento de herramienta fallo: %s", e)
 
     if tool_calls:
         results = []
@@ -375,6 +531,82 @@ async def _prepare_tool_phase(
                     "content": json.dumps(result, ensure_ascii=False),
                 }
             )
+
+        # Recuperacion (2026-09-30): si TODAS las herramientas fallaron, el
+        # modelo pudo elegir mal o la preseleccion no ofrecio la correcta.
+        # Se le pregunta en texto viendo el catalogo COMPLETO y se fuerza una
+        # sola vez; si acierta, se usan esos resultados.
+        fallidas = []
+        for r in results:
+            try:
+                fallidas.append(json.loads(r["content"]))
+            except (json.JSONDecodeError, TypeError):
+                fallidas.append({})
+        if results and all(r.get("success") is False for r in fallidas):
+            from src.handlers.chat_tools import get_tools_with_date_context
+
+            mensaje_actual = next(
+                (m for m in reversed(messages_for_llm) if m.get("role") == "user"),
+                {"role": "user", "content": text},
+            )
+            elegida = await _elegir_herramienta_por_texto(
+                mensaje_actual, messages_for_llm[0], get_tools_with_date_context()
+            )
+            ya_probadas = {tc["function"]["name"] for tc in tool_calls}
+            if elegida is not None and elegida["function"]["name"] not in ya_probadas:
+                logger.info(
+                    "[ORCHESTRATOR] recuperacion: todas fallaron, forzando %s",
+                    elegida["function"]["name"],
+                )
+                aviso = (
+                    "La herramienta anterior fallo. DEBES llamar ahora a la "
+                    "herramienta '%s' con los datos del usuario. No respondas "
+                    "con texto." % elegida["function"]["name"]
+                )
+                try:
+                    content2, calls2 = await asyncio.wait_for(
+                        llm.chat_with_tools(
+                            messages=[
+                                messages_for_llm[0],
+                                mensaje_actual,
+                                {"role": "system", "content": aviso},
+                            ],
+                            tools=[elegida],
+                            max_tokens=512,
+                        ),
+                        timeout=600.0,
+                    )
+                except Exception:
+                    calls2 = None
+                if calls2:
+                    from src.handlers.chat import _execute_tool as _exec2
+
+                    nuevos = []
+                    exito = False
+                    for tc in calls2:
+                        fn = tc["function"]["name"]
+                        try:
+                            args = json.loads(tc["function"]["arguments"])
+                        except (json.JSONDecodeError, KeyError):
+                            args = {}
+                        logger.info(
+                            "[ORCHESTRATOR] recuperacion tool: %s args=%s",
+                            fn,
+                            str(args)[:150],
+                        )
+                        res = await _exec2(tool_chat_id, fn, args)
+                        if isinstance(res, dict) and res.get("success") is not False:
+                            exito = True
+                        nuevos.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", fn),
+                                "name": fn,
+                                "content": json.dumps(res, ensure_ascii=False),
+                            }
+                        )
+                    if exito:
+                        content, tool_calls, results = content2, calls2, nuevos
 
         if results:
             messages_for_llm.append(
@@ -411,6 +643,40 @@ async def generate_response(text: str, chat_id: int) -> str:
             )
         except Exception:
             content = "Consulta completada. Revisa el resultado de las herramientas."
+        if not content:
+            # Composicion vacia tras usar herramientas (visto 2026-09-30):
+            # reintento SIN herramientas para forzar una respuesta de texto.
+            try:
+                content = await asyncio.wait_for(
+                    llm.chat(messages=messages_for_llm, max_tokens=512),
+                    timeout=120.0,
+                )
+            except Exception:
+                content = ""
+            if not content:
+                content = (
+                    "He consultado tus datos, pero no he podido redactar la "
+                    "respuesta. Intenta reformular la pregunta."
+                )
+        # Si TODAS las herramientas fallaron, el texto no puede afirmar exito
+        # (visto 2026-09-30: manage_google_calendar create fallo por falta de
+        # fecha y el modelo respondio "He anadido una cita...").
+        resultados = []
+        for m in messages_for_llm:
+            if m.get("role") == "tool":
+                try:
+                    resultados.append(json.loads(m.get("content") or "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        if (
+            resultados
+            and all(r.get("success") is False for r in resultados)
+            and _hallucination_risk(content or "", text)
+        ):
+            detalles = "; ".join(
+                str(r.get("message") or r.get("error") or "error")[:140] for r in resultados[:2]
+            )
+            content = "No he podido completar la acción: %s" % detalles
 
     if content:
         await db.save_chat_message(chat_id, MessageRole.assistant.value, content[:2000])
