@@ -51,6 +51,12 @@ class FakeCollection:
             raise self.add_errors.pop(0)
         self.added.append((ids, documents, metadatas))
 
+    def upsert(self, ids=None, documents=None, metadatas=None):
+        # index_chunks usa upsert desde 2026-09-30 (reindexado idempotente).
+        if self.add_errors:
+            raise self.add_errors.pop(0)
+        self.added.append((ids, documents, metadatas))
+
     def delete(self, ids=None):
         self.deleted.append(ids)
 

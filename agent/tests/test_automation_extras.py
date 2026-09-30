@@ -344,3 +344,71 @@ async def test_send_voice_endpoint(monkeypatch, tmp_path):
         "/automation/send-voice", content=body, headers={"X-Webhook-Signature": "malo"}
     )
     assert bad.status_code == 401
+
+
+# ---------- tiempo para el chat (get_weather) ----------
+
+
+def _limpiar_cache_tiempo():
+    auto._WEATHER_CACHE.clear()
+
+
+async def test_weather_report_usa_aemet_para_ciudad_conocida(monkeypatch):
+    _limpiar_cache_tiempo()
+    monkeypatch.setattr(settings, "aemet_api_key", "clave")
+    llamadas = []
+
+    async def fake_aemet(code, day_index=0):
+        llamadas.append((code, day_index))
+        return "🌡 12-24 °C, 10% de lluvia"
+
+    monkeypatch.setattr(auto, "_aemet_forecast", fake_aemet)
+    result = await auto.weather_report(ciudad="Sevilla", dia="mañana")
+    assert result["success"]
+    assert llamadas == [("41091", 1)]
+    assert "Sevilla" in result["message"] and "mañana" in result["message"]
+    # Segunda llamada: cache (no repite AEMET).
+    result2 = await auto.weather_report(ciudad="Sevilla", dia="mañana")
+    assert result2["message"] == result["message"]
+    assert len(llamadas) == 1
+
+
+async def test_weather_report_ciudad_desconocida_usa_openmeteo(monkeypatch):
+    _limpiar_cache_tiempo()
+    monkeypatch.setattr(settings, "aemet_api_key", "clave")
+
+    async def fake_geo(nombre):
+        return (40.4, -3.7, "Torrelodones")
+
+    async def fake_openmeteo(lat, lon, day_index):
+        assert (lat, lon, day_index) == (40.4, -3.7, 0)
+        return "🌡 10-20 °C, despejado"
+
+    monkeypatch.setattr(auto, "_geocode", fake_geo)
+    monkeypatch.setattr(auto, "_openmeteo_forecast", fake_openmeteo)
+    result = await auto.weather_report(ciudad="Torrelodones", dia="hoy")
+    assert result["success"]
+    assert "Torrelodones" in result["message"] and "despejado" in result["message"]
+
+
+async def test_weather_report_sin_datos_responde_honesto(monkeypatch):
+    _limpiar_cache_tiempo()
+    monkeypatch.setattr(settings, "aemet_api_key", "")
+    monkeypatch.setattr(settings, "briefing_lat", "")
+    monkeypatch.setattr(settings, "briefing_lon", "")
+
+    async def fake_location():
+        return ("", "", "tu zona")
+
+    async def fake_geo(nombre):
+        return None
+
+    async def fake_openmeteo(lat, lon, day_index):
+        return ""
+
+    monkeypatch.setattr(auto, "_location", fake_location)
+    monkeypatch.setattr(auto, "_geocode", fake_geo)
+    monkeypatch.setattr(auto, "_openmeteo_forecast", fake_openmeteo)
+    result = await auto.weather_report()
+    assert result["success"] is False
+    assert "No he podido consultar" in result["message"]

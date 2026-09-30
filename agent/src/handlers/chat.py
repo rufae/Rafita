@@ -949,12 +949,36 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "create_event":
             title = args.get("title", "Evento")
-            event_datetime = args.get("event_datetime", "")
+            # Acepta el nombre canonico (event_datetime) y los alias que el
+            # modelo usa en otras tools ('when', 'start_datetime',
+            # 'datetime_str'): el 2026-09-30 pasaba 'when' y fallaba con un
+            # error enganoso ("fecha no valida") aunque la fecha era valida.
+            event_datetime = str(
+                args.get("event_datetime")
+                or args.get("when")
+                or args.get("start_datetime")
+                or args.get("datetime_str")
+                or ""
+            ).strip()
             description = args.get("description")
+            if event_datetime:
+                from src.services.google_services_manager import parse_relative_datetime
+
+                parsed = parse_relative_datetime(event_datetime)
+                if parsed:
+                    event_datetime = parsed.strftime("%Y-%m-%d %H:%M")
+                else:
+                    try:
+                        event_datetime = datetime.fromisoformat(
+                            event_datetime.replace("Z", "+00:00")
+                        ).strftime("%Y-%m-%d %H:%M")
+                    except ValueError:
+                        pass
             if not event_datetime:
                 return {
                     "success": False,
-                    "message": "No se proporcionó una fecha válida para el evento.",
+                    "message": "No se proporcionó una fecha válida para el evento. "
+                    "Dime cuándo es (ej: 'mañana a las 10').",
                 }
             # Si Google Calendar esta conectado, el evento va alli (fuente de
             # verdad del usuario; bug 2026-09-27: los eventos quedaban solo en
@@ -1022,17 +1046,56 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "success": True,
                     "message": "No hay registros financieros este mes.",
                 }
+            cur = settings.default_currency
             lines = [
                 f"📊 Resumen de {now.strftime('%B %Y')}:",
-                f"   Ingresos: {summary['total_income']:,.2f} {settings.default_currency}",
-                f"   Gastos: {summary['total_expenses']:,.2f} {settings.default_currency}",
-                f"   Balance: {summary['balance']:,.2f} {settings.default_currency}",
-                f"   Transacciones: {summary['transaction_count']}",
+                "",
+                "| Concepto | Importe |",
+                "|---|---|",
+                f"| Ingresos | {summary['total_income']:,.2f} {cur} |",
+                f"| Gastos | {summary['total_expenses']:,.2f} {cur} |",
+                f"| **Balance** | **{summary['balance']:,.2f} {cur}** |",
+                f"| Transacciones | {summary['transaction_count']} |",
             ]
+            expense_by_cat = summary.get("expense_by_category") or {}
+            if expense_by_cat:
+                lines.extend(["", "| Categoría (gasto) | Importe |", "|---|---|"])
+                for cat, amount in sorted(expense_by_cat.items(), key=lambda kv: -kv[1]):
+                    lines.append(f"| {cat} | {amount:,.2f} {cur} |")
             return {
                 "success": True,
                 "message": "\n".join(lines),
             }
+
+        elif func_name == "get_alerts":
+            alerts = await db.get_active_alerts(chat_id)
+            if not alerts:
+                return {"success": True, "message": "No tienes alertas pendientes."}
+            lines = [
+                "🔔 Alertas pendientes:",
+                "",
+                "| ID | Alerta | Tipo | Vence |",
+                "|---|---|---|---|",
+            ]
+            for a in alerts:
+                lines.append(
+                    "| %s | %s | %s | %s |"
+                    % (
+                        a.get("id", "?"),
+                        str(a.get("message", "")).replace("|", "/")[:80],
+                        a.get("alert_type", "info"),
+                        a.get("expires_at") or "-",
+                    )
+                )
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif func_name == "get_weather":
+            from src.services.automation_service import weather_report
+
+            return await weather_report(
+                ciudad=str(args.get("ciudad", "") or ""),
+                dia=str(args.get("dia", "hoy") or "hoy"),
+            )
 
         elif func_name == "remember_fact":
             key = args.get("key", "").strip()
@@ -1715,11 +1778,36 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "message": "Tarea guardada localmente%s: %s (id: %s)" % (aviso, title, task_id),
                 }
             if action in ("complete", "delete"):
-                task_id = args.get("task_id", "").strip()
+                task_id = str(args.get("task_id", "") or "").strip()
+                task_title = str(args.get("task_title", "") or args.get("title", "") or "").strip()
+                if not task_id and task_title:
+                    # El modelo suele saber el titulo, no el ID (bug
+                    # 2026-09-30: "borra la tarea comprar pilas" pedia el ID).
+                    needle = task_title.lower()
+                    if use_google:
+                        pendientes = (await google_services.list_tasks()).get("tasks", [])
+                        matches = [
+                            t for t in pendientes if needle in (t.get("title") or "").lower()
+                        ]
+                    else:
+                        rows = await db.list_tasks(chat_id)
+                        matches = [
+                            {"id": str(r.get("id")), "title": r.get("title", "")}
+                            for r in rows
+                            if needle in (r.get("title") or "").lower()
+                        ]
+                    if matches:
+                        task_id = str(matches[0].get("id") or "")
+                    else:
+                        return {
+                            "success": False,
+                            "message": "No encontre ninguna tarea pendiente llamada '%s'."
+                            % task_title,
+                        }
                 if not task_id:
                     return {
                         "success": False,
-                        "message": "Necesito el task_id (lista las tareas primero).",
+                        "message": "Necesito el task_id o el titulo de la tarea.",
                     }
                 if use_google:
                     if action == "complete":
