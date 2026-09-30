@@ -73,6 +73,115 @@ HONEST_FALLBACK = (
     "darte datos inventados. ¿Puedes darme mas detalle o lo intento de otra forma?"
 )
 
+# Saludo generico ("Hola, soy Rafita. ¿En que puedo ayudarte?"): si aparece
+# como respuesta a una pregunta real (sobre todo tras usar herramientas), es
+# que el modelo se ha perdido (bug 2026-09-30 con la lista de Drive).
+_SALUDO_GENERICO_RE = re.compile(
+    r"^\s*[¡!]?\s*(?:hola|buenas|buenos\s+d[ií]as)[\s,!.¡¿]*(?:soy\s+rafita|"
+    r"en\s+qu[eé]\s+puedo\s+ayudarte)",
+    re.IGNORECASE,
+)
+# Negacion falsa tras una herramienta que SI devolvio datos (2026-09-30:
+# list_google_drive respondio con la lista y el modelo dijo "no tengo acceso").
+_NEGACION_FALSA_RE = re.compile(
+    r"(?:no\s+tengo\s+acceso|no\s+puedo\s+acceder|no\s+tengo\s+(?:esa|la)\s+"
+    r"informaci[oó]n|no\s+dispongo\s+de|no\s+me\s+es\s+posible\s+acceder"
+    r"|no\s+he\s+podido\s+obtener|no\s+se\s+han?\s+proporcionado"
+    r"|no\s+se\s+proporcionaron|no\s+he\s+recibido|no\s+(?:me\s+)?ha\s+devuelto"
+    r"|no\s+hay\s+(?:resultados|archivos|carpetas|elementos|documentos|datos)"
+    r"|no\s+se\s+han\s+encontrado|no\s+se\s+encontr[oó]"
+    r"|no\s+he\s+encontrado|no\s+encontr[eé]|no\s+dispongo"
+    r"|no\s+se\s+ha\s+ejecutado\s+la\s+herramienta|no\s+puedo\s+(?:listar|mostrar)"
+    r"|necesito\s+consultar|un\s+momento\s+mientras|mientras\s+accedo"
+    r"|voy\s+a\s+(?:consultar|acceder|buscar)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _es_saludo_generico(texto: str | None) -> bool:
+    return bool(_SALUDO_GENERICO_RE.match((texto or "").strip()))
+
+
+def _es_negacion_falsa(texto: str | None) -> bool:
+    return bool(_NEGACION_FALSA_RE.search(texto or ""))
+
+
+# Plantillas inventadas tipo "[Nombre de la carpeta 1]" (2026-09-30: gemma
+# relleno una tabla falsa en vez de usar la lista real de Drive).
+_PLACEHOLDER_RE = re.compile(
+    r"\[(?:nombre|id|dato|fecha|hora|importe|asunto|carpeta|archivo|valor)"
+    r"[^\]]{0,40}\]",
+    re.IGNORECASE,
+)
+
+
+def _tiene_placeholders(texto: str | None) -> bool:
+    return bool(_PLACEHOLDER_RE.search(texto or ""))
+
+
+def _respuesta_desviada(texto: str | None) -> bool:
+    """Saludo, negacion falsa o plantilla inventada en vez de los datos."""
+    return _es_saludo_generico(texto) or _es_negacion_falsa(texto) or _tiene_placeholders(texto)
+
+
+_ITEM_LISTA_RE = re.compile(r"[•]\s*[^\w\n]*([\w\u00c0-\u024f][\w\u00c0-\u024f .\-]{2,30})")
+
+
+def _tool_lista_ignorada(messages: list[dict[str, Any]], content: str | None) -> bool:
+    """True si la tool devolvio una lista y la respuesta no menciona NINGUN item.
+
+    2026-09-30: gemma respondia negaciones/plantillas ("no se han recibido
+    resultados", "[Nombre de la carpeta 1]") con la lista real delante. Esto
+    es determinista: si no aparece ni un nombre, se usa el mensaje de la tool.
+    """
+    mensaje = _ultimo_mensaje_tool(messages)
+    if not mensaje or "•" not in mensaje:
+        return False
+    nombres = [m.group(1).strip() for m in _ITEM_LISTA_RE.finditer(mensaje)]
+    nombres = [n for n in nombres if len(n) >= 3][:6]
+    if not nombres:
+        return False
+    bajo = (content or "").lower()
+    return not any(n.lower() in bajo for n in nombres)
+
+
+def _hay_tool_con_datos(messages: list[dict[str, Any]]) -> bool:
+    """True si alguna herramienta devolvio DATOS reales (no un 'no hay...').
+
+    Se usa para las guardias de saludo/negacion falsa: si la tool no trajo
+    nada, una negativa del modelo es correcta y no hay que reintentar.
+    """
+    for m in messages:
+        if m.get("role") != "tool":
+            continue
+        try:
+            datos = json.loads(m.get("content") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(datos, dict) or datos.get("success") is False:
+            continue
+        mensaje = str(datos.get("message") or "").strip()
+        if len(mensaje) > 20 and not re.match(r"(?:no|sin)\s", mensaje, re.IGNORECASE):
+            return True
+    return False
+
+
+def _ultimo_mensaje_tool(messages: list[dict[str, Any]]) -> str:
+    """Ultimo mensaje legible de una herramienta (para fallback determinista)."""
+    for m in reversed(messages):
+        if m.get("role") != "tool":
+            continue
+        try:
+            datos = json.loads(m.get("content") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(datos, dict):
+            mensaje = datos.get("message")
+            if isinstance(mensaje, str) and mensaje.strip():
+                return mensaje.strip()
+    return ""
+
 
 def _hallucination_risk(content: str, user_text: str) -> bool:
     """True si la respuesta afirma acciones o cita correos que no vinieron de tools."""
@@ -168,7 +277,10 @@ GROUNDING_RULES = (
     "y fecha que devuelva la herramienta. Si no hay resultados, dilo; "
     "nunca inventes un correo ni un remitente. Busca de inmediato con lo "
     "que el usuario haya dicho (nombre, parte del nombre, asunto...): NO "
-    "pidas confirmacion ni el nombre completo antes de buscar.\n"
+    "pidas confirmacion ni el nombre completo antes de buscar. Si el "
+    "usuario DICTA una direccion ('juan arroba gmail punto com'), "
+    "escribela ya como juan@gmail.com (arroba->@, punto->., guion bajo->_); "
+    "nunca la uses con la palabra 'arroba' ni vuelvas a pedirla.\n"
     "ACTION_RULE (critica): si el usuario pide una accion o una consulta "
     "que alguna herramienta puede hacer (guardar, apuntar, crear, borrar, "
     "listar, buscar, enviar, consultar el tiempo...), llama a la "
@@ -305,7 +417,10 @@ async def _prepare_tool_phase(
         tool_chat_id = settings.admin_ids[0]
     await db.save_chat_message(chat_id, MessageRole.user.value, text)
 
-    history = await db.get_chat_history(chat_id, 6)
+    # 12 mensajes (2026-09-30): con 6 se perdia el hilo en conversaciones
+    # largas; medido en la GPU, la diferencia de latencia es inapreciable
+    # (1,11 s vs 1,12 s con gemma4:12b).
+    history = await db.get_chat_history(chat_id, 12)
     trimmed_history = []
     for h in history:
         c = h.get("content", "")
@@ -552,8 +667,10 @@ async def _prepare_tool_phase(
             elegida = await _elegir_herramienta_por_texto(
                 mensaje_actual, messages_for_llm[0], get_tools_with_date_context()
             )
-            ya_probadas = {tc["function"]["name"] for tc in tool_calls}
-            if elegida is not None and elegida["function"]["name"] not in ya_probadas:
+            # Se permite reintentar la MISMA herramienta: el fallo tipico es
+            # de argumentos (gemma manda action vacia o 'complete_task'), y el
+            # aviso forzado le obliga a rellenarlos bien.
+            if elegida is not None:
                 logger.info(
                     "[ORCHESTRATOR] recuperacion: todas fallaron, forzando %s",
                     elegida["function"]["name"],
@@ -643,6 +760,18 @@ async def generate_response(text: str, chat_id: int) -> str:
             )
         except Exception:
             content = "Consulta completada. Revisa el resultado de las herramientas."
+        # Resultados de herramientas (para las guardias deterministas).
+        resultados = []
+        for m in messages_for_llm:
+            if m.get("role") == "tool":
+                try:
+                    resultados.append(json.loads(m.get("content") or "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        todas_fallidas = bool(resultados) and all(r.get("success") is False for r in resultados)
+        detalles_error = "; ".join(
+            str(r.get("message") or r.get("error") or "error")[:140] for r in resultados[:2]
+        )
         if not content:
             # Composicion vacia tras usar herramientas (visto 2026-09-30):
             # reintento SIN herramientas para forzar una respuesta de texto.
@@ -653,7 +782,9 @@ async def generate_response(text: str, chat_id: int) -> str:
                 )
             except Exception:
                 content = ""
-            if not content:
+            if not content and todas_fallidas:
+                content = "No he podido completar la acción: %s" % detalles_error
+            elif not content:
                 content = (
                     "He consultado tus datos, pero no he podido redactar la "
                     "respuesta. Intenta reformular la pregunta."
@@ -661,22 +792,46 @@ async def generate_response(text: str, chat_id: int) -> str:
         # Si TODAS las herramientas fallaron, el texto no puede afirmar exito
         # (visto 2026-09-30: manage_google_calendar create fallo por falta de
         # fecha y el modelo respondio "He anadido una cita...").
-        resultados = []
-        for m in messages_for_llm:
-            if m.get("role") == "tool":
-                try:
-                    resultados.append(json.loads(m.get("content") or "{}"))
-                except (json.JSONDecodeError, TypeError):
-                    pass
-        if (
-            resultados
-            and all(r.get("success") is False for r in resultados)
-            and _hallucination_risk(content or "", text)
-        ):
-            detalles = "; ".join(
-                str(r.get("message") or r.get("error") or "error")[:140] for r in resultados[:2]
-            )
-            content = "No he podido completar la acción: %s" % detalles
+        if todas_fallidas and _hallucination_risk(content or "", text):
+            content = "No he podido completar la acción: %s" % detalles_error
+        # Saludo generico o negacion falsa tras herramientas que SI dieron
+        # datos (2026-09-30: tras list_google_drive respondio "Hola, soy
+        # Rafita..." y "no tengo acceso"). Se reintenta y, si insiste, se usa
+        # el mensaje real de la herramienta (determinista).
+        desviado = (
+            not _es_saludo_generico(text)
+            and (_respuesta_desviada(content) or _tool_lista_ignorada(messages_for_llm, content))
+            and not todas_fallidas
+            and _hay_tool_con_datos(messages_for_llm)
+        )
+        if desviado:
+            logger.warning("[ORCHESTRATOR] saludo/negacion falsa tras herramientas; reintentando")
+            aviso = {
+                "role": "system",
+                "content": (
+                    "El usuario pregunto: '%s'. Responde a ESA pregunta usando el "
+                    "resultado de la herramienta. PROHIBIDO saludar, presentarte, "
+                    "empezar por 'Hola' o decir que no tienes acceso: los datos "
+                    "estan en el resultado de la herramienta." % text[:200]
+                ),
+            }
+            try:
+                content2 = await asyncio.wait_for(
+                    llm.chat(messages=messages_for_llm + [aviso], max_tokens=512),
+                    timeout=120.0,
+                )
+            except Exception:
+                content2 = ""
+            if (
+                content2
+                and not _respuesta_desviada(content2)
+                and not _tool_lista_ignorada(messages_for_llm, content2)
+            ):
+                content = content2
+            else:
+                fallback = _ultimo_mensaje_tool(messages_for_llm)
+                if fallback:
+                    content = fallback
 
     if content:
         await db.save_chat_message(chat_id, MessageRole.assistant.value, content[:2000])
@@ -705,14 +860,60 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
 
     full = ""
     if tool_calls:
+        # Se retiene la primera frase antes de emitirla para detectar el
+        # saludo generico tras herramientas (bug 2026-09-30); si aparece, se
+        # responde con el mensaje real de la herramienta.
+        buffer = ""
+        validado = False
         try:
             async for token in llm.chat_stream_tokens(
                 messages=messages_for_llm,
                 max_tokens=180 if voice else 512,
                 repeat_penalty=1.15 if voice else None,
             ):
-                full += token
-                yield token
+                if validado:
+                    full += token
+                    yield token
+                    continue
+                buffer += token
+                listo = buffer.rstrip().endswith((".", "!", "?", ":")) or len(buffer) >= 60
+                if not listo:
+                    continue
+                if (
+                    not _es_saludo_generico(text)
+                    and _respuesta_desviada(buffer)
+                    and _hay_tool_con_datos(messages_for_llm)
+                ):
+                    logger.warning(
+                        "[ORCHESTRATOR] saludo/negacion falsa en streaming; uso la herramienta"
+                    )
+                    fallback = _ultimo_mensaje_tool(messages_for_llm) or (
+                        "Ahora mismo no puedo responderte a eso."
+                    )
+                    full = fallback
+                    for chunk in _chunk_words(fallback):
+                        yield chunk
+                    buffer = ""
+                    break
+                validado = True
+                full += buffer
+                yield buffer
+                buffer = ""
+            if buffer and not validado:
+                if (
+                    not _es_saludo_generico(text)
+                    and _respuesta_desviada(buffer)
+                    and _hay_tool_con_datos(messages_for_llm)
+                ):
+                    fallback = _ultimo_mensaje_tool(messages_for_llm) or (
+                        "Ahora mismo no puedo responderte a eso."
+                    )
+                    full = fallback
+                    for chunk in _chunk_words(fallback):
+                        yield chunk
+                else:
+                    full += buffer
+                    yield buffer
         except Exception as e:
             logger.warning("[ORCHESTRATOR] streaming fallo, uso texto completo: %s", e)
             full = content or "Consulta completada. Revisa el resultado."

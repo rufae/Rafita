@@ -942,3 +942,69 @@ reunión real se transcribió como basura). Análisis y arreglos:
   respuesta → **no corta**, voz sostenida → **corta (barge-in)** ✓.
 - Tests nuevos: VAD (2), stt_service (6), meeting async, y los de la
   llamada adaptados al VAD por milisegundos. **1.357 tests**.
+
+---
+
+## FALLOS REPORTADOS POR EL USUARIO (2026-09-30, 2ª tanda)
+
+Cinco fallos reales encontrados usando a Rafita; todos corregidos y probados:
+
+### 1. No marcaba tareas como realizadas — CORREGIDO
+- **Evidencia**: logs 17:41-17:42: `complete` con `task_title='Marcala como
+  realizada'` (la instrucción) y con `task_id='Programa Buena Tierra'` (el
+  título en el campo del ID) → Google API falla.
+- **Arreglo**: `manage_google_tasks` acepta el título también en `task_id`
+  (un ID real no tiene espacios), limpia palabras de instrucción
+  (`_limpiar_titulo_tarea`), reintenta por título si el ID falla y, si no
+  encuentra, devuelve la lista de pendientes para que el modelo pregunte.
+  Además tolera las variantes de gemma (`complete_task`, `task_name`,
+  `action` vacía → alias).
+- **Verificado**: "Apunta que tengo que comprar pilas" → "Marca como
+  realizada la tarea comprar pilas" → Google Tasks responde
+  `status: completed` (comprobado por API).
+
+### 2. No entendía el símbolo @ en correos dictados — CORREGIDO
+- **Evidencia**: `send_gmail to:'anabel.84.amg.gmail.com'` (sin @) y
+  `to:'arroba gmail.com'`.
+- **Arreglo**: `normalize_dictated_email` (arroba→@, punto→., guion bajo→_)
+  aplicado al STT (remoto y local), al ejecutor de `send_gmail` y a
+  `send_email`; regla EMAIL_RULE en el prompt; ejemplo de dictado en el
+  `initial_prompt` de Whisper.
+
+### 3. No encontraba el contacto "Ana" con correo — CORREGIDO
+- **Evidencia**: la búsqueda funcionaba pero la Ana con correo quedaba en
+  segunda posición y el relleno de la frase ("busca un contacto con el nombre
+  Ana que tiene puesto su correo") rompía la consulta.
+- **Arreglo**: `_limpiar_consulta_contacto` (quita "busca/contacto/con el
+  nombre/que tiene correo..."), relevancia que prioriza contactos **con
+  email** y mensaje con nombre+correo+teléfono.
+- **Verificado**: "Busca un contacto con el nombre Ana que tiene puesto su
+  correo" → "El que tiene correo es: Ana!!❤️: anabel.84.amg@gmail.com".
+
+### 4. Fillers ("estoy en ello") hasta en un "hola" — CORREGIDO
+- **Arreglo**: retardo 2,2 → **5,5 s** (configurable `VOICE_FILLER_DELAY_S`)
+  y los saludos cortos ("hola", "gracias", "¿qué tal?") ya no los reciben.
+- **Tests**: `_es_saludo_corto` y filler que no habla para saludos.
+
+### 5. "Hola, soy Rafita..." tras preguntar por Drive — CORREGIDO
+- **Evidencia**: logs 17:51:08: tras `list_google_drive` el modelo compuso un
+  saludo genérico. No hubo reset (el historial seguía con 56 mensajes).
+- **Arreglo**: historial 6 → **12 mensajes** (latencia medida: 1,11 vs 1,12 s
+  con gemma4:12b en GPU, inapreciable) + guardia post-herramientas
+  determinista: si la respuesta es un saludo genérico, una negación falsa
+  ("no tengo acceso", "no se han recibido resultados"...) o una plantilla
+  inventada ("[Nombre de la carpeta 1]"), se reintenta y, si insiste, se
+  responde con el mensaje real de la herramienta. Además, si la tool devolvió
+  una lista y la respuesta no menciona **ningún** elemento, se usa la lista
+  real (`_tool_lista_ignorada`). Igual en el streaming de voz (primera frase
+  validada antes de emitirla).
+- **Verificado**: "¿Qué carpetas y archivos tengo en mi Drive?" → responde
+  la lista real de Drive (antes: saludo/negación/plantilla).
+
+### Tolerancia extra a gemma4:12b (visto en esta tanda)
+- Alias de acciones en tareas y calendario (`complete_task`, `add`,
+  `create_event`, `update`...) y de argumentos (`task_name`).
+- La recuperación puede reintentar la MISMA herramienta cuando el fallo fue
+  de argumentos (antes se saltaba por estar ya probada).
+- Composición vacía + todas las tools fallidas → se responde el error real.
+- **1.381 tests**, ruff/mypy/biome limpios, desplegado y verificado en el HP.

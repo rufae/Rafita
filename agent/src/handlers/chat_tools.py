@@ -890,12 +890,14 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "task_id": {
                         "type": "string",
-                        "description": "ID de la tarea (para complete/delete)",
+                        "description": "ID de la tarea SOLO si viene de una lista previa "
+                        "(para complete/delete). No pongas aqui el titulo.",
                     },
                     "task_title": {
                         "type": "string",
-                        "description": "Titulo de la tarea si no tienes su ID "
-                        "(para complete/delete; tambien vale 'title')",
+                        "description": "Titulo de la tarea para complete/delete: SOLO el "
+                        "nombre de la tarea (ej: 'comprar pilas'), nunca la instruccion "
+                        "completa ('marca como realizada'). Tambien vale 'title'.",
                     },
                 },
                 "required": ["action"],

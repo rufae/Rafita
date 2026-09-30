@@ -1093,3 +1093,161 @@ async def test_manage_google_tasks_delete_titulo_no_encontrado(monkeypatch):
     )
     assert not result["success"]
     assert "No encontre" in result["message"]
+
+
+def test_limpiar_consulta_contacto_quita_relleno():
+    from src.handlers import chat as chat_mod
+
+    assert (
+        chat_mod._limpiar_consulta_contacto(
+            "busca un contacto con el nombre Ana que tiene puesto su correo"
+        )
+        == "Ana"
+    )
+    assert chat_mod._limpiar_consulta_contacto("encuentra a Ana en mis contactos") == "a Ana"
+    assert chat_mod._limpiar_consulta_contacto("mi madre") == "mi madre"
+    assert chat_mod._limpiar_consulta_contacto("Aa Mama") == "Aa Mama"
+    assert chat_mod._limpiar_consulta_contacto("") == ""
+
+
+def test_limpiar_titulo_tarea_quita_instruccion():
+    from src.handlers import chat as chat_mod
+
+    assert chat_mod._limpiar_titulo_tarea("Marcala como realizada") == ""
+    assert (
+        chat_mod._limpiar_titulo_tarea("marca como hecha la tarea comprar pilas") == "comprar pilas"
+    )
+    assert chat_mod._limpiar_titulo_tarea("Programa Buena Tierra") == "programa buena tierra"
+
+
+async def test_manage_google_tasks_complete_titulo_en_task_id(monkeypatch):
+    llamadas = []
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn(
+            {"success": True, "tasks": [{"id": "abc", "title": "Programa Buena Tierra"}]}
+        ),
+        complete_task=_fn({"success": True, "message": "Tarea completada"}, calls=llamadas),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_id": "Programa Buena Tierra"}
+    )
+    assert result["success"]
+    assert llamadas and llamadas[0][0][0] == "abc"
+
+
+async def test_manage_google_tasks_complete_instruccion_como_titulo(monkeypatch):
+    llamadas = []
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn({"success": True, "tasks": [{"id": "abc", "title": "Comprar pilas"}]}),
+        complete_task=_fn({"success": True, "message": "ok"}, calls=llamadas),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1,
+        "manage_google_tasks",
+        {"action": "complete", "task_title": "marca como realizada la tarea comprar pilas"},
+    )
+    assert result["success"]
+    assert llamadas and llamadas[0][0][0] == "abc"
+
+
+async def test_manage_google_tasks_no_encontrada_lista_pendientes(monkeypatch):
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn({"success": True, "tasks": [{"id": "abc", "title": "Comprar pilas"}]}),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_title": "pasear al perro"}
+    )
+    assert not result["success"]
+    assert "Tareas pendientes" in result["message"]
+    assert "Comprar pilas" in result["message"]
+
+
+async def test_manage_google_tasks_id_invalido_reintenta_por_titulo(monkeypatch):
+    intentos = []
+
+    async def complete(task_id, *a, **k):
+        intentos.append(task_id)
+        if task_id == "Programa Buena Tierra":
+            raise RuntimeError("invalid task id")
+        return {"success": True, "message": "Tarea completada"}
+
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn(
+            {"success": True, "tasks": [{"id": "abc", "title": "Programa Buena Tierra"}]}
+        ),
+        complete_task=complete,
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_id": "Programa Buena Tierra"}
+    )
+    assert result["success"]
+    # task_id con espacios -> se trata como titulo directamente
+    assert intentos == ["abc"]
+
+
+async def test_send_gmail_normaliza_correo_dictado(monkeypatch):
+    llamadas = []
+    google = SimpleNamespace(
+        is_ready=True,
+        send_email=_fn({"success": True, "message": "enviado"}, calls=llamadas),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1,
+        "send_gmail",
+        {"to": "anabel arroba gmail punto com", "subject": "Hola", "body": "test"},
+    )
+    assert result["success"]
+    assert llamadas[0][1]["to"] == "anabel@gmail.com"
+
+
+async def test_manage_google_tasks_acepta_alias_de_accion_de_gemma(monkeypatch):
+    """gemma4:12b manda action='complete_task' y task_name (2026-09-30)."""
+    llamadas = []
+    google = SimpleNamespace(
+        is_ready=True,
+        list_tasks=_fn({"success": True, "tasks": [{"id": "abc", "title": "Comprar pilas"}]}),
+        complete_task=_fn({"success": True, "message": "ok"}, calls=llamadas),
+    )
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(
+        1,
+        "manage_google_tasks",
+        {"action": "complete_task", "task_name": "comprar pilas"},
+    )
+    assert result["success"]
+    assert llamadas and llamadas[0][0][0] == "abc"
+
+
+async def test_manage_google_tasks_accion_vacia_mensaje_util(monkeypatch):
+    google = SimpleNamespace(is_ready=True)
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    result = await chat_mod._execute_tool(1, "manage_google_tasks", {"action": ""})
+    assert not result["success"]
+    assert "list, create, complete" in result["message"]
+
+
+async def test_manage_google_calendar_acepta_alias_de_accion(monkeypatch):
+    llamadas = []
+    google = SimpleNamespace(is_ready=True)
+    monkeypatch.setattr(chat_mod, "google_services", google)
+    monkeypatch.setattr(
+        chat_mod,
+        "gcal",
+        SimpleNamespace(add_event=_fn({"success": True, "message": "ok"}, calls=llamadas)),
+    )
+    result = await chat_mod._execute_tool(
+        1,
+        "manage_google_calendar",
+        {"action": "add", "title": "Cena", "when": "mañana a las 21"},
+    )
+    assert result["success"]
+    assert llamadas

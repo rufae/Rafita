@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.
     voice_call_token: str = Field("", alias="VOICE_CALL_TOKEN")
     voice_speculative_stt: bool = Field(True, alias="VOICE_SPECULATIVE_STT")
+    # Frase de espera en llamada solo si la respuesta tarda mas de esto
+    # (2026-09-30: con 2,2 s salia hasta en un "hola"; el usuario pidio 5-6 s).
+    voice_filler_delay_s: float = Field(5.5, alias="VOICE_FILLER_DELAY_S", ge=1.0, le=60.0)
 
     # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
     # coma). Vacio = solo mismo origen/localhost.

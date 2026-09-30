@@ -764,3 +764,253 @@ async def test_prepare_tool_phase_recuperacion_si_todas_fallan(monkeypatch):
     _, _content, tool_calls, _ = await orch._prepare_tool_phase("borra la tarea X", 1)
     assert ejecutadas == ["create_event", "manage_google_tasks"]
     assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"
+
+
+def test_es_negacion_falsa_frases_reales():
+    assert orch._es_negacion_falsa("No tengo acceso a tu Drive.")
+    assert orch._es_negacion_falsa(
+        "No he podido obtener la lista porque no se han proporcionado resultados "
+        "a través de la herramienta correspondiente."
+    )
+    assert orch._es_negacion_falsa("No me ha devuelto resultados.")
+    assert not orch._es_negacion_falsa("En tu Drive tienes 3 carpetas.")
+    assert orch._es_negacion_falsa("No hay elementos en tu Drive.")
+    assert orch._es_negacion_falsa("No hay archivos ni carpetas disponibles.")
+    assert orch._es_negacion_falsa(
+        "Necesito consultar tu cuenta. Por favor, un momento mientras accedo."
+    )
+
+
+def test_es_saludo_generico_y_ultimo_mensaje_tool():
+    assert orch._es_saludo_generico("Hola, soy Rafita. ¿En qué puedo ayudarte hoy?")
+    assert orch._es_saludo_generico("¡Hola! ¿En qué puedo ayudarte?")
+    assert not orch._es_saludo_generico("En tu Drive tienes 3 carpetas: ...")
+    assert not orch._es_saludo_generico("")
+    mensajes = [
+        {"role": "tool", "content": '{"success": true, "message": "lista de Drive"}'},
+        {"role": "tool", "content": "no-json"},
+    ]
+    assert orch._ultimo_mensaje_tool(mensajes) == "lista de Drive"
+    assert orch._ultimo_mensaje_tool([{"role": "user", "content": "x"}]) == ""
+
+
+async def test_generate_response_saludo_generico_tras_tools_reintenta(monkeypatch):
+    """Bug 2026-09-30: tras list_google_drive respondio "Hola, soy Rafita..."."""
+    _patch_common(monkeypatch)
+
+    class _FakeSaludo:
+        def __init__(self):
+            self.n = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.n += 1
+            if self.n == 1:
+                return None, [
+                    {"id": "1", "function": {"name": "list_google_drive", "arguments": "{}"}}
+                ]
+            return "Hola, soy Rafita. ¿En qué puedo ayudarte hoy?", None
+
+        async def chat(self, messages, max_tokens=512):
+            return "En tu Drive tienes la carpeta Proyectos y 2 archivos."
+
+    monkeypatch.setattr(orch, "llm", _FakeSaludo())
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": True, "message": "📂 Contenido de tu Google Drive: ..."}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("que carpetas tengo en mi drive", 1)
+    assert "Drive" in reply
+    assert not orch._es_saludo_generico(reply)
+
+
+async def test_generate_response_saludo_generico_usa_mensaje_tool(monkeypatch):
+    _patch_common(monkeypatch)
+
+    class _FakeSaludoSiempre:
+        def __init__(self):
+            self.n = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.n += 1
+            if self.n == 1:
+                return None, [
+                    {"id": "1", "function": {"name": "list_google_drive", "arguments": "{}"}}
+                ]
+            return "Hola, soy Rafita. ¿En qué puedo ayudarte hoy?", None
+
+        async def chat(self, messages, max_tokens=512):
+            return "Hola, soy Rafita. ¿En qué puedo ayudarte hoy?"
+
+    monkeypatch.setattr(orch, "llm", _FakeSaludoSiempre())
+
+    async def fake_exec(chat_id, name, args):
+        return {
+            "success": True,
+            "message": "📂 Contenido de tu Drive: carpetas Proyectos, Fotos y 3 archivos",
+        }
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("que carpetas tengo en mi drive", 1)
+    assert reply == "📂 Contenido de tu Drive: carpetas Proyectos, Fotos y 3 archivos"
+
+
+async def test_generate_response_stream_saludo_generico_usa_mensaje_tool(monkeypatch):
+    _patch_common(monkeypatch)
+
+    class _FakeStream:
+        def __init__(self):
+            self.n = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.n += 1
+            return None, [{"id": "1", "function": {"name": "list_google_drive", "arguments": "{}"}}]
+
+        async def chat_stream_tokens(self, messages, max_tokens=180, repeat_penalty=None):
+            for tok in ["Hola", ",", " soy", " Rafita", ".", " ¿En qué puedo ayudarte?"]:
+                yield tok
+
+    monkeypatch.setattr(orch, "llm", _FakeStream())
+
+    async def fake_exec(chat_id, name, args):
+        return {
+            "success": True,
+            "message": "📂 Contenido de tu Google Drive: carpetas Proyectos y Fotos",
+        }
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    salida = ""
+    async for chunk in orch.generate_response_stream("que carpetas tengo", 1, voice=True):
+        salida += chunk
+    assert "Proyectos" in salida
+    assert "Hola" not in salida
+
+
+async def test_generate_response_negacion_falsa_usa_mensaje_tool(monkeypatch):
+    """2026-09-30: list_google_drive devolvio la lista y el modelo dijo que no
+    tenia acceso; se reintenta y si insiste se usa el mensaje de la tool."""
+    _patch_common(monkeypatch)
+
+    class _FakeNegacion:
+        def __init__(self):
+            self.n = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.n += 1
+            if self.n == 1:
+                return None, [
+                    {"id": "1", "function": {"name": "list_google_drive", "arguments": "{}"}}
+                ]
+            return "No tengo acceso a tu Google Drive en este momento.", None
+
+        async def chat(self, messages, max_tokens=512):
+            return "No puedo acceder a esa informacion."
+
+    monkeypatch.setattr(orch, "llm", _FakeNegacion())
+
+    async def fake_exec(chat_id, name, args):
+        return {
+            "success": True,
+            "message": "📂 Contenido de tu Google Drive: carpetas Proyectos y Fotos",
+        }
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    reply = await orch.generate_response("que carpetas tengo en mi drive", 1)
+    assert reply == "📂 Contenido de tu Google Drive: carpetas Proyectos y Fotos"
+
+
+async def test_recuperacion_reintenta_la_misma_tool_con_args_malos(monkeypatch):
+    """gemma manda action vacia; la recuperacion puede reintentar la MISMA
+    herramienta (antes se saltaba por estar ya probada)."""
+    _patch_common(monkeypatch)
+    tool = {"type": "function", "function": {"name": "manage_google_tasks", "description": "t"}}
+
+    async def select_tools(text):
+        return [tool]
+
+    monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
+
+    async def best_tools(text, k=3):
+        return [tool], 0.9
+
+    monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+
+    class _Fake:
+        def __init__(self):
+            self.n = 0
+
+        async def chat_with_tools(self, messages, tools, max_tokens=512):
+            self.n += 1
+            if self.n == 1:
+                # Primer intento: action vacia (falla).
+                return None, [
+                    {"id": "1", "function": {"name": "manage_google_tasks", "arguments": "{}"}}
+                ]
+            # Recuperacion forzada: ahora si rellena los args.
+            return None, [
+                {
+                    "id": "3",
+                    "function": {
+                        "name": "manage_google_tasks",
+                        "arguments": '{"action": "create", "title": "Comprar pilas"}',
+                    },
+                }
+            ]
+
+        async def chat(self, messages, max_tokens=24):
+            return "manage_google_tasks"
+
+    monkeypatch.setattr(orch, "llm", _Fake())
+
+    ejecutadas = []
+
+    async def fake_exec(chat_id, name, args):
+        ejecutadas.append(args)
+        if not args.get("action"):
+            return {"success": False, "message": "Acción no válida o vacía"}
+        return {"success": True, "message": "Tarea creada"}
+
+    from src.handlers import chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+
+    _, _content, tool_calls, _ = await orch._prepare_tool_phase("apunta comprar pilas", 1)
+    assert ejecutadas[-1].get("action") == "create"
+    assert tool_calls and tool_calls[0]["function"]["name"] == "manage_google_tasks"
+
+
+def test_tiene_placeholders():
+    assert orch._tiene_placeholders("| [Nombre de la carpeta 1] | [ID 1] |")
+    assert orch._tiene_placeholders("fecha: [fecha]")
+    assert not orch._tiene_placeholders("📂 Carpetas: Personal, Automatizaciones")
+
+
+def test_tool_lista_ignorada():
+    mensajes = [
+        {
+            "role": "tool",
+            "content": '{"success": true, "message": "📂 Drive:\\n  • 📁 Personal (id: 1aZ)\\n  • 📄 Informe.pdf (id: 2b)"}',
+        }
+    ]
+    assert orch._tool_lista_ignorada(mensajes, "No tengo acceso a tu Drive.")
+    assert orch._tool_lista_ignorada(mensajes, "[Nombre de la carpeta 1] [ID 1]")
+    assert not orch._tool_lista_ignorada(
+        mensajes, "Tienes la carpeta Personal y el archivo Informe.pdf"
+    )
+    # Un resumen sin ningun nombre tambien se sustituye por la lista real.
+    assert orch._tool_lista_ignorada(mensajes, "En tu Drive tienes 2 elementos.")
+    # Sin lista no aplica
+    sin_lista = [{"role": "tool", "content": '{"success": true, "message": "Hoy 20 grados"}'}]
+    assert not orch._tool_lista_ignorada(sin_lista, "No tengo acceso.")
