@@ -46,7 +46,9 @@ def test_providers_expose_the_same_surface(monkeypatch):
 
 def test_ollama_disables_thinking_by_default(monkeypatch):
     monkeypatch.setattr(settings, "ollama_reasoning_effort", "none")
-    extra = OllamaClient()._ollama_extra_body(2048)
+    client = OllamaClient()
+    client._active_backend = "gpu"
+    extra = client._ollama_extra_body(2048)
     assert extra["reasoning_effort"] == "none"
     assert extra["keep_alive"] == -1
     assert extra["options"] == {"num_ctx": 2048}
@@ -103,6 +105,7 @@ async def test_chat_vision_same_model_skips_hot_swap(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "ollama_model", "gemma4:12b")
     monkeypatch.setattr(settings, "ollama_vision_model", "gemma4:12b")
     client = OllamaClient()
+    client._active_backend = "gpu"
     swaps = {"vision": 0, "text": 0}
 
     async def fake_swap():
@@ -390,3 +393,19 @@ async def test_initialize_prewarms_when_backend_ok(monkeypatch):
     assert client._ready is True
     assert prewarmed["n"] == 1
     await client.close()
+
+
+def test_keep_alive_por_backend(monkeypatch):
+    """Torre GPU fija el modelo; Dell CPU lo deja expirar (2026-10-01)."""
+    monkeypatch.setattr(settings, "ollama_keep_alive_gpu", "-1")
+    monkeypatch.setattr(settings, "ollama_keep_alive_cpu", "5m")
+    client = OllamaClient()
+
+    client._active_backend = "gpu"
+    assert client._ollama_extra_body(2048)["keep_alive"] == -1
+
+    client._active_backend = "cpu"
+    assert client._ollama_extra_body(2048)["keep_alive"] == "5m"
+
+    # Un 0 explicito (descarga) se respeta siempre.
+    assert client._ollama_extra_body(2048, keep_alive=0)["keep_alive"] == 0

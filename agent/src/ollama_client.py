@@ -123,6 +123,8 @@ class OllamaClient:
         self.model: str = settings.ollama_model
         self.vision_model: str = settings.ollama_vision_model
         self.reasoning_effort: str = settings.ollama_reasoning_effort
+        self.keep_alive_gpu = settings.ollama_keep_alive_gpu
+        self.keep_alive_cpu = settings.ollama_keep_alive_cpu
         self.num_thread: int = settings.ollama_num_thread
         self.request_timeout: int = settings.ollama_request_timeout
         self.temperature: float = settings.llm_temperature
@@ -246,6 +248,11 @@ class OllamaClient:
         await self._prewarm_specific(self.vision_model, "vision")
 
     async def _prewarm_specific(self, model_name: str, label: str) -> None:
+        if self._active_backend != "gpu":
+            # En el Dell (CPU) precargar deja el modelo ocupando RAM sin uso:
+            # se carga bajo demanda y expira con keep_alive.
+            logger.info("Skipping %s model pre-warm on CPU backend (Dell 24/7, RAM light)", label)
+            return
         try:
             import httpx
 
@@ -258,7 +265,7 @@ class OllamaClient:
                         "prompt": "hello",
                         "stream": False,
                         "think": False,
-                        "keep_alive": -1,
+                        "keep_alive": self._keep_alive_actual(),
                         "options": {"num_predict": 1, "temperature": 0.1},
                     },
                 )
@@ -489,10 +496,21 @@ class OllamaClient:
                 "El modelo dejo de responder a mitad de la generacion (corte de red)"
             ) from e
 
+    def _keep_alive_actual(self) -> Any:
+        """keep_alive segun backend: torre GPU fija (-1); Dell CPU expira (5m).
+
+        Evita que el nodo Dell (24/7, sin GPU) retenga modelos pesados en RAM.
+        """
+        valor = self.keep_alive_gpu if self._active_backend == "gpu" else self.keep_alive_cpu
+        try:
+            return int(valor)
+        except (TypeError, ValueError):
+            return valor
+
     def _ollama_extra_body(
         self,
         num_ctx: int,
-        keep_alive: Any = -1,
+        keep_alive: Any = None,
         extra_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Native Ollama fields forwarded through the OpenAI-compatible layer.
@@ -506,6 +524,8 @@ class OllamaClient:
             options["num_thread"] = self.num_thread
         if extra_options:
             options.update({k: v for k, v in extra_options.items() if v is not None})
+        if keep_alive is None:
+            keep_alive = self._keep_alive_actual()
         extra: dict[str, Any] = {"keep_alive": keep_alive, "options": options}
         if self.reasoning_effort:
             extra["reasoning_effort"] = self.reasoning_effort
@@ -548,7 +568,12 @@ class OllamaClient:
         """Batch embeddings via Ollama's native /api/embed (sync, for Chroma)."""
         import httpx
 
-        payload = {"model": settings.embedding_model, "input": texts}
+        payload = {
+            "model": settings.embedding_model,
+            "input": texts,
+            # Los embeddings viven en el Dell: no fijarlos en RAM.
+            "keep_alive": self.keep_alive_cpu,
+        }
         response = httpx.post(
             "%s/api/embed" % settings.ollama_host.rstrip("/"),
             json=payload,
@@ -677,7 +702,7 @@ class OllamaClient:
         try:
             response = await self._create_completion(
                 **params,
-                extra_body=self._ollama_extra_body(2048, keep_alive=-1 if same_model else 0),
+                extra_body=self._ollama_extra_body(2048, keep_alive=None if same_model else 0),
             )
             content = response.choices[0].message.content or ""
             return content

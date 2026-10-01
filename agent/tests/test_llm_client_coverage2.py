@@ -421,6 +421,9 @@ async def test_check_model_available_logs(monkeypatch):
 async def test_prewarm_unload_and_hot_swap(monkeypatch):
     monkeypatch.setattr(settings, "ollama_gpu_host", "")
     client = OllamaClient()
+    # El precalentado solo se hace en la torre GPU (en el Dell no se retiene RAM).
+    client.gpu_host = "http://gpu.test"
+    client._active_backend = "gpu"
     client._client = _fake_sdk_client(None)
     fake = FakeAsyncClient({"/api/generate": SimpleNamespace(raise_for_status=lambda: None)})
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: fake)
@@ -488,6 +491,9 @@ async def test_chat_stream_path_joins_tokens(monkeypatch):
 async def test_chat_wraps_unexpected_errors(monkeypatch):
     monkeypatch.setattr(settings, "ollama_gpu_host", "")
     client = OllamaClient()
+    # El precalentado solo se hace en la torre GPU (en el Dell no se retiene RAM).
+    client.gpu_host = "http://gpu.test"
+    client._active_backend = "gpu"
     client._client = _fake_sdk_client(None)
 
     async def broken_execute(_op, _factory, **_kw):
@@ -906,6 +912,9 @@ async def test_check_health_reports_gpu_fields(monkeypatch):
 async def test_loaded_models_none_on_failure(monkeypatch):
     monkeypatch.setattr(settings, "ollama_gpu_host", "")
     client = OllamaClient()
+    # El precalentado solo se hace en la torre GPU (en el Dell no se retiene RAM).
+    client.gpu_host = "http://gpu.test"
+    client._active_backend = "gpu"
     client._client = _fake_sdk_client(None)
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: FakeAsyncClient(fail=True))
     assert await client._loaded_models() is None

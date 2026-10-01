@@ -64,6 +64,13 @@ class Settings(BaseSettings):
 
     default_currency: str = Field("MXN", alias="DEFAULT_CURRENCY")
 
+    # keep_alive de Ollama por backend (2026-10-01): en la torre GPU el modelo
+    # se fija (-1) para respuestas rapidas; en el Dell (CPU 24/7) se deja
+    # expirar (5m) para no retener RAM (el Dell llego al 90% por modelos
+    # inactivos fijados con keep_alive=-1).
+    ollama_keep_alive_gpu: str = Field("-1", alias="OLLAMA_KEEP_ALIVE_GPU")
+    ollama_keep_alive_cpu: str = Field("5m", alias="OLLAMA_KEEP_ALIVE_CPU")
+
     whisper_model: str = Field("tiny", alias="WHISPER_MODEL")
     whisper_cpu_threads: int = Field(4, alias="WHISPER_CPU_THREADS", ge=1, le=32)
     # STT remoto (2026-09-30): servicio faster-whisper large-v3 en la GPU de
