@@ -33,6 +33,21 @@ _REPEAT_WORD_RE = re.compile(
 _REPEAT_SUBSTR_RE = re.compile(r"\b(\w{1,3})(?:\1){2,}\b", re.IGNORECASE)
 # IDs/tecnicismos largos que no se deben leer.
 _LONG_ID_RE = re.compile(r"\b[a-zA-Z0-9_-]{24,}\b")
+# Marcas de cita del segundo cerebro (mejora 1): en voz no se leen.
+_CITE_MARK_RE = re.compile(r"\[S\d+\]")
+# Correos electronicos: en voz se deletrean con el vocabulario del dictado
+# ('ejemplo punto ejemplo arroba gmail punto com') para que el TTS los lea
+# igual que el usuario los dicta.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.\w+)+")
+
+
+def _email_speakable(match: re.Match) -> str:
+    email = match.group(0)
+    local, domain = email.split("@", 1)
+    local = local.replace("_", " guion bajo ").replace(".", " punto ").replace("-", " guion ")
+    domain = domain.replace(".", " punto ")
+    return "%s arroba %s" % (local, domain)
+
 
 # Unidades: que no se lea "veinticuatro h" ni "por ciento" mal.
 _UNIT_REPLACEMENTS = [
@@ -62,7 +77,9 @@ def sanitize_for_tts(text: str) -> str:
     if not text:
         return ""
     out = text
+    out = _CITE_MARK_RE.sub("", out)
     out = _MD_LINK_RE.sub(r"\1", out)
+    out = _EMAIL_RE.sub(_email_speakable, out)
     out = _URL_RE.sub("", out)
     out = _MD_TABLE_RE.sub("", out)
     out = _MD_SEP_RE.sub("", out)

@@ -134,6 +134,15 @@ def test_sanitize_removes_markdown_and_urls():
     assert "`" not in out
 
 
+def test_sanitize_lee_correos_como_dictado():
+    # El TTS debe leer el correo igual que el usuario lo dicta.
+    out = sanitize_for_tts("Su correo es ejemplo.ejemplo@gmail.com, escribelo.")
+    assert "ejemplo punto ejemplo arroba gmail punto com" in out
+    assert "@" not in out
+    out = sanitize_for_tts("contacto: ana_perez-84@empresa.es")
+    assert "ana guion bajo perez guion 84 arroba empresa punto es" in out
+
+
 def test_sanitize_removes_tables_and_emojis():
     text = "Mira:\n| a | b |\n|---|---|\n| 1 | 2 |\nListo 🎉🚀"
     out = sanitize_for_tts(text)

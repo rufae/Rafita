@@ -516,3 +516,62 @@ def test_meetings_editar_y_borrar(monkeypatch, tmp_path):
     assert d.status_code == 200
     assert llamadas["borrar"] == (7, False)
     assert client.delete("/api/meetings/99", headers=headers).status_code == 404
+
+
+def test_gdpr_export_y_delete(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+
+    async def fake_export(*ids):
+        return {"chat_id": ids[0], "chat_history": [{"id": 1, "content": "hola"}]}
+
+    async def fake_delete(*ids):
+        return {"chat_history": 1}
+
+    monkeypatch.setattr(database.db, "export_user_data", fake_export)
+    monkeypatch.setattr(database.db, "delete_user_data", fake_delete)
+
+    export = client.get("/api/gdpr/export", headers=headers)
+    assert export.status_code == 200
+    assert export.json()["chat_history"][0]["content"] == "hola"
+
+    sin_confirmar = client.post("/api/gdpr/delete", json={}, headers=headers)
+    assert sin_confirmar.status_code == 400
+
+    borrado = client.post("/api/gdpr/delete", json={"confirm": True}, headers=headers)
+    assert borrado.status_code == 200
+    assert borrado.json()["deleted"]["chat_history"] == 1
+
+
+def test_web_chat_comandos_demo_y_ayuda(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+
+    async def fake_demo(chat_id):
+        return "🎬 *Demo de Rafita* — secciones"
+
+    async def fake_generate(text, chat_id):
+        raise AssertionError("un comando no debe caer en el modelo")
+
+    monkeypatch.setattr("src.handlers.demo.build_demo_text", fake_demo)
+    monkeypatch.setattr("src.core.generate_response", fake_generate)
+
+    demo = client.post("/api/chat", json={"message": "/demo"}, headers=headers)
+    assert demo.status_code == 200
+    assert "Demo de Rafita" in demo.json()["reply"]
+
+    ayuda = client.post("/api/chat", json={"message": "/ayuda"}, headers=headers)
+    assert ayuda.status_code == 200
+    assert "Comandos disponibles" in ayuda.json()["reply"]

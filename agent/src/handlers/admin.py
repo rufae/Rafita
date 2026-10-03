@@ -11,6 +11,7 @@ from src.database import db
 from src.logger import logger
 from src.services.google_service import google_service
 from src.services.google_services_manager import google_services, service_account_email
+from src.utils.telegram_fmt import reply_md
 
 
 async def evento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -100,7 +101,7 @@ async def eventos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         lines.append("")
 
-    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await reply_md(message, "\n".join(lines))
 
 
 async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -193,7 +194,7 @@ async def alertas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     lines.append("Usa /alerta <id> para marcar como leída.")
 
-    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await reply_md(message, "\n".join(lines))
 
 
 CREDENTIALS_DIR = Path("/workspace/credentials")
@@ -261,13 +262,13 @@ async def clientes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     from src.services.crm_service import seguimientos_pendientes
 
     resumen = await crm_handle("summary", {})
-    await message.reply_text(resumen.get("message", "Sin datos."), parse_mode="Markdown")
+    await reply_md(message, resumen.get("message", "Sin datos."))
     pendientes = await seguimientos_pendientes()
     if pendientes:
         lineas = ["🔔 *Seguimientos pendientes:*"]
         for cliente in pendientes[:5]:
             lineas.append("  • *%s* — %s" % (cliente["nombre"], cliente["motivo"]))
-        await message.reply_text("\n".join(lineas), parse_mode="Markdown")
+        await reply_md(message, "\n".join(lineas))
 
 
 async def sync_google_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -445,5 +446,5 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "y completa con `/setup_google <codigo>`."
     )
 
-    await message.reply_text(instructions, parse_mode="Markdown")
+    await reply_md(message, instructions)
     logger.info("setup_google: instructions sent to user %d", user.id)

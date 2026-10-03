@@ -516,6 +516,11 @@ let authToken = '';
     } catch (e) {}
     if (parentOrigin && ev.origin !== parentOrigin) return;
     authToken = ev.data.token;
+    // El token llega asincrono (en movil tarda): si se mostro el aviso de
+    // "sin autorizacion", se retira ahora mismo.
+    var zona = document.getElementById('avisoZona');
+    if (zona) zona.innerHTML = '';
+    if (!isCallActive) setStatus(STATUS.IDLE, 'Autorizado. Pulsa Iniciar para llamar.');
   });
 })();
 function authHeaders() {
@@ -899,8 +904,14 @@ function handleServerMessage(msg) {
       setStatus(STATUS.PROCESSING, 'Transcribiendo...');
       break;
     case 'transcript':
-      if (msg.text) addTranscript('tu', msg.text);
-      setStatus(STATUS.PROCESSING, 'Pensando...');
+      if (msg.text) {
+        addTranscript('tu', msg.text);
+        setStatus(STATUS.PROCESSING, 'Pensando...');
+      } else {
+        // Sin voz (ruido filtrado): volver a escuchar. Antes dejaba la UI en
+        // "Pensando..." para siempre y parecia que Rafita no respondia nunca.
+        setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
+      }
       if (msg.stt_time) log('STT: ' + msg.stt_time.toFixed(1) + 's');
       break;
     case 'thinking':
@@ -1051,6 +1062,12 @@ window.addEventListener('beforeunload', function () {
     stopAudioCapture();
     stopPlayback();
     if (ws) ws.close();
+    // Avisar al servidor para liberar la sesion de inmediato (antes solo se
+    // limpiaba con el reaper de 60 s tras caer el socket).
+    try {
+      var q = authToken ? '?token=' + encodeURIComponent(authToken) : '';
+      navigator.sendBeacon('/call/' + sessionId + '/end' + q);
+    } catch (e) {}
   }
 });
 requestAnimationFrame(animationLoop);
@@ -1087,16 +1104,24 @@ function mostrarAviso(tipo, texto, accion) {
   zona.appendChild(caja);
 }
 
-// Sin token no se puede autorizar la llamada: se explica en vez de fallar y
-// se ofrece el camino de vuelta a Rafita (mismo host en HTTPS).
-if (!authToken) {
-  setStatus(STATUS.ERROR, 'Abre esta página desde la pestaña Llamar de Rafita para autorizar el micrófono.');
-  log('Sin token de acceso: entra por la pestaña Llamar de Rafita.');
-  const accion = window.location.protocol === 'https:'
+// Sin token no se puede autorizar la llamada. El token llega por postMessage
+// desde la SPA al cargar el iframe y en movil puede tardar: el aviso inmediato
+// decia "abre la pestaña Llamar" estando ya en ella (bug 2026-10-03). Ahora se
+// espera 4 s, se re-comprueba y el aviso se retira solo si el token llega.
+function avisarSinToken() {
+  if (authToken) return;
+  const contextoInseguro = !window.isSecureContext || !navigator.mediaDevices;
+  const texto = contextoInseguro
+    ? 'El micrófono solo funciona por HTTPS o localhost. Abre Rafita por https:// (la URL segura de Tailscale) y vuelve a la pestaña Llamar.'
+    : 'No llegó la autorización desde Rafita. Recarga esta página desde la pestaña Llamar de Rafita.';
+  setStatus(STATUS.ERROR, texto);
+  log('Sin token de acceso (esperados 4 s): ' + texto);
+  const accion = !contextoInseguro && window.location.protocol === 'https:'
     ? { href: `${window.location.protocol}//${window.location.hostname}/`, texto: 'Ir a Rafita' }
     : null;
-  mostrarAviso('warn', 'Esta página necesita abrirse desde la pestaña Llamar de Rafita para autorizar el micrófono.', accion);
+  mostrarAviso(contextoInseguro ? 'error' : 'warn', texto, accion);
 }
+setTimeout(avisarSinToken, 4000);
 
 async function testTTS() {
   setStatus(STATUS.PROCESSING, 'Probando TTS...');
