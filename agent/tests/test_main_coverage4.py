@@ -237,6 +237,7 @@ async def test_check_and_notify_swallows_errors(monkeypatch):
     monkeypatch.setattr(main_mod, "datetime", _NoonDT)
     fake_db.raise_chat_ids = RuntimeError("bd caida")
     worker = ProactiveWorker()
+    worker._last_gc_date = _NoonDT.now().date()
     await worker._check_and_notify()
     assert worker._gc_run_count == 0
 

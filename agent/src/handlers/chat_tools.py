@@ -405,16 +405,17 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "search_second_brain",
             "description": "Busca en TU segundo cerebro personal (vault de Obsidian, NO "
             "Google Drive) usando busqueda semantica por embeddings con soporte de "
-            "filtro por etiquetas. Devuelve fragmentos relevantes con "
-            "la ruta exacta de la nota origen, el encabezado donde "
-            "aparece, y un enlace obsidian:// para abrirla directamente. "
+            "filtro por etiquetas y reranking lexico (ideal para nombres propios). "
+            "Devuelve fragmentos numerados [S1], [S2]... con la ruta exacta de la "
+            "nota origen, el encabezado donde aparece y un enlace obsidian:// para "
+            "abrirla directamente. Cada afirmacion que hagas con estos fragmentos "
+            "debe terminar con su cita ([S1], [S2]...). "
             "USALO SIEMPRE que el usuario pregunte sobre cualquier cosa "
             "que pueda estar en sus notas personales: proyectos, finanzas, "
             "ideas, apuntes tecnicos, diario, recursos. "
             "Tambien usalo para preguntas tipo 'que sabes de...', "
             "'que tengo sobre...', 'que escribi acerca de...', "
-            "'busca en mis notas...'. "
-            "Siempre cita la nota origen (note_path) en tu respuesta.",
+            "'busca en mis notas...'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -435,6 +436,123 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_relation",
+            "description": "Guarda una relacion tipada en el grafo de conocimiento del "
+            "usuario (sujeto — predicado — objeto). Usalo cuando el usuario diga "
+            "cosas como 'apunta que Ana trabaja en el proyecto X', 'mi equipo usa "
+            "Rafita para las reuniones' o cualquier hecho relacional que quiera "
+            "recordar (personas, proyectos, tecnologias, lugares).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "Sujeto de la relacion (ej: 'Ana', 'Proyecto X')",
+                    },
+                    "predicate": {
+                        "type": "string",
+                        "description": "Relacion en minusculas (ej: 'trabaja_en', 'usa', "
+                        "'vive_en', 'participo_en', 'es_responsable_de')",
+                    },
+                    "object": {
+                        "type": "string",
+                        "description": "Objeto de la relacion (ej: 'Proyecto X', 'Rafita')",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Origen del dato (por defecto 'conversacion')",
+                    },
+                },
+                "required": ["subject", "predicate", "object"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_relations",
+            "description": "Consulta el grafo de conocimiento: relaciones guardadas entre "
+            "personas, proyectos, tecnologias o lugares. Usalo para preguntas como "
+            "'quien trabaja en el proyecto X', 'que sabemos de Ana', 'en que "
+            "participo Juan' o 'que relaciones hay sobre Rafita'. Sin argumentos "
+            "lista todas las relaciones.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Texto a buscar en sujeto, predicado u objeto "
+                        "(vacio para listar todas)",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Filtrar por sujeto exacto (opcional)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_relation",
+            "description": "Borra una relacion del grafo de conocimiento por su id. "
+            "Usalo cuando el usuario pida eliminar un hecho guardado (obten el id "
+            "antes con search_relations).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "relation_id": {
+                        "type": "integer",
+                        "description": "Id numerico de la relacion a borrar",
+                    },
+                },
+                "required": ["relation_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_my_data",
+            "description": "Genera una exportacion RGPD con TODOS los datos del usuario "
+            "(historial, conocimiento personal, eventos, finanzas, relaciones, "
+            "reuniones...) en un fichero JSON y devuelve su ruta. Usalo cuando el "
+            "usuario pida exportar o descargar sus datos personales.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_my_data",
+            "description": "BORRA de forma irreversible todos los datos del usuario "
+            "(historial de chat, conocimiento personal, eventos, alertas, finanzas, "
+            "relaciones, reuniones y sesiones de voz). REQUIERE confirm=true; si el "
+            "usuario no lo ha confirmado explicitamente, primero explicale que se "
+            "borra TODO y pide confirmacion. Usalo solo ante una peticion explicita "
+            "de borrado de datos (derecho de supresion RGPD).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "true SOLO si el usuario ha confirmado explicitamente "
+                        "que quiere borrar todos sus datos",
+                    },
+                },
+                "required": ["confirm"],
             },
         },
     },
@@ -683,16 +801,24 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_google_calendar_events",
-            "description": "Consulta los proximos eventos del Google Calendar del usuario. "
+            "description": "Consulta los proximos eventos de la agenda del usuario "
+            "(Google Calendar y, si no esta conectado, la agenda local). "
             "Usalo cuando el usuario pregunte 'que tengo manana', 'mi agenda', "
-            "'eventos de la semana', 'que hay en mi calendario'. "
-            "Si devuelve error de no autenticado, usa generate_google_auth_link.",
+            "'eventos de la semana', 'que hay en mi calendario'. Para un periodo "
+            "concreto usa days (p. ej. days=7 para 'la proxima semana'). "
+            "Si el usuario pregunta como configurar Google, dile que use "
+            "/setup_google (no '/setup') y explicale el paso.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "max_results": {
                         "type": "integer",
                         "description": "Numero maximo de eventos a traer (default 10)",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Solo eventos de los proximos N dias (p. ej. 7 = "
+                        "proxima semana). Vacio = todos los proximos.",
                     },
                 },
                 "required": [],
@@ -820,7 +946,32 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "('manda un correo a mama diciendole que la quiero', 'enviale un "
             "email a juan', 'escribe a... diciendo...'): el destinatario puede "
             "ser un correo o solo un nombre (se busca solo en tus contactos). "
-            "No uses find_contact para esto: send_gmail ya resuelve el nombre.",
+            "Si solo pide REDACTAR o preparar un correo sin enviarlo, usa "
+            "draft_gmail en su lugar. No uses find_contact para esto: send_gmail "
+            "ya resuelve el nombre.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Correo del destinatario o su nombre (se resuelve solo)",
+                    },
+                    "subject": {"type": "string", "description": "Asunto del correo"},
+                    "body": {"type": "string", "description": "Cuerpo del correo"},
+                },
+                "required": ["to", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_gmail",
+            "description": "REDACTA un correo en Gmail como borrador, SIN enviarlo. "
+            "Usalo cuando pida redactar, preparar, escribir un borrador o "
+            "componer un correo ('redactale un correo a X', 'prepara un email "
+            "para...'): el correo queda en Gmail para revisarlo y enviarlo "
+            "despues. Si lo que pide es ENVIAR ya, usa send_gmail.",
             "parameters": {
                 "type": "object",
                 "properties": {

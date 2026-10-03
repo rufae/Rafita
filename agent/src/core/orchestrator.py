@@ -27,6 +27,7 @@ from src.logger import logger
 from src.models.schemas import MessageRole
 from src.ollama_client import OllamaClientError, llm
 from src.services.google_services_manager import google_services
+from src.utils.citations import citations, finalize_citations, strip_citation_marks
 from src.utils.telemetry import get_correlation_id, metrics
 from src.vault_config import get_taxonomy
 
@@ -167,6 +168,18 @@ def _hay_tool_con_datos(messages: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _hay_tool_results(messages: list[dict[str, Any]]) -> bool:
+    """True si alguna herramienta se ejecuto y devolvio resultado (aunque sea
+    'no hay datos').
+
+    2026-10-03: si el modelo respondia un saludo tras una tool que no trajo
+    datos ("No hay eventos..."), _hay_tool_con_datos era False y el saludo se
+    colaba. Con cualquier resultado de tool, el fallback determinista usa el
+    mensaje real de la herramienta.
+    """
+    return any(m.get("role") == "tool" for m in messages)
+
+
 def _ultimo_mensaje_tool(messages: list[dict[str, Any]]) -> str:
     """Ultimo mensaje legible de una herramienta (para fallback determinista)."""
     for m in reversed(messages):
@@ -287,7 +300,19 @@ GROUNDING_RULES = (
     "herramienta adecuada en este mismo turno. No respondas con texto "
     "diciendo que no puedes, ni pidiendo datos que ya tienes; solo pide un "
     "dato si de verdad falta y es imprescindible.\n"
+    "CITE_RULE: cuando uses fragmentos de search_second_brain, termina cada "
+    "afirmacion documental con su cita ([S1], [S2]...) tal y como aparecen en "
+    "el resultado de la herramienta. No inventes citas ni uses citas que no "
+    "hayan aparecido. NO escribas ninguna seccion 'Fuentes': la anade el "
+    "sistema. En conversacion de voz, no uses estas marcas de cita.\n"
 )
+
+
+def _commands_line() -> str:
+    """Lista compacta de comandos para que el modelo pueda explicarlos."""
+    from src.models.schemas import COMMANDS_REGISTRY
+
+    return ", ".join("/%s" % c.command for c in COMMANDS_REGISTRY)
 
 
 def build_system_prompt(voice: bool = False) -> str:
@@ -317,6 +342,11 @@ def build_system_prompt(voice: bool = False) -> str:
         f"GOOGLE_RULE: Google está {google_state}. Las herramientas de Google "
         "(calendario y Drive) están disponibles: NO ofrezcas enlaces de "
         "autorización si ya está conectado; úsalas directamente.\n"
+        "COMMANDS_RULE: si el usuario pregunta cómo usar un comando o qué hace "
+        "(/setup_google, /evento, /demo...), explícalo con claridad y usa "
+        "SIEMPRE el nombre exacto (el comando es /setup_google, nunca '/setup'). "
+        "Si Google ya está conectado, no le mandes a configurar nada: usa las "
+        "herramientas. Comandos del bot: " + _commands_line() + "\n"
         "ACTION_RULE: si la peticion del usuario esta cubierta por una "
         "herramienta, invocala directamente sin pedir confirmacion ni "
         "preguntar detalles que puedas asumir razonablemente.\n"
@@ -415,6 +445,8 @@ async def _prepare_tool_phase(
     tool_chat_id = chat_id
     if voice and chat_id == 0 and settings.admin_ids:
         tool_chat_id = settings.admin_ids[0]
+    # Citas [S#]: numeración única por turno (mejora 1).
+    citations.reset()
     await db.save_chat_message(chat_id, MessageRole.user.value, text)
 
     # 12 mensajes (2026-09-30): con 6 se perdia el hilo en conversaciones
@@ -635,9 +667,9 @@ async def _prepare_tool_phase(
                 func_name,
                 str(args)[:200],
             )
-            from src.handlers.chat import _execute_tool
+            from src.handlers.chat import execute_tool_measured
 
-            result = await _execute_tool(tool_chat_id, func_name, args)
+            result = await execute_tool_measured(tool_chat_id, func_name, args)
             results.append(
                 {
                     "role": "tool",
@@ -696,7 +728,7 @@ async def _prepare_tool_phase(
                 except Exception:
                     calls2 = None
                 if calls2:
-                    from src.handlers.chat import _execute_tool as _exec2
+                    from src.handlers.chat import execute_tool_measured as _exec2
 
                     nuevos = []
                     exito = False
@@ -802,7 +834,7 @@ async def generate_response(text: str, chat_id: int) -> str:
             not _es_saludo_generico(text)
             and (_respuesta_desviada(content) or _tool_lista_ignorada(messages_for_llm, content))
             and not todas_fallidas
-            and _hay_tool_con_datos(messages_for_llm)
+            and _hay_tool_results(messages_for_llm)
         )
         if desviado:
             logger.warning("[ORCHESTRATOR] saludo/negacion falsa tras herramientas; reintentando")
@@ -832,6 +864,12 @@ async def generate_response(text: str, chat_id: int) -> str:
                 fallback = _ultimo_mensaje_tool(messages_for_llm)
                 if fallback:
                     content = fallback
+
+    # Citas [S#] y sección Fuentes (mejora 1): valida las citas contra las
+    # fuentes recuperadas en este turno y añade los enlaces al final.
+    if content:
+        content = finalize_citations(content, citations.sources(), voice=False)
+    citations.clear()
 
     if content:
         await db.save_chat_message(chat_id, MessageRole.assistant.value, content[:2000])
@@ -871,9 +909,13 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                 max_tokens=180 if voice else 512,
                 repeat_penalty=1.15 if voice else None,
             ):
+                # En voz se quitan las marcas [S#] al vuelo: el token ya no
+                # llega al cliente ni al TTS (mejora 1).
+                token_out = strip_citation_marks(token) if voice else token
                 if validado:
                     full += token
-                    yield token
+                    if token_out:
+                        yield token_out
                     continue
                 buffer += token
                 listo = buffer.rstrip().endswith((".", "!", "?", ":")) or len(buffer) >= 60
@@ -882,7 +924,7 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                 if (
                     not _es_saludo_generico(text)
                     and _respuesta_desviada(buffer)
-                    and _hay_tool_con_datos(messages_for_llm)
+                    and _hay_tool_results(messages_for_llm)
                 ):
                     logger.warning(
                         "[ORCHESTRATOR] saludo/negacion falsa en streaming; uso la herramienta"
@@ -897,13 +939,15 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                     break
                 validado = True
                 full += buffer
-                yield buffer
+                buffer_out = strip_citation_marks(buffer) if voice else buffer
+                if buffer_out:
+                    yield buffer_out
                 buffer = ""
             if buffer and not validado:
                 if (
                     not _es_saludo_generico(text)
                     and _respuesta_desviada(buffer)
-                    and _hay_tool_con_datos(messages_for_llm)
+                    and _hay_tool_results(messages_for_llm)
                 ):
                     fallback = _ultimo_mensaje_tool(messages_for_llm) or (
                         "Ahora mismo no puedo responderte a eso."
@@ -913,7 +957,9 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                         yield chunk
                 else:
                     full += buffer
-                    yield buffer
+                    buffer_out = strip_citation_marks(buffer) if voice else buffer
+                    if buffer_out:
+                        yield buffer_out
         except Exception as e:
             logger.warning("[ORCHESTRATOR] streaming fallo, uso texto completo: %s", e)
             full = content or "Consulta completada. Revisa el resultado."
@@ -925,6 +971,12 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
     else:
         full = "No pude generar una respuesta."
         yield full
+
+    # Citas [S#] (mejora 1): en voz se quitan las marcas; en texto se añaden
+    # las fuentes con enlace.
+    if full:
+        full = finalize_citations(full, citations.sources(), voice=voice)
+    citations.clear()
 
     if full:
         await db.save_chat_message(chat_id, MessageRole.assistant.value, full[:2000])

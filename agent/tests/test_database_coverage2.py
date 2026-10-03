@@ -49,6 +49,7 @@ async def test_initialize_creates_tables_and_wal(db):
         "kv_store",
         "second_brain_log",
         "credentials",
+        "knowledge_relations",
     ):
         assert table in names
     mode = await db.fetchone("PRAGMA journal_mode")
@@ -308,6 +309,11 @@ async def test_personal_knowledge_roundtrip(db):
     by_category = await db.search_personal_knowledge(31, "ubicacion")
     assert [f["key"] for f in by_category] == ["ciudad"]
 
+    # Busqueda por contenido del valor: el valor va cifrado en la BD, asi que
+    # antes un LIKE de SQL jamas encontraba nada.
+    by_value = await db.search_personal_knowledge(31, "guadalajara")
+    assert [f["key"] for f in by_value] == ["ciudad"]
+
     all_rows = await db.get_all_personal_knowledge(31)
     assert {r["key"]: r["value"] for r in all_rows} == {
         "nombre_completo": "Usuario Test",
@@ -440,3 +446,105 @@ async def test_close_twice_and_default_path(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "db_path", str(tmp_path / "default.db"))
     auto = DatabaseManager()
     assert auto.db_path == tmp_path / "default.db"
+
+
+# ---------------------------------------------------------------------------
+# Grafo de conocimiento (mejora 8)
+# ---------------------------------------------------------------------------
+
+
+async def test_knowledge_relations_crud(db):
+    added = await db.add_relation(41, "Ana", "trabaja_en", "Proyecto Babel")
+    assert added["success"] is True
+    rel = added["relation"]
+    assert rel["subject"] == "Ana"
+    assert rel["predicate"] == "trabaja_en"
+    assert rel["object"] == "Proyecto Babel"
+
+    # Idempotente: la misma tripleta no duplica.
+    dup = await db.add_relation(41, "Ana", "trabaja_en", "Proyecto Babel")
+    assert dup["success"] is True
+    assert dup["relation"]["id"] == rel["id"]
+
+    all_rel = await db.search_relations(41)
+    assert len(all_rel) == 1
+
+    found = await db.search_relations(41, query="babel")
+    assert [r["subject"] for r in found] == ["Ana"]
+    assert await db.search_relations(41, query="inexistente") == []
+
+    por_sujeto = await db.search_relations(41, subject="Ana")
+    assert len(por_sujeto) == 1
+    assert await db.search_relations(41, subject="Otro") == []
+
+    assert await db.delete_relation(41, rel["id"]) is True
+    assert await db.delete_relation(41, rel["id"]) is False
+    assert await db.search_relations(41) == []
+
+
+async def test_add_relation_requires_fields(db):
+    result = await db.add_relation(42, "  ", "x", "y")
+    assert result["success"] is False
+    result = await db.add_relation(42, "Ana", "", "y")
+    assert result["success"] is False
+
+
+async def test_relations_are_isolated_per_chat(db):
+    await db.add_relation(43, "Ana", "vive_en", "Sevilla")
+    await db.add_relation(44, "Ana", "vive_en", "Madrid")
+    mias = await db.search_relations(43)
+    assert [r["object"] for r in mias] == ["Sevilla"]
+
+
+# ---------------------------------------------------------------------------
+# RGPD (mejora 7): exportar y borrar datos del usuario
+# ---------------------------------------------------------------------------
+
+
+async def test_export_user_data(db):
+    await db.save_chat_message(51, "user", "hola")
+    await db.add_event(51, "Ev", "2099-01-01 10:00:00")
+    await db.store_personal_knowledge(51, "ciudad", "Sevilla")
+    await db.add_relation(51, "Ana", "vive_en", "Sevilla")
+    await db.add_finance_record(51, 10.0, "expense")
+
+    export = await db.export_user_data(51)
+    assert export["chat_id"] == 51
+    assert len(export["chat_history"]) == 1
+    assert export["events"][0]["title"] == "Ev"
+    # El valor va cifrado en la BD pero se exporta descifrado.
+    assert export["personal_knowledge"][0]["value"] == "Sevilla"
+    assert len(export["knowledge_relations"]) == 1
+    assert len(export["finance_records"]) == 1
+
+    other = await db.export_user_data(999)
+    assert "chat_history" not in other
+
+
+async def test_delete_user_data(db):
+    await db.save_chat_message(52, "user", "hola")
+    await db.store_personal_knowledge(52, "ciudad", "Sevilla")
+    await db.add_relation(52, "Ana", "vive_en", "Sevilla")
+    await db.add_alert(52, "Aviso")
+
+    deleted = await db.delete_user_data(52)
+    assert deleted["chat_history"] == 1
+    assert deleted["personal_knowledge"] == 1
+    assert deleted["knowledge_relations"] == 1
+    assert deleted["alerts"] == 1
+
+    after = await db.export_user_data(52)
+    assert "chat_history" not in after
+    assert await db.count_personal_knowledge(52) == 0
+
+
+async def test_gdpr_extra_ids_cubre_dos_espacios(db):
+    await db.save_chat_message(900_000_053, "user", "hola web")
+    await db.save_chat_message(53, "user", "hola telegram")
+    export = await db.export_user_data(53, 900_000_053)
+    assert len(export["chat_history"]) == 2
+
+    deleted = await db.delete_user_data(53, 900_000_053)
+    assert deleted["chat_history"] == 2
+    after = await db.export_user_data(53, 900_000_053)
+    assert "chat_history" not in after
