@@ -39,6 +39,22 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || url.pathname.startsWith('/api')) {
     return;
   }
+  // config.js se sirve con Cache-Control: no-store para poder editarlo en
+  // caliente; el cache-first lo anulaba. Siempre red, cache solo de respaldo.
+  if (url.origin === self.location.origin && url.pathname.endsWith('/config.js')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((resp) => {
+          if (resp.ok) {
+            const copia = resp.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copia));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then(
       (cached) =>

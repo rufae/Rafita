@@ -289,7 +289,7 @@ async def test_get_calendar_events_reports_errors():
 
 
 async def test_create_calendar_event_variants(monkeypatch):
-    result = await GoogleService().create_calendar_event("X", "2026-10-01T10:00:00")
+    result = await GoogleService().create_calendar_event("X", "2099-10-01T10:00:00")
     assert result["needs_auth"] is True
 
     captured = {}
@@ -300,10 +300,10 @@ async def test_create_calendar_event_variants(monkeypatch):
             return _Req({"id": "nuevo", "htmlLink": "http://e"})
 
     svc = _ready_service(service=SimpleNamespace(events=lambda: _Events()))
-    result = await svc.create_calendar_event("Reunion", "2026-10-01T10:00:00")
+    result = await svc.create_calendar_event("Reunion", "2099-10-01T10:00:00")
     assert result["success"] is True
     assert result["event_id"] == "nuevo"
-    assert captured["body"]["end"]["dateTime"] == "2026-10-01T11:00:00"
+    assert captured["body"]["end"]["dateTime"] == "2099-10-01T11:00:00"
 
     result = await svc.create_calendar_event("Rara", "no-es-fecha")
     assert result["success"] is True

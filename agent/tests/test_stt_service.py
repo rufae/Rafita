@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from src.config import settings
 from src.services import stt_service
 
@@ -159,6 +157,15 @@ def test_normaliza_correo_dictado():
     # Sin 'arroba' no se toca nada.
     assert normalize_dictated_email("hola punto com esto no es un correo") == (
         "hola punto com esto no es un correo"
+    )
+    # Caso real del usuario (demo 2026-10-02): correo leido en voz alta.
+    assert (
+        normalize_dictated_email("ejemplo punto ejemplo arroba gmail punto com")
+        == "ejemplo.ejemplo@gmail.com"
+    )
+    assert (
+        normalize_dictated_email("Escríbele a ejemplo punto ejemplo arroba gmail punto com porfa")
+        == "Escríbele a ejemplo.ejemplo@gmail.com porfa"
     )
 
 

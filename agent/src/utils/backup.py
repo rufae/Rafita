@@ -1,6 +1,11 @@
+import asyncio
 import io
+import os
+import sqlite3
+import tempfile
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -9,6 +14,28 @@ from src.config import settings
 from src.logger import logger
 
 BACKUP_INCLUDE_DIRS = ["excels", "exports"]
+
+
+def _snapshot_db(db_path: Path) -> Path:
+    """Copia consistente de la BD con la API backup() de SQLite.
+
+    Antes se copiaba rafita.db en caliente: con WAL activado, el ZIP podia
+    perder las transacciones recientes o quedar inconsistente. backup() lee
+    un snapshot coherente (incluye el WAL) sin bloquear al agente.
+    """
+    fd, tmp_name = tempfile.mkstemp(prefix="rafita_backup_", suffix=".db")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    src = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True)
+    try:
+        dst = sqlite3.connect(str(tmp_path))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    return tmp_path
 
 
 async def create_backup(chat_id: int) -> bytes | None:
@@ -20,12 +47,14 @@ async def create_backup(chat_id: int) -> bytes | None:
         return None
 
     buffer = io.BytesIO()
+    snapshot: Path | None = None
 
     try:
+        snapshot = await asyncio.to_thread(_snapshot_db, db_path)
+
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            if db_path.exists():
-                zf.write(str(db_path), "db/rafita.db")
-                logger.debug("Added db/rafita.db to backup")
+            zf.write(str(snapshot), "db/rafita.db")
+            logger.debug("Added db/rafita.db (snapshot consistente) to backup")
 
             for dir_name in BACKUP_INCLUDE_DIRS:
                 dir_path = data_path / dir_name
@@ -48,6 +77,12 @@ async def create_backup(chat_id: int) -> bytes | None:
     except Exception as e:
         logger.exception("Backup creation failed for chat %d: %s", chat_id, e)
         return None
+    finally:
+        if snapshot is not None:
+            try:
+                snapshot.unlink()
+            except OSError:
+                pass
 
 
 async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

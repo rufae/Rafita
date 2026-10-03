@@ -79,7 +79,7 @@ async def transcribir(audio_wav: Path) -> tuple[list[dict[str, Any]], str]:
     from src.services.stt_service import transcribe_bytes
 
     resultado = await transcribe_bytes(
-        audio_wav.read_bytes(),
+        await asyncio.to_thread(audio_wav.read_bytes),
         language="es",
         prompt="Conversación en español con un asistente personal.",
         beam_size=5,

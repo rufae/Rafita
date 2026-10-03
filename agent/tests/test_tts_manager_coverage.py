@@ -41,6 +41,23 @@ def _raising_exec(error):
     return fake
 
 
+def test_cleanup_tts_dir_removes_only_rafita_dirs(tmp_path):
+    d = tmp_path / "rafita_tts_abc"
+    d.mkdir()
+    wav = d / "response.wav"
+    wav.write_bytes(b"x")
+    tts.cleanup_tts_dir(wav)
+    assert not d.exists()
+
+    keep = tmp_path / "otra_carpeta"
+    keep.mkdir()
+    wav2 = keep / "response.wav"
+    wav2.write_bytes(b"x")
+    tts.cleanup_tts_dir(wav2)
+    assert wav2.exists()
+    tts.cleanup_tts_dir(None)
+
+
 # ---------- _fallback_espeak ----------
 
 

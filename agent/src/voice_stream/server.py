@@ -140,6 +140,53 @@ _active_sessions: dict[str, dict[str, Any]] = {}
 _whisper_model = None
 _tts_engine = None
 
+# Ciclo de vida de sesiones de llamada (2026-10-02): al caer el WebSocket la
+# sesion se marcaba "ended" pero nunca se borraba de _active_sessions (solo
+# /call/{id}/end lo hacia). Cada recarga o cierre de pestaña dejaba el buffer
+# de audio y las tareas en memoria para siempre. Ahora:
+#  - una sesion terminada se conserva SESSION_RECONNECT_GRACE_S para que el
+#    cliente reconecte (Fase 1.1) y despues se libera;
+#  - una sesion creada y nunca conectada se libera a los 5 minutos.
+SESSION_RECONNECT_GRACE_S = 60.0
+SESSION_UNUSED_TIMEOUT_S = 300.0
+
+
+def _cancel_task(task: Any) -> None:
+    if task and not task.done():
+        task.cancel()
+
+
+def _cancel_session_tasks(session: dict[str, Any]) -> None:
+    for key in ("processing_task", "unused_task", "cleanup_task"):
+        _cancel_task(session.get(key))
+    spec = session.get("spec_stt")
+    if spec:
+        _cancel_task(spec.get("task"))
+
+
+async def _cleanup_session_if_unused(session_id: str) -> None:
+    try:
+        await asyncio.sleep(SESSION_UNUSED_TIMEOUT_S)
+    except asyncio.CancelledError:
+        return
+    session = _active_sessions.get(session_id)
+    if session and not session.get("ws_authenticated"):
+        _active_sessions.pop(session_id, None)
+        logger.info("VoiceStream: sesion sin usar liberada session=%s", session_id)
+
+
+async def _cleanup_ended_session(session_id: str) -> None:
+    try:
+        await asyncio.sleep(SESSION_RECONNECT_GRACE_S)
+    except asyncio.CancelledError:
+        return
+    session = _active_sessions.get(session_id)
+    if session and session.get("state") == "ended":
+        _cancel_session_tasks(session)
+        _active_sessions.pop(session_id, None)
+        logger.info("VoiceStream: sesion abandonada liberada session=%s", session_id)
+
+
 _HTML_FILE_PATH = Path("/workspace/web/call_rafita.html")
 _LEGACY_HTML_PATH = Path("/workspace/call_rafita.html")
 
@@ -234,6 +281,9 @@ async def health():
 
 @app.get("/call/test_tts")
 async def test_tts():
+    wav = None
+    from src.utils.tts_manager import cleanup_tts_dir
+
     try:
         from src.utils.tts_manager import convert_to_ogg, text_to_speech
 
@@ -265,6 +315,8 @@ async def test_tts():
     except Exception as e:
         logger.exception("VoiceStream test_tts error")
         return JSONResponse(status_code=500, content={"status": "error", "reason": str(e)})
+    finally:
+        cleanup_tts_dir(wav)
 
 
 @app.post("/call/start")
@@ -306,6 +358,8 @@ async def start_call(request: Request):
         "silencio_ms": 0.0,
         "barge_ms": 0.0,
     }
+    session = _active_sessions[session_id]
+    session["unused_task"] = asyncio.create_task(_cleanup_session_if_unused(session_id))
 
     logger.info("VoiceStream: call started session=%s chat=%d", session_id, chat_id)
     return {"session_id": session_id, "ws_url": "/call/ws/%s" % session_id}
@@ -323,9 +377,9 @@ async def end_call(session_id: str, request: Request):
     # Colgado limpio (2026-09-27): antes la generacion/TTS seguian vivos tras
     # colgar y el navegador seguia reproduciendo audio en cola.
     session["state"] = "ended"
+    _cancel_session_tasks(session)
     task = session.get("processing_task")
     if task and not task.done():
-        task.cancel()
         try:
             await task
         except (asyncio.CancelledError, Exception):
@@ -442,6 +496,21 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
         await websocket.send_json({"type": "error", "message": "session not found"})
         await websocket.close()
         return
+    # Reconexion (Fase 1.1): la sesion existe con estado "ended" porque cayo
+    # el socket, no porque el usuario colgara (colgar hace pop). Revivirla;
+    # antes la UI decia "Reconectado" pero todo envio se descartaba y la
+    # llamada quedaba muda.
+    if session.get("state") == "ended":
+        _cancel_task(session.get("cleanup_task"))
+        session["state"] = "listening"
+        session["audio_buffer"] = io.BytesIO()
+        session["vad_chunks"] = 0
+        session["speech_ms"] = 0.0
+        session["silencio_ms"] = 0.0
+        session["barge_ms"] = 0.0
+        session["processing_task"] = None
+        logger.info("VoiceStream: sesion revivida tras reconexion session=%s", session_id)
+    _cancel_task(session.get("unused_task"))
     session["ws_authenticated"] = True
 
     logger.info("VoiceStream: WebSocket connected session=%s", session_id)
@@ -461,11 +530,13 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
 
                 if task and not task.done():
                     # Rafita esta respondiendo: solo se corta (barge-in) con voz
-                    # SOSTENIDA del usuario; un pico de ruido ya no la para.
+                    # SOSTENIDA del usuario; un pico de ruido ya no la para y,
+                    # desde 2026-10-03, interrumpir una respuesta en curso
+                    # exige aun mas voz (BARGE_MIN_MS_RESPUESTA).
                     if not session.get("ptt_mode"):
                         if _vad_adaptativo(audio_chunk, session):
                             session["barge_ms"] = session.get("barge_ms", 0.0) + chunk_ms
-                            if session["barge_ms"] >= BARGE_MIN_MS:
+                            if session["barge_ms"] >= BARGE_MIN_MS_RESPUESTA:
                                 await _interrupt(session, websocket, reason="barge_in")
                                 session["audio_buffer"] = io.BytesIO()
                                 session["audio_buffer"].write(audio_chunk)
@@ -549,12 +620,16 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.warning("VoiceStream: WebSocket error: %s", e)
     finally:
-        if session_id in _active_sessions:
-            session = _active_sessions[session_id]
+        session = _active_sessions.get(session_id)
+        if session:
             session["state"] = "ended"
-            task = session.get("processing_task")
-            if task and not task.done():
-                task.cancel()
+            _cancel_task(session.get("processing_task"))
+            spec = session.get("spec_stt")
+            if spec:
+                _cancel_task(spec.get("task"))
+            _cancel_task(session.get("unused_task"))
+            _cancel_task(session.get("cleanup_task"))
+            session["cleanup_task"] = asyncio.create_task(_cleanup_ended_session(session_id))
 
 
 def _maybe_schedule_speculative_stt(session: dict, source_rate: int) -> None:
@@ -598,8 +673,14 @@ VAD_MIN_RMS = 200
 VAD_MAX_RMS = 1000  # tope del umbral: la voz (RMS>1000) nunca se filtra
 VAD_FACTOR_RUIDO = 3.0
 BARGE_MIN_MS = 160
+# Barge-in mientras Rafita responde (2026-10-03): con ruido de fondo, 160 ms
+# de "voz" bastaban para interrumpir la respuesta y la llamada se quedaba sin
+# responder. Cortar una respuesta en curso exige voz mas sostenida.
+BARGE_MIN_MS_RESPUESTA = 300
 SILENCIO_FIN_MS = 320
-MIN_VOZ_MS = 120
+# 250 ms (antes 120): con 120 ms cualquier ruido puntual disparaba un STT
+# completo que saturaba la llamada ("se maree con el ruido y no responde").
+MIN_VOZ_MS = 250
 MAX_TURNO_MS = 30000
 
 

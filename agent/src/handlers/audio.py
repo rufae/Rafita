@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 
 from src.config import settings
 from src.logger import logger
-from src.utils.tts_manager import convert_to_ogg, text_to_speech
+from src.utils.tts_manager import cleanup_tts_dir, convert_to_ogg, text_to_speech
 
 _whisper_model = None
 
@@ -192,19 +192,22 @@ async def _send_voice_reply_fast(
             wav_path = await text_to_speech(chunk, engine=engine)
             if wav_path is None:
                 continue
-            ogg_path = await convert_to_ogg(wav_path)
-            if ogg_path and ogg_path.exists():
-                try:
-                    audio_data = ogg_path.read_bytes()
-                    audio_parts.append(audio_data)
-                    logger.info(
-                        "[AUDIO STREAM] Chunk %d/%d generado (%d bytes)",
-                        i + 1,
-                        len(chunks),
-                        len(audio_data),
-                    )
-                except Exception as e:
-                    logger.warning("Failed to read audio chunk: %s", e)
+            try:
+                ogg_path = await convert_to_ogg(wav_path)
+                if ogg_path and ogg_path.exists():
+                    try:
+                        audio_data = ogg_path.read_bytes()
+                        audio_parts.append(audio_data)
+                        logger.info(
+                            "[AUDIO STREAM] Chunk %d/%d generado (%d bytes)",
+                            i + 1,
+                            len(chunks),
+                            len(audio_data),
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to read audio chunk: %s", e)
+            finally:
+                cleanup_tts_dir(wav_path)
 
         if not audio_parts:
             await message.reply_text("No se pudo generar el audio de respuesta.")
