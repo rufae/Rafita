@@ -13,13 +13,56 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 
 ## Qué hace Rafita
 
-- **Habla contigo por Telegram** usando modelos locales (Ollama) — sin enviar tus mensajes a OpenAI ni a nadie
-- **Indexa tu vault de Obsidian** semánticamente (RAG con embeddings) — busca en tus notas como si las entendiera
-- **Aprende proactivamente**: detecta ideas, decisiones y datos personales en la conversación y los guarda solo en tu segundo cerebro
-- **Gestiona finanzas, agenda, recordatorios y credenciales** desde Telegram
-- **Procesa archivos** (PDF, DOCX, imágenes) — extrae texto con IA, los clasifica y los indexa
-- **Funciona offline**: si apagas el PC, al encender hace catch-up de todos los mensajes pendientes
-- **Detecta tu hardware** automáticamente y elige los modelos óptimos (CPU/GPU)
+### Conversación y herramientas
+- **Chat con IA local** (Ollama, p. ej. `gemma4:12b`) por **Telegram**, **web**
+  y **llamada de voz**, con el mismo cerebro en los tres canales.
+- **39 herramientas** que el modelo decide invocar solo (sin enrutado por
+  palabras clave): eventos, alertas, finanzas, contactos, correo, tareas,
+  Google Calendar/Drive/Gmail/Tasks, búsqueda web, bóveda, CRM, grafo de
+  conocimiento, n8n, exportaciones RGPD…
+- **Honestidad garantizada**: guardias deterministas impiden que el modelo
+  diga «he creado el evento» si ninguna herramienta lo hizo.
+
+### Segundo cerebro (RAG)
+- **Indexa tu vault de Obsidian** semánticamente (ChromaDB + `bge-m3`) con
+  chunking por encabezados y reindexado en vivo por watchdog.
+- **Búsqueda híbrida con citas**: reranking léxico + entidades + embeddings
+  (ideal para nombres propios) y respuestas con **citas `[S1]` y enlace
+  `obsidian://`** a la nota de origen.
+- **Grafo de conocimiento**: relaciones tipadas («Ana trabaja en Proyecto X»)
+  con tools `add_relation`/`search_relations`/`delete_relation`.
+- Aprendizaje de hechos (`remember_fact`), alias de contactos y conocimiento
+  personal cifrado (Fernet).
+
+### Voz
+- **Llamada en tiempo real** (pestaña Llamada de la web): transcripción con
+  Whisper (servicio `large-v3` en GPU con fallback local), VAD adaptativo
+  anti-ruido, barge-in por voz sostenida, TTS por frases (Piper/Kokoro) y
+  frases de espera si la respuesta tarda.
+- **Notas de voz por Telegram** (STT + respuesta hablada) y **dictado**: lee
+  direcciones de correo en voz alta («ejemplo punto ejemplo arroba gmail punto
+  com») y las entiende en chat, voz y llamada.
+- **Reuniones tipo NotebookLM**: graba micro/pestaña, transcribe, diariza
+  hablantes y genera resumen ejecutivo con tareas.
+
+### Correo y contactos
+- **Redactar correos** (`draft_gmail`: borrador en Gmail o en la bóveda) y
+  **enviarlos** (`send_gmail`), con destinatario por nombre (se resuelve con
+  tus contactos) o correo dictado.
+- **Buscar correos** (`search_gmail`) y **encontrar contactos** (`find_contact`)
+  por nombre, alias («mi madre») o correo.
+
+### Operación y privacidad
+- **Backups verificados**: restic cifrado al USB + Google Drive, copia horaria
+  de la BD, restore-drill mensual y alertas si el backup falla.
+- **Observabilidad**: métricas de latencia por herramienta y tokens LLM en
+  `/metrics`, y un vigilante de infraestructura (disco, IA, RAG, backup) que
+  avisa por Telegram solo cuando algo se degrada.
+- **RGPD**: `export_my_data` / `delete_my_data` y endpoints `/api/gdpr/*`.
+- **Secretos file-based** (Docker secrets), webhooks HMAC, bot privado por
+  whitelist y cifrado fail-closed de credenciales.
+- **Automatizaciones n8n** (briefing matutino, inbox zero, sync Google,
+  informe semanal, radar de IA, CRM…): ver [n8n/README.md](n8n/README.md).
 
 ## Filosofía
 
@@ -31,31 +74,29 @@ Esto no es un SaaS. Es una herramienta que instalas y posees.
 
 ## Arquitectura
 
-Despliegue en dos nodos (opcional; también funciona todo en una máquina):
+Despliegue típico en dos nodos con GPU opcional (también funciona todo en una
+máquina):
 
 ```
-Tu Telegram ──→ rafita-agent-core (nodo de aplicación) ──red privada──→ ollama (nodo de IA, gemma4:12b)
-                     │        │        │
-                SQLite   ChromaDB  Obsidian vault
-              (memoria)  (RAG)    (2º cerebro)
-                     │
-                     └── backup diario (restic cifrado) → USB
+Tu Telegram/Web/Voz ──→ rafita-agent-core ──red privada──→ ollama (GPU torre o CPU Dell)
+                            │        │        │
+                       SQLite   ChromaDB  Obsidian vault
+                      (memoria)  (RAG)    (2º cerebro)
+                            │
+                            └── backup diario (restic cifrado) → USB (+ Drive)
 ```
 
-- El nodo de IA **no guarda datos de usuario** (solo pesos de modelos,
-  re-descargables) y se accede por red privada cifrada (p. ej. Tailscale).
-- El nodo de aplicación ejecuta el bot, la base vectorial y la bóveda.
-- Backup diario automático solo si el USB está conectado, con aviso por
-  Telegram.
-
-También puede ejecutarse todo en una sola máquina (dos contenedores Docker,
-sin bases de datos externas); el despliegue de dos nodos es el que está en
-producción.
+- **Nodo de aplicación** (HP u otro): agente, base vectorial, bóveda, web.
+- **Nodo de IA** (torre con GPU o Dell): solo pesos de modelos; sin datos de
+  usuario. Conmutado automático GPU→CPU y `keep_alive` por backend.
+- **Backup diario** solo si el USB está conectado, con aviso por Telegram si
+  se omite o falla.
+- Todo funciona también en una sola máquina (dos contenedores Docker).
 
 ## Requisitos
 
 - Docker y Docker Compose
-- 8 GB de RAM mínimo (16 GB recomendado para bge-m3 + qwen2.5:7b)
+- 8 GB de RAM mínimo (16 GB recomendado para bge-m3 + gemma4:12b)
 - GPU NVIDIA opcional (acelera modelos grandes como gemma4:12b)
 - Un bot de Telegram (gratis, se crea con @BotFather)
 - Obsidian (opcional — para editar el vault con interfaz gráfica)
@@ -66,29 +107,42 @@ producción.
 
 ```bash
 git clone https://github.com/rufae/Rafita.git
-cd rafai
+cd Rafita
 cp .env.example .env
 # Edita .env: pon tu TELEGRAM_TOKEN de @BotFather
 docker compose up -d
 # Abre Telegram, busca tu bot, escribe /start
 ```
 
+`/start` muestra un **checklist de estado real** de la instalación (IA, Google,
+backups, voz, bóveda…) con el siguiente paso de cada pendiente.
+
 ## Comandos principales
 
 | Comando | Descripción |
 |---|---|
+| `/demo` | Recorrido guiado por las capacidades reales (ideal para presentaciones) |
+| `/ayuda` | Todos los comandos disponibles |
 | `/chat <mensaje>` | Hablar con Rafita. Invoca herramientas automáticamente |
+| `/evento <fecha> <título>` | Crear evento en la agenda |
+| `/eventos` | Listar eventos próximos |
+| `/alerta <mensaje>` | Crear una alerta |
+| `/gasto <cantidad> <cat>` | Registrar un gasto (también **por foto** de ticket) |
+| `/finanzas` | Resumen financiero del mes (tabla) |
 | `/cerebro` | Estadísticas del segundo cerebro |
 | `/resumen` | Resumen IA del contenido del vault |
-| `/escanear [fecha]` | Escanea mensajes pendientes de Telegram |
-| `/recordar [tema]` | Guarda la conversación como nota Zettelkasten |
-| `/gasto <cantidad> <cat>` | Registrar un gasto |
-| `/finanzas` | Resumen financiero del mes |
-| `/evento <título> <fecha>` | Crear evento en calendario |
+| `/recordar [tema]` | Guardar la conversación como nota Zettelkasten |
 | `/guardar_clave <srv> <val>` | Guardar API key cifrada (Fernet) |
-| `/status` | Panel de control del sistema |
+| `/ubicacion <ciudad>` | Fijar tu ciudad (tiempo y avisos CAP) |
+| `/backup` | Generar respaldo ZIP de datos |
+| `/setup_google` | Conectar Google (Calendar, Drive, Gmail, Contactos…) |
+| `/sync_google` | Copiar Google al segundo cerebro |
+| `/status` | Panel de control completo del sistema |
 
-[Ver documentación completa](#) para todos los comandos.
+En el **chat libre** (Telegram o web) puedes escribir cualquier cosa y el
+modelo decide qué herramientas usar: «busca en mis notas qué sabes de Ana»,
+«redacta un correo para…», «qué eventos tengo la próxima semana», «manda un
+mensaje a mamá»…
 
 ## Modelos IA
 
@@ -102,25 +156,28 @@ Rafita detecta tu hardware automáticamente y recomienda el perfil óptimo:
 
 También puedes configurar los modelos manualmente en `.env`.
 
-## Web propia (chat, baúl y llamada)
+## Web propia (chat, baúl, reuniones y llamada)
 
 Además de Telegram, Rafita sirve una **web propia (PWA instalable)** desde el
-gateway: chat con las mismas capacidades, un **baúl** para ver/crear/editar/
-borrar notas de la bóveda y una vista de **llamada** de voz en tiempo real.
-Los dos canales comparten el mismo Agent Core (la vía de Telegram nunca se
-desactiva). Login por **email y contraseña** (JWT) y, opcionalmente, **Sign in
-with Google**. Detalles de despliegue (proxy, puertos y usuarios) en
-[docs/web.md](docs/web.md).
+gateway:
+
+- **Chat** con las mismas herramientas (incluidos los comandos `/demo` y
+  `/ayuda`), **Baúl** para gestionar la bóveda, **Reuniones** (grabar y
+  transcribir) y **Llamada** de voz en tiempo real.
+- Login por **email y contraseña** (JWT) y, opcionalmente, **Sign in with
+  Google**.
+- **La llamada con micrófono requiere HTTPS o localhost** (restricción de los
+  navegadores): en móvil usa la URL segura de Tailscale o activa SSL en el
+  proxy. Ver [docs/web.md](docs/web.md) para puertos, proxy y configuración.
 
 ## Google es opcional
 
 Rafita funciona **sin cuenta de Google**: el calendario, las tareas y los
 ficheros viven en local (base de datos + bóveda Obsidian) y las mismas
-herramientas y comandos operan sobre ellos. Si conectas tu cuenta
-(`/setup_google`), esas herramientas pasan a usar Google Calendar, Tasks,
-Drive, Gmail y Contactos sin cambiar nada más; `/sync_google` copia los datos
-al segundo cerebro. Puedes usarlo en modo local y conectar Google más
-adelante.
+herramientas operan sobre ellos. Si conectas tu cuenta (`/setup_google` o el
+login con Google de la web), las herramientas pasan a usar Google Calendar,
+Tasks, Drive, Gmail y Contactos sin cambiar nada más; `/sync_google` copia los
+datos al segundo cerebro.
 
 ## Limitaciones conocidas
 
@@ -129,12 +186,11 @@ adelante.
   calibrado 0.49 con 0 falsos positivos (ver [ADR-003](docs/adr/003-model-selection.md)).
   Pendiente validar con bóvedas reales y más negativos.
 - **Fiabilidad de tools con gemma4:12b**: suite de 21 tools (2 intentos) →
-  **46/46 (100%)** en el despliegue de dos nodos, con el thinking del modelo
-  desactivado
-  (`reasoning_effort=none`). La medición anterior de 29/46 (63%) se hizo sin
-  ese ajuste y era efecto del razonamiento consumiendo los tokens.
-- **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a través de bind mounts. El watcher no funciona en este entorno. En Linux nativo funciona correctamente.
-- **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only. El sistema degrada automáticamente a qwen2.5:7b si no detecta GPU.
+  **46/46 (100%)** con el thinking desactivado (`reasoning_effort=none`).
+- **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a
+  través de bind mounts. En Linux nativo funciona correctamente.
+- **gemma4:12b requiere GPU**: no cabe en 16GB RAM en CPU-only. El sistema
+  degrada automáticamente a qwen2.5:7b si no detecta GPU.
 
 ## Desarrollo
 
@@ -146,7 +202,7 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests
+# Tests (≈1460, sin paralelo)
 pytest agent/tests -v
 
 # Todos los checks (pre-commit)
@@ -155,13 +211,25 @@ pre-commit run --all-files
 
 ## Seguridad
 
-Ver [docs/SECURITY.md](docs/SECURITY.md) para el modelo de amenaza completo, recomendaciones
-de cifrado en reposo y procedimiento de rotación de credenciales.
+Ver [docs/SECURITY.md](docs/SECURITY.md) para el modelo de amenaza completo,
+recomendaciones de cifrado en reposo y procedimiento de rotación de
+credenciales. Los secretos también pueden servirse desde ficheros
+([docs/secrets.md](docs/secrets.md)).
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | Instalación detallada |
+| [docs/web.md](docs/web.md) | Web, llamada, proxy y HTTPS |
+| [docs/secrets.md](docs/secrets.md) | Secretos file-based (Docker secrets) |
+| [docs/SECURITY.md](docs/SECURITY.md) | Seguridad y modelo de amenaza |
+| [n8n/README.md](n8n/README.md) | Automatizaciones n8n (qué hacen y cuándo) |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Cambios por versión |
 
 ## Contribuir
 
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
-- [docs/CHANGELOG.md](docs/CHANGELOG.md): cambios por versión (sección `Unreleased`).
 
 ## Licencia
 
