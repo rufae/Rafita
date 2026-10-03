@@ -1,6 +1,7 @@
 """Cobertura de src/utils/backup.py: respaldo ZIP de datos."""
 
 import io
+import sqlite3
 import zipfile
 from types import SimpleNamespace
 
@@ -39,7 +40,12 @@ def _prepare_data_dir(tmp_path, monkeypatch, with_db=True):
     db_dir = data_dir / "db"
     db_dir.mkdir(parents=True)
     if with_db:
-        (db_dir / "rafita.db").write_bytes(b"SQLITE")
+        # BD SQLite real: create_backup usa la API backup() (snapshot
+        # consistente con WAL) y un fichero falso no es valido.
+        con = sqlite3.connect(str(db_dir / "rafita.db"))
+        con.execute("CREATE TABLE t (x INTEGER)")
+        con.commit()
+        con.close()
     excels = data_dir / "excels"
     excels.mkdir()
     (excels / "gastos.csv").write_text("a,b", encoding="utf-8")
@@ -68,7 +74,7 @@ async def test_create_backup_includes_db_and_dirs(tmp_path, monkeypatch):
         assert "db/rafita.db" in names
         assert "excels/gastos.csv" in names
         assert "exports/informe.txt" in names
-        assert zf.read("db/rafita.db") == b"SQLITE"
+        assert zf.read("db/rafita.db").startswith(b"SQLite format 3")
     assert set(names) <= {"db/rafita.db", "excels/gastos.csv", "exports/informe.txt"}
 
 
