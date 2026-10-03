@@ -1,5 +1,6 @@
 """Cobertura de _execute_tool (handlers/chat.py): todas las ramas de herramientas."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -75,6 +76,18 @@ async def test_save_expense_survives_obsidian_failure(monkeypatch):
     )
     result = await chat_mod._execute_tool(1, "save_expense", {"amount": 3, "category": "comida"})
     assert result["success"]
+
+
+async def test_save_expense_accepts_string_amount(monkeypatch):
+    # El modelo manda a veces el importe como string; el f-string final
+    # reventaba con ValueError y el gasto se rechazaba.
+    _patch_db(monkeypatch)
+    monkeypatch.setattr("src.utils.obsidian_manager.create_or_append_note", _fn({"success": True}))
+    result = await chat_mod._execute_tool(
+        1, "save_expense", {"amount": "150.50", "category": "casa"}
+    )
+    assert result["success"]
+    assert "150.50" in result["message"]
 
 
 async def test_get_finance_summary_empty_and_populated(monkeypatch):
@@ -758,24 +771,17 @@ async def test_save_google_verification_code_variants(monkeypatch):
 
 
 async def test_get_google_calendar_events_variants(monkeypatch):
-    monkeypatch.setattr(
-        chat_mod.google_service,
-        "get_calendar_events",
-        _fn({"success": False, "message": "no auth"}),
-    )
-    failed = await chat_mod._execute_tool(1, "get_google_calendar_events", {})
-    assert failed["message"] == "no auth"
-
-    monkeypatch.setattr(
-        chat_mod.google_service, "get_calendar_events", _fn({"success": True, "events": []})
-    )
+    # Bug 2026-10-03: antes se llamaba al servicio legacy (google_service,
+    # sin autenticar) y respondia "usa /setup" aunque Google estaba conectado.
+    monkeypatch.setattr(chat_mod.google_services, "list_events", _fn([]))
+    monkeypatch.setattr(chat_mod.db, "get_upcoming_events", _fn([]))
     empty = await chat_mod._execute_tool(1, "get_google_calendar_events", {})
     assert "No hay eventos" in empty["message"]
 
     monkeypatch.setattr(
-        chat_mod.google_service,
-        "get_calendar_events",
-        _fn({"success": True, "events": [{"title": "Dentista", "start": "lunes"}]}),
+        chat_mod.google_services,
+        "list_events",
+        _fn([{"summary": "Dentista", "start": {"dateTime": "2099-01-01T10:00:00"}}]),
     )
     monkeypatch.setattr(
         "src.utils.obsidian_manager.sync_calendar_to_obsidian",
@@ -791,8 +797,8 @@ async def test_create_google_calendar_event_variants(monkeypatch):
     assert not missing["success"]
 
     monkeypatch.setattr(
-        chat_mod.google_service,
-        "create_calendar_event",
+        chat_mod.google_services,
+        "create_event",
         _fn({"success": True, "message": "creado", "html_link": "https://cal"}),
     )
     monkeypatch.setattr(
@@ -867,14 +873,14 @@ async def test_list_google_drive_variants(monkeypatch):
 
 async def test_read_google_drive_file_variants(monkeypatch):
     monkeypatch.setattr(
-        chat_mod.google_service, "read_drive_file", _fn({"success": False, "message": "404"})
+        chat_mod.google_services, "read_file", _fn({"success": False, "message": "404"})
     )
     failed = await chat_mod._execute_tool(1, "read_google_drive_file", {"file_id": "x"})
     assert failed["message"] == "404"
 
     monkeypatch.setattr(
-        chat_mod.google_service,
-        "read_drive_file",
+        chat_mod.google_services,
+        "read_file",
         _fn({"success": True, "name": "a.pdf", "text": "contenido", "truncated": True}),
     )
     ok = await chat_mod._execute_tool(1, "read_google_drive_file", {"file_id": "x"})
@@ -1251,3 +1257,262 @@ async def test_manage_google_calendar_acepta_alias_de_accion(monkeypatch):
     )
     assert result["success"]
     assert llamadas
+
+
+# ---------- citas [S#] en search_second_brain (mejora 1) ----------
+
+
+async def test_search_second_brain_con_citas(monkeypatch):
+    _patch_db(monkeypatch)
+    resultado_busqueda = {
+        "success": True,
+        "results": [
+            {
+                "content": "Ana trabaja en el proyecto Babel",
+                "relevance": "0.900",
+                "note_path": "personas/ana.md",
+                "heading": "Trabajo",
+                "obsidian_uri": "obsidian://open?file=ana",
+                "tags": [],
+            }
+        ],
+        "notes_found": ["personas/ana.md"],
+        "message": "Encontrados 1 fragmentos relevantes en 1 nota.",
+    }
+    monkeypatch.setattr(chat_mod.vector_db, "query", _fn(resultado_busqueda))
+    from src.utils.citations import citations
+
+    citations.reset()
+    result = await chat_mod._execute_tool(1, "search_second_brain", {"query": "Ana"})
+    citations.clear()
+    assert result["success"]
+    assert "[S1]" in result["message"]
+    assert "personas/ana.md" in result["message"]
+    assert result["sources"][0]["id"] == "S1"
+    assert result["sources"][0]["obsidian_uri"] == "obsidian://open?file=ana"
+
+
+# ---------- grafo de conocimiento (mejora 8) ----------
+
+
+async def test_add_relation_y_search_relations(monkeypatch):
+    _patch_db(monkeypatch)
+    monkeypatch.setattr(
+        chat_mod.db,
+        "add_relation",
+        _fn(
+            {
+                "success": True,
+                "relation": {
+                    "id": 1,
+                    "subject": "Ana",
+                    "predicate": "trabaja_en",
+                    "object": "Babel",
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        chat_mod.db,
+        "search_relations",
+        _fn([{"id": 1, "subject": "Ana", "predicate": "trabaja_en", "object": "Babel"}]),
+    )
+    result = await chat_mod._execute_tool(
+        1, "add_relation", {"subject": "Ana", "predicate": "Trabaja_En", "object": "Babel"}
+    )
+    assert result["success"]
+    assert "Ana" in result["message"]
+
+    result = await chat_mod._execute_tool(1, "search_relations", {"query": "Ana"})
+    assert result["success"]
+    assert "[1]" in result["message"]
+    assert "trabaja_en" in result["message"]
+
+
+async def test_add_relation_invalida_y_search_vacia(monkeypatch):
+    _patch_db(monkeypatch)
+    monkeypatch.setattr(
+        chat_mod.db,
+        "add_relation",
+        _fn({"success": False, "message": "Sujeto, predicado y objeto son obligatorios."}),
+    )
+    monkeypatch.setattr(chat_mod.db, "search_relations", _fn([]))
+    result = await chat_mod._execute_tool(1, "add_relation", {"subject": "Ana"})
+    assert not result["success"]
+
+    result = await chat_mod._execute_tool(1, "search_relations", {})
+    assert result["success"]
+    assert "NO_ENCONTRADO" in result["message"]
+
+
+async def test_delete_relation(monkeypatch):
+    _patch_db(monkeypatch)
+    monkeypatch.setattr(chat_mod.db, "delete_relation", _fn(True))
+    result = await chat_mod._execute_tool(1, "delete_relation", {"relation_id": "3"})
+    assert result["success"]
+    assert "3" in result["message"]
+
+    result = await chat_mod._execute_tool(1, "delete_relation", {"relation_id": "x"})
+    assert not result["success"]
+
+
+# ---------- RGPD (mejora 7) ----------
+
+
+async def test_export_my_data(monkeypatch, tmp_path):
+    _patch_db(monkeypatch)
+    monkeypatch.setattr(
+        chat_mod.db,
+        "export_user_data",
+        _fn({"chat_id": 1, "chat_history": [{"id": 1}], "events": [{"id": 2}]}),
+    )
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    result = await chat_mod._execute_tool(1, "export_my_data", {})
+    assert result["success"]
+    assert result["counts"]["chat_history"] == 1
+    assert Path(result["path"]).exists()
+
+
+async def test_delete_my_data_pide_confirmacion(monkeypatch):
+    _patch_db(monkeypatch)
+    monkeypatch.setattr(chat_mod.db, "delete_user_data", _fn({"chat_history": 2}))
+
+    result = await chat_mod._execute_tool(1, "delete_my_data", {})
+    assert not result["success"]
+    assert "confirm" in result["message"].lower() or "CONFIRMA" in result["message"]
+
+    result = await chat_mod._execute_tool(1, "delete_my_data", {"confirm": True})
+    assert result["success"]
+    assert "chat_history" in result["message"]
+
+
+# ---------- métricas por herramienta (mejora 2) ----------
+
+
+async def test_execute_tool_measured_registra_metricas(monkeypatch):
+    _patch_db(monkeypatch)
+    from src.utils.telemetry import metrics
+
+    metrics.reset()
+    result = await chat_mod.execute_tool_measured(1, "get_finance_summary", {})
+    assert result["success"] is True
+    counters = metrics.get_counters()
+    assert counters.get("tool_calls") == 1
+    assert counters.get("tool_calls.get_finance_summary") == 1
+    assert metrics.get_histogram_stats("tool_latency_ms")["count"] == 1
+    assert metrics.get_histogram_stats("tool_latency_ms.get_finance_summary")["count"] == 1
+    metrics.reset()
+
+
+# ---------- correos: redactar (draft_gmail) y dictado (mejora demo) ----------
+
+
+async def test_draft_gmail_requiere_destinatario_y_cuerpo(monkeypatch):
+    _patch_db(monkeypatch)
+    result = await chat_mod._execute_tool(1, "draft_gmail", {"to": "x@y.z"})
+    assert not result["success"]
+    result = await chat_mod._execute_tool(1, "draft_gmail", {"body": "solo cuerpo"})
+    assert not result["success"]
+
+
+async def test_draft_gmail_llama_create_draft_con_correo_normalizado(monkeypatch):
+    _patch_db(monkeypatch)
+    llamadas = []
+
+    async def fake_draft(to, subject, body):
+        llamadas.append((to, subject, body))
+        return {"success": True, "message": "Borrador creado para %s" % to}
+
+    monkeypatch.setattr(chat_mod.google_services, "create_draft", fake_draft)
+    result = await chat_mod._execute_tool(
+        1,
+        "draft_gmail",
+        {
+            "to": "ejemplo punto ejemplo arroba gmail punto com",
+            "subject": "Prueba",
+            "body": "Hola, esto es una prueba.",
+        },
+    )
+    assert result["success"]
+    assert llamadas == [("ejemplo.ejemplo@gmail.com", "Prueba", "Hola, esto es una prueba.")]
+
+
+async def test_find_contact_normaliza_correo_dictado(monkeypatch):
+    _patch_db(monkeypatch)
+    vistas = []
+
+    async def fake_find(query, max_results=5):
+        vistas.append(query)
+        return {
+            "contacts": [
+                {"name": "Ana", "email": "ejemplo.ejemplo@gmail.com", "phone": "600111222"}
+            ]
+        }
+
+    monkeypatch.setattr(chat_mod.google_services, "find_contact", fake_find)
+    result = await chat_mod._execute_tool(
+        1, "find_contact", {"query": "ejemplo punto ejemplo arroba gmail punto com"}
+    )
+    assert result["success"]
+    assert vistas and "@" in vistas[0]
+    assert "ejemplo.ejemplo@gmail.com" in result["message"]
+
+
+# ---------- calendario: usar el manager autenticado (bug 2026-10-03) ----------
+
+
+async def test_get_google_calendar_events_usa_google_conectado(monkeypatch):
+    _patch_db(monkeypatch)
+
+    async def fake_list(max_results=10, time_min=None):
+        return [
+            {"summary": "Reunión", "start": {"dateTime": "2099-01-01T10:00:00"}},
+        ]
+
+    monkeypatch.setattr(chat_mod.google_services, "list_events", fake_list)
+    monkeypatch.setattr(
+        "src.utils.obsidian_manager.sync_calendar_to_obsidian", _fn({"message": ""})
+    )
+    result = await chat_mod._execute_tool(1, "get_google_calendar_events", {})
+    assert result["success"]
+    assert "Reunión" in result["message"]
+
+
+async def test_get_google_calendar_events_falla_a_agenda_local(monkeypatch):
+    _patch_db(monkeypatch)
+
+    async def broken(max_results=10, time_min=None):
+        raise RuntimeError("google caido")
+
+    monkeypatch.setattr(chat_mod.google_services, "list_events", broken)
+    monkeypatch.setattr(
+        chat_mod.db,
+        "get_upcoming_events",
+        _fn([{"title": "Local", "event_datetime": "2099-01-01 10:00:00"}]),
+    )
+    monkeypatch.setattr(
+        "src.utils.obsidian_manager.sync_calendar_to_obsidian", _fn({"message": ""})
+    )
+    result = await chat_mod._execute_tool(1, "get_google_calendar_events", {})
+    assert result["success"]
+    assert "Local" in result["message"]
+    assert "/setup" not in result["message"]
+
+
+async def test_get_google_calendar_events_filtra_por_dias(monkeypatch):
+    _patch_db(monkeypatch)
+
+    async def fake_list(max_results=10, time_min=None):
+        return [
+            {"summary": "Cerca", "start": {"dateTime": "2000-01-02T10:00:00"}},
+            {"summary": "Lejos", "start": {"dateTime": "2099-01-01T10:00:00"}},
+        ]
+
+    monkeypatch.setattr(chat_mod.google_services, "list_events", fake_list)
+    monkeypatch.setattr(
+        "src.utils.obsidian_manager.sync_calendar_to_obsidian", _fn({"message": ""})
+    )
+    result = await chat_mod._execute_tool(1, "get_google_calendar_events", {"days": 7})
+    assert result["success"]
+    assert "Cerca" in result["message"]
+    assert "Lejos" not in result["message"]

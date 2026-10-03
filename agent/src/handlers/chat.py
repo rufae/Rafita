@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from src.services.google_service import google_service
 from src.services.google_services_manager import google_services
 from src.utils import obsidian_manager as ob
 from src.utils import workspace_manager as wm
+from src.utils.citations import citations
 from src.utils.google_calendar_manager import gcal
 from src.utils.obsidian_manager import move_or_rename_file as obsidian_move_rename
 from src.utils.telemetry import metrics, new_correlation_id
@@ -38,38 +40,47 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     welcome = (
         f"¡Hola {user.first_name}! Soy {settings.assistant_name}, tu asistente virtual personal.\n\n"
-        "Estoy potenciado por Qwen 2.5 7B (Ollama) para respuesta rápida en texto "
-        "y Gemma 4 12B para análisis de imágenes, todo de forma local y privada.\n\n"
-        "Usa /ayuda para ver todos los comandos disponibles."
+        "Estoy potenciado por IA local (Ollama) y todo se ejecuta en tus equipos, "
+        "de forma privada.\n\n"
+        "Usa /ayuda para ver todos los comandos disponibles.\n\n"
+        "Este es el estado de tu instalación (onboarding guiado):"
     )
     await update.effective_message.reply_text(welcome)
     try:
-        from src.database import db
+        from src.utils.onboarding import collect_onboarding_status, render_onboarding
+        from src.utils.telegram_fmt import reply_md
 
-        configured = (await db.kv_get("briefing_municipio")) or (
-            settings.briefing_municipio or ""
-        ).strip()
-    except Exception:
-        configured = None
-    if not configured:
+        checklist = await collect_onboarding_status()
+        await reply_md(update.effective_message, render_onboarding(checklist))
+    except Exception as e:
+        logger.warning("Onboarding no disponible: %s", e)
         await update.effective_message.reply_text(
-            "Antes de empezar, dime de dónde eres para darte el tiempo de tu "
-            "zona y sus avisos:\n`/ubicacion Sevilla` "
-            "(o tu ciudad, o tu código INE de 5 dígitos)."
+            "Usa /ayuda para ver todos los comandos disponibles."
         )
     logger.info("User %d started the bot", user.id)
 
 
-async def ayuda_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def build_ayuda_text() -> str:
+    """Texto de ayuda de comandos (Telegram y web)."""
+    from src.utils.telegram_fmt import escape_md
+
     lines = ["*Comandos disponibles:*\n"]
     for cmd in COMMANDS_REGISTRY:
-        lines.append(f"/{cmd.command} - {cmd.description}")
+        # escape_md: el Markdown legado de Telegram revienta con '_' suelto
+        # (modo_voz) y el comando entero se caia con "Can't parse".
+        lines.append("/%s - %s" % (escape_md(cmd.command), escape_md(cmd.description)))
     lines.append(
         "\n*Chat libre:* También puedes escribir cualquier mensaje y yo lo "
         "procesaré con IA, incluyendo acciones como registrar gastos, "
         "crear eventos o alertas automáticamente."
     )
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return "\n".join(lines)
+
+
+async def ayuda_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from src.utils.telegram_fmt import reply_md
+
+    await reply_md(update.effective_message, build_ayuda_text())
 
 
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -531,7 +542,7 @@ async def _process_ai_message(
                 func_name,
                 args,
             )
-            result = await _execute_tool(chat_id, func_name, args)
+            result = await execute_tool_measured(chat_id, func_name, args)
             if func_name == "search_second_brain":
                 try:
                     search_result = await vector_db.query(
@@ -662,6 +673,7 @@ async def _send_response_with_audio_interceptor(update, context, text: str) -> N
             audio_text = audio_text.strip()
             if not audio_text:
                 continue
+            wav_path = None
             try:
                 import io as _io
 
@@ -689,6 +701,11 @@ async def _send_response_with_audio_interceptor(update, context, text: str) -> N
                 logger.exception("[AUDIO INTERCEPTOR] Error generando audio: %s", e)
                 if not clean_text:
                     await message.reply_text(audio_text)
+            finally:
+                if wav_path is not None:
+                    from src.utils.tts_manager import cleanup_tts_dir
+
+                    cleanup_tts_dir(wav_path)
 
         if clean_text:
             await _reply_formatted(message, clean_text)
@@ -940,6 +957,24 @@ async def _resolve_contact_alias(chat_id: int, query: str) -> str:
     return ""
 
 
+async def execute_tool_measured(
+    chat_id: int, func_name: str, args: dict[str, Any]
+) -> dict[str, Any]:
+    """Ejecuta una herramienta midiendo latencia y llamadas (mejora 2).
+
+    Los datos acaban en `/metrics` (latencia global y por herramienta).
+    """
+    t0 = time.perf_counter()
+    try:
+        return await _execute_tool(chat_id, func_name, args)
+    finally:
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        metrics.observe("tool_latency_ms", elapsed_ms)
+        metrics.observe("tool_latency_ms.%s" % func_name, elapsed_ms)
+        metrics.inc("tool_calls")
+        metrics.inc("tool_calls.%s" % func_name)
+
+
 async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> dict[str, Any]:
     metrics.inc("tool_calls_total")
     metrics.inc("tool_calls_%s" % func_name)
@@ -962,12 +997,19 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             }
     try:
         if func_name == "save_expense":
+            # Normalizar aqui: el modelo manda a veces el importe como string
+            # ("150.50") y el f-string final (: .2f) reventaba con ValueError,
+            # rechazando un gasto valido con "tool_exception".
             amount = args.get("amount", 0)
+            try:
+                amount = float(amount)
+            except (TypeError, ValueError):
+                amount = 0.0
             category = args.get("category", "otros")
             description = args.get("description")
             record_id = await db.add_finance_record(
                 chat_id=chat_id,
-                amount=float(amount),
+                amount=amount,
                 category="expense",
                 subcategory=category,
                 description=description,
@@ -983,7 +1025,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     date_str,
                     (description or category)[:50],
                     category,
-                    float(amount),
+                    amount,
                     currency_symbol(),
                 )
                 await create_or_append_note(
@@ -1398,8 +1440,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                         "sobre '%s'. Puedo buscar en internet si lo deseas." % query[:100]
                     ),
                 }
-            lines = ["*Tu segundo cerebro dice:*\n"]
-            for i, r in enumerate(result["results"], 1):
+            lines = [
+                "*Tu segundo cerebro dice:*\n",
+                "Cada fragmento lleva su cita [S1], [S2]... Termina con su cita cada "
+                "afirmacion que uses de aqui (ej: [S1]) y NO escribas ninguna seccion "
+                "'Fuentes': la anade el sistema.\n",
+            ]
+            sources = []
+            for r in result["results"]:
                 relevance = float(r.get("relevance", 0))
                 note_path = r.get("note_path", r.get("source", "desconocido"))
                 heading = r.get("heading", "")
@@ -1407,10 +1455,19 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 content = r["content"].strip()[:600]
                 heading_info = (" \u2192 %s" % heading) if heading else ""
                 cite = " [abrir en Obsidian](%s)" % obsidian_uri if obsidian_uri else ""
+                sid = citations.add(note_path, heading, obsidian_uri)
+                sources.append(
+                    {
+                        "id": sid,
+                        "note_path": note_path,
+                        "heading": heading,
+                        "obsidian_uri": obsidian_uri,
+                    }
+                )
                 lines.append(
-                    "%d. *%s*%s (%.0f%%)\n   > %s%s\n"
+                    "[%s] *%s*%s (%.0f%%)\n   > %s%s\n"
                     % (
-                        i,
+                        sid,
                         note_path,
                         heading_info,
                         relevance * 100,
@@ -1421,7 +1478,97 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             if result.get("notes_found"):
                 lines.append("\n*Notas de origen:* %s" % ", ".join(result["notes_found"]))
             lines.append("\n_Puedes verificar esta informacion en tu vault de Obsidian._")
-            return {"success": True, "message": "\n".join(lines)}
+            return {"success": True, "message": "\n".join(lines), "sources": sources}
+
+        elif func_name == "add_relation":
+            rel = await db.add_relation(
+                chat_id,
+                str(args.get("subject", "") or "").strip(),
+                str(args.get("predicate", "") or "").strip(),
+                str(args.get("object", "") or "").strip(),
+                source=str(args.get("source", "") or "conversacion"),
+            )
+            if not rel.get("success"):
+                return rel
+            data = rel.get("relation") or {}
+            return {
+                "success": True,
+                "message": "Relacion guardada: %s — %s — %s (id %s)."
+                % (
+                    data.get("subject", "?"),
+                    data.get("predicate", "?"),
+                    data.get("object", "?"),
+                    data.get("id", "?"),
+                ),
+            }
+
+        elif func_name == "search_relations":
+            relations = await db.search_relations(
+                chat_id,
+                query=str(args.get("query", "") or "").strip(),
+                subject=str(args.get("subject", "") or "").strip(),
+            )
+            if not relations:
+                return {
+                    "success": True,
+                    "message": "NO_ENCONTRADO: no hay relaciones guardadas que coincidan.",
+                }
+            lines = ["Relaciones en tu grafo de conocimiento:"]
+            for rel in relations:
+                lines.append(
+                    "- [%s] %s — %s — %s"
+                    % (rel.get("id"), rel.get("subject"), rel.get("predicate"), rel.get("object"))
+                )
+            return {"success": True, "message": "\n".join(lines), "relations": relations}
+
+        elif func_name == "delete_relation":
+            try:
+                rel_id = int(args.get("relation_id"))
+            except (TypeError, ValueError):
+                return {"success": False, "message": "relation_id debe ser un numero entero."}
+            deleted = await db.delete_relation(chat_id, rel_id)
+            return {
+                "success": deleted,
+                "message": "Relacion %d borrada." % rel_id
+                if deleted
+                else "No existe la relacion %d." % rel_id,
+            }
+
+        elif func_name == "export_my_data":
+            data = await db.export_user_data(chat_id)
+            export_dir = Path(settings.data_path) / "exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_path = export_dir / ("rgpd_export_%d_%s.json" % (chat_id, stamp))
+            file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            counts = {k: len(v) for k, v in data.items() if isinstance(v, list)}
+            return {
+                "success": True,
+                "message": (
+                    "Exportacion RGPD generada en %s. Registros: %s."
+                    % (file_path, json.dumps(counts, ensure_ascii=False))
+                ),
+                "path": str(file_path),
+                "counts": counts,
+            }
+
+        elif func_name == "delete_my_data":
+            if args.get("confirm") is not True:
+                return {
+                    "success": False,
+                    "message": (
+                        "ATENCION: esta accion borra TODOS tus datos (historial de chat, "
+                        "conocimiento personal, eventos, alertas, finanzas, relaciones, "
+                        "reuniones y sesiones de voz) de forma irreversible. Si estas "
+                        "seguro, vuelve a llamar con confirm=true."
+                    ),
+                }
+            deleted = await db.delete_user_data(chat_id)
+            return {
+                "success": True,
+                "message": "Datos borrados de forma irreversible: %s."
+                % json.dumps(deleted, ensure_ascii=False),
+            }
 
         elif func_name == "manage_crm":
             from src.services.crm_service import handle as crm_handle
@@ -1651,20 +1798,65 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return result
 
         elif func_name == "get_google_calendar_events":
+            from datetime import timedelta
+
             max_results = min(int(args.get("max_results", 10)), 25)
-            result = await google_service.get_calendar_events(max_results=max_results)
-            if not result.get("success"):
-                return result
-            events = result.get("events", [])
+            try:
+                days_ahead = int(args.get("days") or args.get("days_ahead") or 0)
+            except (TypeError, ValueError):
+                days_ahead = 0
+            events = []
+            if google_services.is_ready:
+                # Bug 2026-10-03: antes se usaba `google_service` (la cuenta
+                # de servicio, sin autenticar) y respondia "usa /setup_google"
+                # aunque el usuario habia entrado con Google en la web.
+                try:
+                    raw = await google_services.list_events(max_results=max_results)
+                    for item in raw:
+                        inicio = item.get("start") or {}
+                        events.append(
+                            {
+                                "title": item.get("summary", "(sin título)"),
+                                "start": inicio.get("dateTime") or inicio.get("date") or "",
+                            }
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "get_google_calendar_events: Google falló (%s); uso la agenda local", e
+                    )
+                    events = []
+            if not events:
+                events = [
+                    {"title": e.get("title", "?"), "start": e.get("event_datetime", "?")}
+                    for e in await db.get_upcoming_events(chat_id)
+                ]
+            if days_ahead > 0:
+                limite = datetime.utcnow() + timedelta(days=days_ahead)
+                en_plazo = []
+                for ev in events:
+                    try:
+                        cuando = datetime.fromisoformat(
+                            str(ev.get("start") or "").replace("Z", "+00:00").replace(" ", "T")
+                        ).replace(tzinfo=None)
+                    except ValueError:
+                        en_plazo.append(ev)
+                        continue
+                    if cuando <= limite:
+                        en_plazo.append(ev)
+                events = en_plazo
             if not events:
                 return {
                     "success": True,
-                    "message": "No hay eventos proximos en tu Google Calendar.",
+                    "message": (
+                        "No hay eventos en ese periodo. Puedes crear uno con "
+                        "'apunta una cita' o ver todos con /eventos."
+                    ),
                 }
             from src.utils.obsidian_manager import sync_calendar_to_obsidian
 
             sync_result = await sync_calendar_to_obsidian(events)
-            lines = ["📅 *Proximos eventos de Google Calendar:*"]
+            label = "los próximos %d días" % days_ahead if days_ahead > 0 else "próximos"
+            lines = ["📅 Eventos %s:" % label]
             for ev in events:
                 lines.append("  • %s - %s" % (ev["title"], ev["start"]))
             lines.append("\n%s" % sync_result.get("message", ""))
@@ -1687,12 +1879,32 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "success": False,
                     "message": "Titulo y fecha/hora de inicio son obligatorios.",
                 }
-            result = await google_service.create_calendar_event(
-                title=title,
-                start_datetime=start_dt,
-                end_datetime=end_dt,
-                description=description,
-            )
+            result = {}
+            if google_services.is_ready:
+                # Mismo bug que get_google_calendar_events: google_service es
+                # la cuenta de servicio sin autenticar.
+                try:
+                    result = await google_services.create_event(
+                        title, start_dt, end_dt, description=description
+                    )
+                except Exception as e:
+                    logger.warning("create_google_calendar_event: Google falló (%s)", e)
+                    result = {}
+            if not result.get("success"):
+                event_id = await db.add_event(chat_id, title, start_dt, description)
+                result = {
+                    "success": True,
+                    "message": (
+                        "Evento '%s' guardado en tu agenda local (id %s).%s"
+                        % (
+                            title,
+                            event_id,
+                            ""
+                            if google_services.is_ready
+                            else " Google no está conectado; si lo conectas, se creará también allí.",
+                        )
+                    ),
+                }
             if result.get("success"):
                 from src.utils.obsidian_manager import sync_calendar_to_obsidian
 
@@ -1768,7 +1980,27 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return {"success": True, "files": files, "message": "\n".join(lines)}
 
         elif func_name == "read_google_drive_file":
-            result = await google_service.read_drive_file(file_id=args.get("file_id", ""))
+            file_id = args.get("file_id", "")
+            if google_services.is_ready:
+                # Bug 2026-10-03: google_service.read_drive_file era la cuenta
+                # de servicio sin autenticar; el manager (google_services) es
+                # el que tiene la sesion del usuario.
+                try:
+                    result = await google_services.read_file(file_id=file_id)
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "message": "No pude leer el fichero: %s" % str(e)[:150],
+                    }
+            else:
+                result = {
+                    "success": False,
+                    "message": (
+                        "Google Drive no está conectado (has entrado con Google en la web "
+                        "pero la sesión no está activa). Di 'conecta Google' o usa "
+                        "/setup_google y lo reintento."
+                    ),
+                }
             if not result.get("success"):
                 return result
             return {
@@ -1814,6 +2046,18 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             if not to or not body:
                 return {"success": False, "message": "Necesito destinatario y cuerpo del correo."}
             result = await google_services.send_email(to=to, subject=subject, body=body)
+            return result
+
+        elif func_name == "draft_gmail":
+            from src.utils.voice_text import normalize_dictated_email
+
+            to = normalize_dictated_email(args.get("to", "")) or ""
+            to = to.strip()
+            subject = args.get("subject", "").strip()
+            body = args.get("body", "").strip()
+            if not to or not body:
+                return {"success": False, "message": "Necesito destinatario y cuerpo del borrador."}
+            result = await google_services.create_draft(to=to, subject=subject, body=body)
             return result
 
         elif func_name == "manage_google_tasks":
@@ -1976,7 +2220,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             }
 
         elif func_name == "find_contact":
-            query = _limpiar_consulta_contacto(args.get("query", ""))
+            from src.utils.voice_text import normalize_dictated_email
+
+            # El usuario puede dictar el correo ('ejemplo punto ejemplo arroba
+            # gmail punto com') en vez del nombre: se normaliza antes de buscar.
+            consulta_dictada = normalize_dictated_email(args.get("query", "")) or args.get(
+                "query", ""
+            )
+            query = _limpiar_consulta_contacto(consulta_dictada)
             # Alias aprendidos (2026-09-27): 'mi madre' -> 'Aa Mama' (guardado
             # con remember_fact) resuelve sin ambiguedades. Solo se aplica a
             # expresiones con posesivo ('mi madre'), no a 'Mama Raulito'.
