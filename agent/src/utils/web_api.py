@@ -252,6 +252,21 @@ async def web_chat(request: Request, user: dict[str, Any] = Depends(require_user
     if not message:
         raise HTTPException(status_code=400, detail="Mensaje vacio")
     chat_id = WEB_CHAT_BASE + int(user["id"])
+
+    # Comandos tipo Telegram también en el chat web (mejora demo 2026-10-03):
+    # '/demo' y '/ayuda' ejecutan lo mismo que en Telegram en vez de caer en
+    # el modelo como texto libre.
+    if message.startswith("/"):
+        comando = message.split()[0].lstrip("/").lower()
+        if comando == "demo":
+            from src.handlers.demo import build_demo_text
+
+            return {"reply": (await build_demo_text(chat_id))[:4000], "chat_id": chat_id}
+        if comando in ("ayuda", "help", "start"):
+            from src.handlers.chat import build_ayuda_text
+
+            return {"reply": build_ayuda_text(), "chat_id": chat_id}
+
     from src.core import generate_response
 
     reply = await generate_response(message, chat_id)
@@ -394,9 +409,18 @@ async def meetings_create(
 ):
     from src.services import meeting_service
 
-    datos = await file.read()
+    # Limite antes de leer: antes se hacia await file.read() completo y el
+    # limite de 200 MB se comprobaba despues, asi que un audio enorme podia
+    # agotar la RAM del proceso.
+    datos = await file.read(meeting_service.MAX_AUDIO_BYTES + 1)
     if not datos:
         raise HTTPException(status_code=400, detail="Audio vacio")
+    if len(datos) > meeting_service.MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Audio demasiado grande (max %d MB)"
+            % (meeting_service.MAX_AUDIO_BYTES // 1024 // 1024),
+        )
     try:
         resultado = await meeting_service.crear_desde_subida(
             int(user["id"]), title, file.filename or "audio.webm", datos
@@ -460,3 +484,33 @@ async def meetings_delete(
     if not await meeting_service.borrar(meeting_id, int(user["id"]), borrar_nota=borrar_nota):
         raise HTTPException(status_code=404, detail="Reunion no encontrada")
     return {"success": True}
+
+
+# ---------- RGPD (mejora 7): exportar y borrar datos ----------
+
+
+@router.get("/gdpr/export")
+async def gdpr_export(user: dict[str, Any] = Depends(require_user)):
+    """Derecho de acceso: exporta todos los datos del usuario en JSON."""
+    uid = int(user["id"])
+    # Los datos web viven en dos espacios de id: el chat en WEB_CHAT_BASE+id
+    # (web_api) y las reuniones en user_id.
+    data = await db.export_user_data(WEB_CHAT_BASE + uid, uid)
+    return data
+
+
+@router.post("/gdpr/delete")
+async def gdpr_delete(request: Request, user: dict[str, Any] = Depends(require_user)):
+    """Derecho de supresión: borra todos los datos del usuario (confirm=true)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Esta accion borra todos tus datos de forma irreversible; envia confirm=true",
+        )
+    uid = int(user["id"])
+    deleted = await db.delete_user_data(WEB_CHAT_BASE + uid, uid)
+    return {"success": True, "deleted": deleted}

@@ -837,3 +837,148 @@ async def test_search_gmail_reads_message_metadata():
     assert result["count"] == 1
     assert result["messages"][0]["subject"] == "Factura"
     assert result["messages"][0]["from"] == "banco@x.com"
+
+
+async def test_send_email_normaliza_correo_dictado():
+    captured = {}
+
+    class _Messages:
+        def send(self, **kwargs):
+            captured.update(kwargs)
+            return _Req({"id": "m1"})
+
+    manager = _manager(
+        _gmail=SimpleNamespace(users=lambda: SimpleNamespace(messages=lambda: _Messages()))
+    )
+
+    async def no_contacts(query, max_results=5):
+        raise AssertionError("no debe buscar contactos: el correo ya tiene @ tras normalizar")
+
+    manager.find_contact = no_contacts
+    result = await manager.send_email("anabel arroba gmail punto com", "Hola", "Cuerpo")
+    assert result["success"] is True
+    assert "anabel@gmail.com" in result["message"]
+
+
+async def test_send_email_resuelve_nombre_por_contactos():
+    class _Messages:
+        def send(self, **kwargs):
+            return _Req({"id": "m2"})
+
+    manager = _manager(
+        _gmail=SimpleNamespace(users=lambda: SimpleNamespace(messages=lambda: _Messages()))
+    )
+
+    async def fake_contacts(query, max_results=5):
+        return {"contacts": [{"name": "Mama", "email": "mama@x.com", "phone": ""}]}
+
+    manager.find_contact = fake_contacts
+    result = await manager.send_email("mama", "hola", "cuerpo")
+    assert result["success"] is True
+    assert "mama@x.com" in result["message"]
+
+
+async def test_create_draft_no_envia():
+    captured = {}
+
+    class _Drafts:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _Req({"id": "d1"})
+
+    manager = _manager(
+        _gmail=SimpleNamespace(users=lambda: SimpleNamespace(drafts=lambda: _Drafts()))
+    )
+    result = await manager.create_draft(
+        "ejemplo punto ejemplo arroba gmail punto com", "Asunto", "Cuerpo"
+    )
+    assert result["success"] is True
+    assert "NO se ha enviado" in result["message"]
+    assert "ejemplo.ejemplo@gmail.com" in result["message"]
+    assert "raw" in captured["body"]["message"]
+
+
+async def test_create_draft_requiere_destinatario():
+    manager = _manager()
+
+    async def no_contacts(query, max_results=5):
+        return {"contacts": []}
+
+    manager.find_contact = no_contacts
+    result = await manager.create_draft("alguien", "a", "b")
+    assert result["success"] is False
+    assert "No encontre el correo" in result["message"]
+
+
+async def test_create_draft_respaldo_en_boveda_si_gmail_falla(monkeypatch):
+    from src.services.google_services_manager import GoogleServiceError
+
+    class _Drafts:
+        def create(self, **kwargs):
+            raise GoogleServiceError("permisos insuficientes (falta gmail.compose)")
+
+    manager = _manager(
+        _gmail=SimpleNamespace(users=lambda: SimpleNamespace(drafts=lambda: _Drafts()))
+    )
+    notas = []
+
+    async def fake_note(title, content, folder=""):
+        notas.append((title, folder))
+        return {"success": True, "note_path": "00-Inbox/Borrador.md"}
+
+    monkeypatch.setattr("src.utils.obsidian_manager.create_or_append_note", fake_note)
+    result = await manager.create_draft("tu@ejemplo.com", "Asunto", "Cuerpo")
+    assert result["success"] is True
+    assert result["draft_location"] == "vault"
+    assert "boveda" in result["message"].lower().replace("ó", "o")
+    assert "/setup_google" in result["message"]
+    assert notas and notas[0][1] == "00-Inbox"
+
+
+async def test_oauth_refresca_sin_scopes_nuevos_si_google_los_rechaza(monkeypatch, tmp_path):
+    # Regresion 2026-10-03: añadir gmail.compose a SCOPES hizo que Google
+    # rechazara el refresco del token existente ('invalid_scope') y TODO
+    # Google quedara caido. Ahora se reintenta sin los scopes nuevos.
+    import json as _json
+
+    from google.auth.exceptions import RefreshError
+
+    import src.services.google_services_manager as gsm
+
+    intentsos = []
+
+    class _Creds:
+        def __init__(self, scopes):
+            self._scopes = list(scopes)
+            self.expired = True
+            self.refresh_token = "r"
+            self.valid = True
+            self.expired_ok = False
+
+        def refresh(self, request):
+            intentsos.append(list(self._scopes))
+            if any("gmail.compose" in s for s in self._scopes):
+                raise RefreshError("invalid_scope: Bad Request")
+            self.expired = False
+
+    monkeypatch.setattr(
+        gsm,
+        "Credentials",
+        SimpleNamespace(from_authorized_user_info=lambda info, scopes: _Creds(scopes)),
+    )
+    monkeypatch.setattr(gsm, "OAUTH_TOKEN_FILE", tmp_path / "token.json")
+    (tmp_path / "token.json").write_text(
+        _json.dumps({"refresh_token": "r", "client_id": "x", "client_secret": "y"}),
+        encoding="utf-8",
+    )
+
+    async def _kv_get(key):
+        return None
+
+    monkeypatch.setattr(gsm.db, "kv_get", _kv_get)
+
+    manager = gsm.GoogleServicesManager()
+    ok = await manager._load_oauth_sync()
+    assert ok is True
+    assert any("gmail.compose" in s for s in intentsos[0])
+    assert all("gmail.compose" not in s for s in intentsos[1:])

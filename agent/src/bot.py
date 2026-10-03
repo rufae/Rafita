@@ -109,6 +109,7 @@ class RafitaBot:
             TelegramBotCommand("backup", "Generar respaldo ZIP de datos"),
             TelegramBotCommand("modo_voz", "Activar/desactivar respuestas por voz"),
             TelegramBotCommand("status", "Panel de control completo del sistema"),
+            TelegramBotCommand("demo", "Recorrido guiado por las capacidades de Rafita"),
             TelegramBotCommand("setup_google", "Configurar Google Calendar"),
             TelegramBotCommand("sync_google", "Copiar Google al segundo cerebro"),
             TelegramBotCommand("ubicacion", "Fijar tu ciudad (tiempo y avisos)"),
@@ -184,6 +185,9 @@ class RafitaBot:
         self._app.add_handler(CommandHandler("modo_voz", self._wrap(modo_voz_command)))
 
         self._app.add_handler(CommandHandler("status", self._wrap(status_command)))
+        from src.handlers.demo import demo_command
+
+        self._app.add_handler(CommandHandler("demo", self._wrap(demo_command)))
         self._app.add_handler(CommandHandler("logs", self._wrap(logs_command)))
         self._app.add_handler(CommandHandler("cerebro", self._wrap(cerebro_command)))
         self._app.add_handler(CommandHandler("recordar", self._wrap(recordar_command)))
@@ -363,11 +367,9 @@ class RafitaBot:
             return False
         try:
             await self._app_started.wait()
-            await self._app.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                parse_mode="Markdown",
-            )
+            from src.utils.telegram_fmt import send_md
+
+            await send_md(self._app.bot, chat_id, text)
             logger.info("Proactive message sent to chat %d", chat_id)
             return True
         except Exception as e:
@@ -401,8 +403,12 @@ class RafitaBot:
     @staticmethod
     async def _reply_markdown(update: Update, text: str) -> None:
         if update.effective_message:
-            await update.effective_message.reply_text(
-                text, parse_mode="Markdown", disable_web_page_preview=True
+            from src.utils.telegram_fmt import reply_md
+
+            await reply_md(
+                update.effective_message,
+                text,
+                disable_web_page_preview=True,
             )
 
     @staticmethod

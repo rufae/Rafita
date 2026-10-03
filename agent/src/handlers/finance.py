@@ -10,6 +10,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.models.schemas import FinanceCategory
+from src.utils.telegram_fmt import reply_md
 
 
 async def gasto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -171,7 +172,7 @@ async def finanzas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     lines.append(f"\n📝 Total de transacciones: {summary['transaction_count']}")
 
-    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await reply_md(message, "\n".join(lines))
 
 
 async def exportar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
