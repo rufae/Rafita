@@ -40,16 +40,22 @@ echo "[$(date +%H:%M:%S)] Verifying backup integrity..."
 VERIFY_DIR=$(mktemp -d)
 tar -xzf "$BACKUP_PATH.tar.gz" -C "$VERIFY_DIR"
 
+VERIFY_FAILED=0
+
 # Check SQLite integrity
-sqlite3 "$VERIFY_DIR/rafita.db" "PRAGMA integrity_check;" > /dev/null 2>&1 && \
-    echo "[$(date +%H:%M:%S)]   SQLite: integrity OK" || \
+if sqlite3 "$VERIFY_DIR/rafita.db" "PRAGMA integrity_check;" > /dev/null 2>&1; then
+    echo "[$(date +%H:%M:%S)]   SQLite: integrity OK"
+else
     echo "[$(date +%H:%M:%S)]   SQLite: INTEGRITY CHECK FAILED"
+    VERIFY_FAILED=1
+fi
 
 # Check vector DB has expected structure
 if [ -f "$VERIFY_DIR/vector_db/chroma.sqlite3" ]; then
     echo "[$(date +%H:%M:%S)]   Vector DB: files present"
 else
     echo "[$(date +%H:%M:%S)]   Vector DB: WARNING - missing chroma.sqlite3"
+    VERIFY_FAILED=1
 fi
 
 # Count chunks
@@ -58,6 +64,11 @@ CHUNK_COUNT=$(sqlite3 "$VERIFY_DIR/vector_db/chroma.sqlite3" \
 echo "[$(date +%H:%M:%S)]   Vector DB: $CHUNK_COUNT chunks"
 
 rm -rf "$VERIFY_DIR"
+
+if [ "$VERIFY_FAILED" -ne 0 ]; then
+    echo "[$(date +%H:%M:%S)] VERIFICATION FAILED: el backup no es valido"
+    exit 1
+fi
 
 # 5. Cleanup old backups
 echo "[$(date +%H:%M:%S)] Cleaning backups older than $RETENTION_DAYS days..."

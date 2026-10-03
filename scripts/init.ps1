@@ -87,8 +87,8 @@ if (-not $SkipPull) {
         -v "${PROJECT_ROOT}\ollama\models:/root/.ollama" `
         ollama/ollama:latest
 
-    Write-Host "  Descargando gemma4:12b-instruct-q4_K_M..." -ForegroundColor Yellow
-    docker exec ollama-init ollama pull gemma4:12b-instruct-q4_K_M
+    Write-Host "  Descargando gemma4:12b..." -ForegroundColor Yellow
+    docker exec ollama-init ollama pull gemma4:12b
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [X] Error al descargar el modelo. Verifica que exista en ollama.com/library" -ForegroundColor Red
         docker stop ollama-init

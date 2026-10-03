@@ -3,12 +3,12 @@
    Decision (Fase 3): call_rafita.html queda FUERA de la experiencia
    instalable a proposito: vive en otro origen (voz.*) y se embebe desde la
    vista Llamada; aqui solo va el shell de la SPA. */
-const CACHE = 'rafita-shell-5719a21f';
+const CACHE = 'rafita-shell-249bcc07';
 const SHELL = [
   './',
   './index.html',
   './styles-0c397e72.css',
-  './app-c03f8b81.js',
+  './app-d78d30ae.js',
   './config.js',
   './design-tokens-93353fc1.css',
   './manifest.webmanifest',
@@ -37,6 +37,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.pathname.startsWith('/api')) {
+    return;
+  }
+  // config.js se sirve con Cache-Control: no-store para poder editarlo en
+  // caliente; el cache-first lo anulaba. Siempre red, cache solo de respaldo.
+  if (url.origin === self.location.origin && url.pathname.endsWith('/config.js')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((resp) => {
+          if (resp.ok) {
+            const copia = resp.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copia));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(event.request)),
+    );
     return;
   }
   event.respondWith(

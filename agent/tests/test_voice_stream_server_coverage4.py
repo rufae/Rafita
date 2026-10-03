@@ -143,6 +143,39 @@ def test_end_call_token_and_not_found(client, monkeypatch):
     assert client.post("/call/x/end?token=secreto123").status_code == 404
 
 
+def test_start_call_schedules_unused_cleanup(client):
+    response = client.post("/call/start", json={"chat_id": 1})
+    session = voice_server._active_sessions[response.json()["session_id"]]
+    assert session.get("unused_task") is not None
+
+
+def test_ws_revives_ended_session_after_drop(client):
+    # Al caer el socket la sesion queda "ended" con gracia de reconexion; al
+    # reconectar debe revivir (antes la llamada quedaba muda para siempre).
+    session = _seed_session("r1", state="ended")
+    with client.websocket_connect("/call/ws/r1") as ws:
+        assert ws.receive_json()["type"] == "ready"
+        assert session["state"] == "listening"
+        assert session["ws_authenticated"] is True
+        assert session.get("unused_task") is None
+    assert session["state"] == "ended"
+    assert session.get("cleanup_task") is not None
+
+
+async def test_cleanup_ended_session_releases(monkeypatch):
+    monkeypatch.setattr(voice_server, "SESSION_RECONNECT_GRACE_S", 0.01)
+    _seed_session("c1", state="ended")
+    await voice_server._cleanup_ended_session("c1")
+    assert "c1" not in voice_server._active_sessions
+
+
+async def test_cleanup_ended_session_keeps_revived(monkeypatch):
+    monkeypatch.setattr(voice_server, "SESSION_RECONNECT_GRACE_S", 0.01)
+    _seed_session("c2", state="listening")
+    await voice_server._cleanup_ended_session("c2")
+    assert "c2" in voice_server._active_sessions
+
+
 def test_serve_call_page_from_primary_path(client, tmp_path, monkeypatch):
     html = tmp_path / "call.html"
     html.write_text("<html>rafita</html>", encoding="utf-8")
@@ -275,6 +308,9 @@ def test_ws_buffers_speech_and_utterance_on_silence(client, monkeypatch):
     monkeypatch.setattr(voice_server, "_process_utterance", fake_process)
     with client.websocket_connect("/call/ws/w2") as ws:
         assert ws.receive_json()["type"] == "ready"
+        # MIN_VOZ_MS=250 (2026-10-03): hacen falta >=250 ms de voz real para
+        # que el turno se procese; los ruidos cortos se descartan.
+        ws.send_bytes(LOUD_BIG)
         ws.send_bytes(LOUD_BIG)
         ws.send_bytes(LOUD_BIG)
         for _ in range(4):  # 400 ms de silencio real cierran el turno
@@ -284,7 +320,7 @@ def test_ws_buffers_speech_and_utterance_on_silence(client, monkeypatch):
         assert ws.receive_json() == {"type": "interrupted", "reason": "user_stop"}
         assert voice_server._active_sessions["w2"]["state"] == "listening"
     assert processed and processed[0][0] == "w2"
-    assert processed[0][1] == LOUD_BIG * 2
+    assert processed[0][1] == LOUD_BIG * 3
 
 
 def test_ws_end_speech_starts_utterance(client, monkeypatch):
@@ -326,12 +362,39 @@ def test_ws_barge_in_interrupts_running_response(client, monkeypatch):
         assert ws.receive_json()["type"] == "ready"
         ws.send_bytes(LOUD)
         ws.send_text('{"type": "end_speech"}')
-        # El barge-in exige voz sostenida (>=160 ms): un solo pico de ruido ya
-        # no corta a Rafita.
+        # El barge-in durante una respuesta exige voz mas sostenida
+        # (>=300 ms): 200 ms de ruido de fondo NO cortan a Rafita.
         ws.send_bytes(LOUD_BIG)
         ws.send_bytes(LOUD_BIG)
-        assert ws.receive_json() == {"type": "interrupted", "reason": "barge_in"}
+        ws.send_text('{"type": "ping"}')
+        assert ws.receive_json() == {"type": "pong"}
+        assert cancelled == []
+    # Al cerrar el WebSocket la sesion se limpia y la tarea se cancela.
     assert cancelled == ["w4"]
+
+
+def test_ws_barge_in_sostenido_interrumpe_respuesta(client, monkeypatch):
+    monkeypatch.setattr(settings, "voice_speculative_stt", False)
+    _seed_session("w4b", sample_rate=16000)
+    cancelled = []
+
+    async def fake_process(websocket, session, session_id, audio_data):
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.append(session_id)
+            raise
+
+    monkeypatch.setattr(voice_server, "_process_utterance", fake_process)
+    with client.websocket_connect("/call/ws/w4b") as ws:
+        assert ws.receive_json()["type"] == "ready"
+        ws.send_bytes(LOUD)
+        ws.send_text('{"type": "end_speech"}')
+        # 400 ms de voz sostenida (>=300 ms): si, interrumpe.
+        for _ in range(4):
+            ws.send_bytes(LOUD_BIG)
+        assert ws.receive_json() == {"type": "interrupted", "reason": "barge_in"}
+    assert cancelled == ["w4b"]
 
 
 def test_ws_ptt_mode_accumulates_without_vad(client, monkeypatch):

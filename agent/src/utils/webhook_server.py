@@ -125,6 +125,21 @@ def _check_webhook_auth(body: bytes, signature: str) -> None:
         raise HTTPException(status_code=401, detail="Invalid signature")
 
 
+def _check_webhook_token(request: Request) -> None:
+    """Auth para los GET del gateway (sin cuerpo que firmar).
+
+    Mismo secreto que los webhooks, enviado en X-Webhook-Token. Antes
+    /connectors y /homeassistant/state quedaban abiertos a toda la red.
+    """
+    import hmac
+
+    if not _webhook_secret:
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+    token = request.headers.get("X-Webhook-Token", "")
+    if not token or not hmac.compare_digest(_webhook_secret, token):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
 @app.get("/health")
 async def health():
     """Liveness: the process is up. Does not check dependencies (see /ready)."""
@@ -236,9 +251,10 @@ async def get_metrics():
 
 
 @app.get("/connectors")
-async def list_connectors():
+async def list_connectors(request: Request):
     from src.utils.app_connector import connector
 
+    _check_webhook_token(request)
     return {"connectors": connector.list_connectors()}
 
 
@@ -345,6 +361,7 @@ async def control_home_assistant(entity_id: str, request: Request):
 async def get_ha_state(request: Request):
     from src.utils.app_connector import connector
 
+    _check_webhook_token(request)
     entity_id = request.query_params.get("entity_id", "")
     result = await connector.get_home_assistant_state(entity_id)
     return result
@@ -584,13 +601,14 @@ async def automation_send_voice(request: Request):
     if not target or _bot_ref is None:
         return JSONResponse(status_code=503, content={"error": "bot o chat_id no disponible"})
 
-    from src.utils.tts_manager import convert_to_ogg, text_to_speech
+    from src.utils.tts_manager import cleanup_tts_dir, convert_to_ogg, text_to_speech
 
     wav = await text_to_speech(text[:1500])
     if wav is None:
         return JSONResponse(status_code=500, content={"error": "TTS no disponible"})
     ogg = await convert_to_ogg(wav)
     if not ogg or not ogg.exists():
+        cleanup_tts_dir(wav)
         return JSONResponse(status_code=500, content={"error": "no se pudo convertir a ogg"})
     try:
         await _bot_ref.send_voice(int(target), str(ogg))
@@ -599,6 +617,8 @@ async def automation_send_voice(request: Request):
     except Exception as e:
         logger.error("Automation send-voice fallo: %s", e)
         return JSONResponse(status_code=500, content={"error": str(e)[:200]})
+    finally:
+        cleanup_tts_dir(wav)
 
 
 @app.post("/automation/sync")

@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from bs4 import BeautifulSoup
 
@@ -7,22 +9,26 @@ WEB_SEARCH_TIMEOUT = 15
 MAX_CONTENT_CHARS = 3000
 
 
+def _search_sync(query: str, max_results: int) -> list[dict[str, str]]:
+    from duckduckgo_search import DDGS
+
+    with DDGS() as ddgs:
+        raw = list(ddgs.text(query, max_results=max_results))
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("href", ""),
+            "snippet": r.get("body", ""),
+        }
+        for r in raw
+    ]
+
+
 async def search_duckduckgo(query: str, max_results: int = 5) -> list[dict[str, str]]:
     try:
-        from duckduckgo_search import DDGS
-
-        with DDGS() as ddgs:
-            raw = list(ddgs.text(query, max_results=max_results))
-        results = []
-        for r in raw:
-            results.append(
-                {
-                    "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", ""),
-                }
-            )
-        return results
+        # DDGS es sincrono y tarda segundos: en un hilo aparte para no
+        # congelar el event loop (Telegram, voz y /health comparten proceso).
+        return await asyncio.to_thread(_search_sync, query, max_results)
     except Exception as e:
         logger.warning("DuckDuckGo search failed: %s", e)
         return []

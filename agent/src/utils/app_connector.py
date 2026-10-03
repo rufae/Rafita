@@ -52,6 +52,14 @@ class AppConnector:
                 "UPDATE app_connectors SET connector_type=?, credentials_enc=?, config_json=?, is_active=1, updated_at=? WHERE name=?",
                 (connector_type, cred_enc, config_json, datetime.utcnow().isoformat(), name),
             )
+            # Refrescar tambien la copia en memoria: antes Gmail/Home Assistant
+            # seguian usando las credenciales antiguas hasta reiniciar.
+            self._connectors[name] = {
+                "type": connector_type,
+                "credentials": credentials,
+                "config": config,
+                "is_active": True,
+            }
             logger.info("Connector '%s' updated", name)
             return row["id"]
         record_id = await db.execute_insert(

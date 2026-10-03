@@ -93,7 +93,9 @@ def test_connectors_endpoint(monkeypatch):
         "src.utils.app_connector.connector.list_connectors", lambda: [{"name": "gmail"}]
     )
     client = _client(monkeypatch)
-    response = client.get("/connectors")
+    sin_token = client.get("/connectors")
+    assert sin_token.status_code == 401
+    response = client.get("/connectors", headers={"X-Webhook-Token": SECRET})
     assert response.json()["connectors"] == [{"name": "gmail"}]
 
 
@@ -234,7 +236,9 @@ def test_homeassistant_state_endpoint(monkeypatch):
         lambda entity_id: _afn({"state": "on"}),
     )
     client = _client(monkeypatch)
-    response = client.get("/homeassistant/state?entity_id=light.x")
+    response = client.get(
+        "/homeassistant/state?entity_id=light.x", headers={"X-Webhook-Token": SECRET}
+    )
     assert response.json() == {"state": "on"}
 
 

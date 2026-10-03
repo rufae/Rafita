@@ -31,8 +31,17 @@ async function fetchConTimeout(url, opciones, ms) {
 }
 
 // Modal propio (Fase 1.6): sustituye a alert()/confirm() nativos.
+// Si se abre otro modal con uno abierto, el anterior se resuelve como
+// cancelado: antes su promesa quedaba colgada para siempre.
+let modalResolver = null;
 function mostrarModal({ titulo = 'Rafita', mensaje = '', confirmar = 'Aceptar', cancelar = '' }) {
   return new Promise((resolve) => {
+    if (modalResolver) {
+      const previo = modalResolver;
+      modalResolver = null;
+      previo(null);
+    }
+    modalResolver = resolve;
     const capa = document.getElementById('modal');
     document.getElementById('modal-titulo').textContent = titulo;
     document.getElementById('modal-mensaje').textContent = mensaje;
@@ -43,6 +52,7 @@ function mostrarModal({ titulo = 'Rafita', mensaje = '', confirmar = 'Aceptar', 
     btnCancel.classList.toggle('hidden', !cancelar);
     capa.classList.remove('hidden');
     const cerrar = (valor) => {
+      if (modalResolver === resolve) modalResolver = null;
       capa.classList.add('hidden');
       btnOk.onclick = null;
       btnCancel.onclick = null;
@@ -383,6 +393,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 let vaultOffset = 0;
+let vaultReqSeq = 0;
 
 async function loadNotes(acumular) {
   // Ojo: debounce() reenvia el evento; solo "true" literal pagina.
@@ -390,6 +401,7 @@ async function loadNotes(acumular) {
   const query = encodeURIComponent($('#vault-search').value.trim());
   const folder = encodeURIComponent($('#vault-folder').value.trim());
   const list = $('#vault-list');
+  const seq = ++vaultReqSeq;
   if (!mas) {
     vaultOffset = 0;
     list.innerHTML = skeletonHTML(4);
@@ -398,6 +410,8 @@ async function loadNotes(acumular) {
     const data = await api(
       `/vault/notes?query=${query}&folder=${folder}&limit=50&offset=${mas ? vaultOffset : 0}`,
     );
+    // Respuesta obsoleta: otra busqueda/paginacion mas reciente ya manda.
+    if (seq !== vaultReqSeq) return;
     if (!mas) list.innerHTML = '';
     if (!data.notes.length) {
       pintarVacio(
@@ -445,6 +459,7 @@ async function loadNotes(acumular) {
       list.appendChild(mas);
     }
   } catch (e) {
+    if (seq !== vaultReqSeq) return;
     list.innerHTML = '';
     const li = document.createElement('li');
     li.className = 'error';
@@ -453,10 +468,14 @@ async function loadNotes(acumular) {
   }
 }
 
+let noteReqSeq = 0;
+
 async function openNote(path, li) {
   if (!(await confirmarDescartarCambios())) return;
+  const seq = ++noteReqSeq;
   try {
     const data = await api(`/vault/note?path=${encodeURIComponent(path)}`);
+    if (seq !== noteReqSeq) return;
     _currentNote = data.path;
     $('#note-path').value = data.path;
     $('#note-content').value = data.content;
@@ -717,19 +736,24 @@ async function toggleRecording(kind) {
   }
   recordChunks = [];
   recorder = new MediaRecorder(recordingStream, { mimeType: mime });
+  // Referencias locales: si se inicia otra grabacion mientras se sube esta,
+  // los globales cambian y el handler viejo mezclaba chunks de la nueva.
+  const rec = recorder;
+  const stream = recordingStream;
+  const chunks = recordChunks;
   recorder.ondataavailable = (ev) => {
     if (ev.data.size) recordChunks.push(ev.data);
   };
   recorder.onstop = async () => {
-    recordingStream.getTracks().forEach((t) => {
+    stream.getTracks().forEach((t) => {
       t.stop();
     });
     $('#meet-mic').textContent = '● Grabar micro';
     $('#meet-tab').textContent = 'Grabar pestaña';
     status.textContent = 'Subiendo audio…';
     try {
-      const blob = new Blob(recordChunks, { type: recorder.mimeType || 'audio/webm' });
-      const nombre = (recorder.mimeType || '').includes('mp4') ? 'reunion.mp4' : 'reunion.webm';
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      const nombre = (rec.mimeType || '').includes('mp4') ? 'reunion.mp4' : 'reunion.webm';
       const data = await uploadMeeting(blob, nombre);
       status.textContent = 'Procesando…';
       $('#meet-title').value = '';
@@ -837,6 +861,7 @@ $('#logout').addEventListener('click', logout);
 
 /* Sign in with Google: flujo de dispositivo (funciona en LAN sin redirect
    URI). Si falla, se cae al flujo clasico con redirect. */
+let googlePollTimer = null;
 document.querySelector('.google-btn').addEventListener('click', async (ev) => {
   ev.preventDefault();
   const err = $('#login-error');
@@ -860,12 +885,22 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
     box.classList.remove('hidden');
     box.innerHTML = '';
     const p = document.createElement('p');
-    p.innerHTML =
-      'Abre <a href="' +
-      start.verification_url +
-      '" target="_blank" rel="noopener">' +
-      start.verification_url +
-      '</a> e introduce el código:';
+    // DOM seguro: antes la URL del backend se concatenaba en innerHTML.
+    const urlVerificacion = /^https?:\/\//i.test(start.verification_url || '')
+      ? start.verification_url
+      : '';
+    p.append('Abre ');
+    if (urlVerificacion) {
+      const enlace = document.createElement('a');
+      enlace.href = urlVerificacion;
+      enlace.target = '_blank';
+      enlace.rel = 'noopener';
+      enlace.textContent = urlVerificacion;
+      p.append(enlace);
+    } else {
+      p.append('el enlace de verificación de Google');
+    }
+    p.append(' e introduce el código:');
     const code = document.createElement('div');
     code.className = 'device-code';
     code.textContent = start.user_code;
@@ -874,18 +909,22 @@ document.querySelector('.google-btn').addEventListener('click', async (ev) => {
     espera.textContent = 'Esperando a que autorices en Google…';
     box.append(p, code, espera);
     const intervalo = Math.max(3, start.interval || 5) * 1000;
-    const timer = setInterval(async () => {
+    // Un solo timer: cada clic creaba otro intervalo que quedaba polleando.
+    if (googlePollTimer) clearInterval(googlePollTimer);
+    googlePollTimer = setInterval(async () => {
       try {
         const res = await api(`/auth/google/device/poll?state=${encodeURIComponent(start.state)}`);
         if (res.status === 'ok') {
-          clearInterval(timer);
+          clearInterval(googlePollTimer);
+          googlePollTimer = null;
           state.token = res.token;
           localStorage.setItem(TOKEN_KEY, res.token);
           enterApp();
         }
       } catch (e) {
         if (/caducad|no encontrada|validar/.test(e.message)) {
-          clearInterval(timer);
+          clearInterval(googlePollTimer);
+          googlePollTimer = null;
           espera.textContent = `No se pudo completar: ${e.message}`;
         }
       }

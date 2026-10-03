@@ -16,6 +16,7 @@ import asyncio
 import io
 import logging
 import struct
+import threading
 from typing import Any
 
 from src.config import settings
@@ -25,6 +26,7 @@ logger = logging.getLogger("rafita")
 
 TARGET_SAMPLE_RATE = 16000
 _LOCAL_MODEL = None
+_LOCAL_MODEL_LOCK = threading.Lock()
 
 NSP_MAX = 0.6
 LP_MIN = -1.0
@@ -51,7 +53,13 @@ NOISE_HALLUCINATIONS = (
 
 def _get_local_model():
     global _LOCAL_MODEL
-    if _LOCAL_MODEL is None:
+    if _LOCAL_MODEL is not None:
+        return _LOCAL_MODEL
+    # Doble comprobacion con lock: sin el, dos primeras peticiones concurrentes
+    # cargaban dos WhisperModel a la vez (GB de RAM en el HP de 6 GB).
+    with _LOCAL_MODEL_LOCK:
+        if _LOCAL_MODEL is not None:
+            return _LOCAL_MODEL
         try:
             from faster_whisper import WhisperModel
 
@@ -166,7 +174,9 @@ async def transcribe_bytes(
     if remoto is not None:
         return remoto
 
-    modelo = _get_local_model()
+    # La carga del modelo tarda segundos: fuera del event loop (antes la
+    # primera transcripcion local congelaba todo el servicio).
+    modelo = await asyncio.to_thread(_get_local_model)
     if modelo is None:
         return {"text": "", "segments": [], "source": "none"}
 

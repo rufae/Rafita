@@ -1,5 +1,6 @@
 import asyncio
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -178,6 +179,7 @@ class VaultIndexer:
         self._shutdown_event: asyncio.Event | None = None
         self._debounce_tasks: dict[str, asyncio.Task] = {}
         self._pending_paths: dict[str, float] = {}
+        self._pending_lock = threading.Lock()
 
     async def index_note(self, note_path: Path) -> dict[str, Any]:
         from src.utils.vector_manager import (
@@ -410,19 +412,21 @@ class VaultIndexer:
         rel_str = str(rel)
         now = datetime.now().timestamp()
 
-        self._pending_paths[rel_str] = now
+        with self._pending_lock:
+            self._pending_paths[rel_str] = now
 
     async def _debounce_loop(self) -> None:
         while not self._shutdown_event.is_set():
             now = datetime.now().timestamp()
             to_process = []
-            still_pending = {}
-            for path_str, ts in list(self._pending_paths.items()):
-                if now - ts >= DEBOUNCE_SECONDS:
-                    to_process.append(path_str)
-                else:
-                    still_pending[path_str] = ts
-            self._pending_paths = still_pending
+            # Lock: _pending_paths lo escribe el hilo de watchdog; sin el,
+            # iterar y reasignar aqui lanzaba "dictionary changed size during
+            # iteration" y se perdian eventos.
+            with self._pending_lock:
+                for path_str, ts in list(self._pending_paths.items()):
+                    if now - ts >= DEBOUNCE_SECONDS:
+                        to_process.append(path_str)
+                        del self._pending_paths[path_str]
 
             for path_str in to_process:
                 note_path = VAULT_PATH / path_str

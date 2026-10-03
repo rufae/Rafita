@@ -73,6 +73,33 @@ async def ensure_voice_model() -> Path | None:
     return model_path
 
 
+async def _wait_process(proc, timeout: float) -> bool:
+    """Espera al proceso con timeout; lo mata si se cuelga."""
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        return True
+    except TimeoutError:
+        proc.kill()
+        try:
+            await proc.wait()
+        except Exception:
+            pass
+        return False
+
+
+def cleanup_tts_dir(path: Path | None) -> None:
+    """Borra el directorio temporal creado por text_to_speech.
+
+    Los consumidores (notas de voz de Telegram, TTS de llamada, webhooks) no
+    lo borraban: cada respuesta de audio dejaba un rafita_tts_* en /tmp.
+    """
+    if not path:
+        return
+    parent = Path(path).parent
+    if parent.name.startswith("rafita_tts_"):
+        shutil.rmtree(parent, ignore_errors=True)
+
+
 async def text_to_speech(text: str, engine: str | None = None) -> Path | None:
     """Sintetiza a WAV con el motor configurado (TTS_ENGINE).
 
@@ -304,7 +331,9 @@ async def _fallback_espeak(text: str, output_path: Path) -> Path | None:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
         )
-        await proc.wait()
+        if not await _wait_process(proc, timeout=30.0):
+            logger.warning("espeak timeout")
+            return None
         if output_path.exists() and output_path.stat().st_size > 0:
             logger.info("TTS fallback (espeak): %s", output_path)
             return output_path
@@ -340,7 +369,9 @@ async def convert_to_ogg(wav_path: Path) -> Path | None:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
         )
-        await proc.wait()
+        if not await _wait_process(proc, timeout=60.0):
+            logger.warning("ffmpeg (ogg) timeout")
+            return wav_path
         if ogg_path.exists() and ogg_path.stat().st_size > 0:
             return ogg_path
         return wav_path
