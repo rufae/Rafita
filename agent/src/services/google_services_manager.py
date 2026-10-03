@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
@@ -65,10 +66,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
+    # Crear borradores (demo 2026-10-02): sin este scope, drafts.create
+    # devuelve 403 y 'redactar un correo' solo podia guardarse en la boveda.
+    "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/contacts.readonly",
     "https://www.googleapis.com/auth/contacts.other.readonly",
     "https://www.googleapis.com/auth/fitness.activity.read",
 ]
+
+# Scopes añadidos con posterioridad al consentimiento del usuario: un token
+# antiguo NO los tiene y Google rechaza el refresco con 'invalid_scope' si se
+# le piden. Para esos tokens se refresca con el resto (ver _load_oauth_sync)
+# y se pide reautorizar con /setup_google para obtenerlos.
+NEW_OPTIONAL_SCOPES = ("https://www.googleapis.com/auth/gmail.compose",)
 
 WEEKDAYS = {
     "lunes": 0,
@@ -251,13 +261,34 @@ class GoogleServicesManager:
             token_json = OAUTH_TOKEN_FILE.read_text(encoding="utf-8")
         if not token_json:
             return False
+        info = json.loads(token_json)
         try:
-            self._creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+            self._creds = Credentials.from_authorized_user_info(info, SCOPES)
         except Exception:
             return False
         loop = asyncio.get_running_loop()
         if self._creds.expired and self._creds.refresh_token:
-            await loop.run_in_executor(None, self._creds.refresh, Request())
+            try:
+                await loop.run_in_executor(None, self._creds.refresh, Request())
+            except RefreshError as e:
+                # Bug 2026-10-03: el token se concedio sin los scopes nuevos
+                # (gmail.compose) y Google devolvia 'invalid_scope' al
+                # refrescar, dejando TODO Google caido. Se reintenta con los
+                # scopes ya autorizados.
+                legacy = [s for s in SCOPES if s not in NEW_OPTIONAL_SCOPES]
+                logger.warning(
+                    "OAuth: refresco con scopes completos falló (%s); reintento sin %s",
+                    str(e)[:120],
+                    ", ".join(NEW_OPTIONAL_SCOPES),
+                )
+                try:
+                    self._creds = Credentials.from_authorized_user_info(info, legacy)
+                    await loop.run_in_executor(None, self._creds.refresh, Request())
+                except Exception as e2:
+                    logger.warning(
+                        "OAuth: el reintento de refresco tambien falló: %s", str(e2)[:120]
+                    )
+                    return False
         if not self._creds.valid:
             return False
         self._auth_method = "oauth"
@@ -784,39 +815,41 @@ class GoogleServicesManager:
             )
         return {"success": True, "messages": messages, "count": len(messages)}
 
-    async def send_email(self, to: str, subject: str, body: str) -> dict[str, Any]:
-        """Envia un correo desde la cuenta del usuario (scope gmail.send)."""
-        import base64
-        import re
-        from email.message import EmailMessage
+    async def _resolve_recipient(self, to: str) -> str:
+        """Resuelve el destinatario: dictado ('x arroba y punto com') o nombre.
 
-        to = (to or "").strip()
-        # Red de seguridad (bug 2026-09-30): si el STT dejo el correo dictado
-        # ("anabel arroba gmail punto com") se normaliza aqui tambien.
-        if " arroba " in " %s " % to.lower():
-            to = re.sub(r"\s+arroba\s+", "@", to, flags=re.IGNORECASE)
-            to = re.sub(r"\s+punto\s+", ".", to, flags=re.IGNORECASE)
-            to = re.sub(r"\s+guion\s+bajo\s+", "_", to, flags=re.IGNORECASE)
-            to = re.sub(r"(\w)\s*@\s*(\w)", r"\1@\2", to)
-            to = re.sub(r"(\w)\s*\.\s*(\w)", r"\1.\2", to)
+        Si no hay '@', se busca el correo en los contactos (el usuario suele
+        decir solo 'manda un correo a mama').
+        """
+        from src.utils.voice_text import normalize_dictated_email
+
+        to = normalize_dictated_email((to or "").strip()) or ""
+        to = to.strip()
         if to and "@" not in to:
-            # El usuario suele dar solo el nombre ("manda un correo a mama"):
-            # resolvemos su direccion desde los contactos.
             try:
                 contact = await self.find_contact(to)
             except Exception:
                 contact = {}
-            email = next(
-                (c.get("email") for c in contact.get("contacts", []) if c.get("email")), ""
-            )
-            if not email:
-                return {
-                    "success": False,
-                    "message": "No encontre el correo de '%s' en tus contactos." % to,
-                }
-            to = email
+            return next((c.get("email") for c in contact.get("contacts", []) if c.get("email")), "")
+        return to
+
+    async def _resolve_recipient_or_error(self, to: str) -> tuple[str, str]:
+        original = (to or "").strip()
+        resolved = await self._resolve_recipient(to)
+        if resolved:
+            return resolved, ""
+        if original:
+            return "", "No encontre el correo de '%s' en tus contactos." % original
+        return "", "Necesito una direccion de correo valida."
+
+    async def send_email(self, to: str, subject: str, body: str) -> dict[str, Any]:
+        """Envia un correo desde la cuenta del usuario (scope gmail.send)."""
+        import base64
+        from email.message import EmailMessage
+
+        to, error = await self._resolve_recipient_or_error(to)
         if not to:
-            return {"success": False, "message": "Necesito una direccion de correo valida."}
+            return {"success": False, "message": error}
         message = EmailMessage()
         message["To"] = to
         message["Subject"] = (subject or "").strip() or "(sin asunto)"
@@ -830,6 +863,74 @@ class GoogleServicesManager:
             "success": True,
             "message": "Correo enviado a %s (asunto: '%s')." % (to, message["Subject"]),
             "id": data.get("id"),
+        }
+
+    async def _save_draft_to_vault(self, to: str, subject: str, body: str) -> str:
+        """Respaldo del borrador en la bóveda cuando Gmail no permite crearlo."""
+        from src.utils.obsidian_manager import create_or_append_note
+        from src.vault_config import get_taxonomy
+
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+        content = "## Borrador de correo (%s)\n\n- **Para:** %s\n- **Asunto:** %s\n\n%s\n" % (
+            fecha,
+            to,
+            subject or "(sin asunto)",
+            body or "",
+        )
+        result = await create_or_append_note(
+            title="Borrador - %s" % (subject or "sin asunto"),
+            content=content,
+            folder=get_taxonomy().path("inbox"),
+        )
+        return str(result.get("note_path") or result.get("path") or get_taxonomy().path("inbox"))
+
+    async def create_draft(self, to: str, subject: str, body: str) -> dict[str, Any]:
+        """Crea un borrador en Gmail SIN enviarlo (redactar y revisar).
+
+        Si Gmail no permite crear borradores (falta el scope gmail.compose o
+        hay que reautorizar), el borrador se guarda en la bóveda: 'redactar'
+        nunca debe fallar.
+        """
+        import base64
+        from email.message import EmailMessage
+
+        to, error = await self._resolve_recipient_or_error(to)
+        if not to:
+            return {"success": False, "message": error}
+        message = EmailMessage()
+        message["To"] = to
+        message["Subject"] = (subject or "").strip() or "(sin asunto)"
+        message.set_content(body or "")
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        try:
+            data = await self._run(
+                lambda: (
+                    self.gmail.users().drafts().create(userId="me", body={"message": {"raw": raw}})
+                ),
+                "crear borrador",
+            )
+        except GoogleServiceError as e:
+            note_path = await self._save_draft_to_vault(to, message["Subject"], body or "")
+            return {
+                "success": True,
+                "message": (
+                    "He redactado el correo y lo he guardado en tu bóveda (%s) porque "
+                    "Gmail no permite crear borradores todavia: %s. Si lo quieres en "
+                    "Gmail, reautoriza con /setup_google y vuelvelo a pedir. "
+                    "Destinatario: %s, asunto: '%s'."
+                    % (note_path, str(e)[:120], to, message["Subject"])
+                ),
+                "draft_location": "vault",
+                "note_path": note_path,
+            }
+        return {
+            "success": True,
+            "message": (
+                "Borrador creado para %s (asunto: '%s'). NO se ha enviado: "
+                "revisalo y envialo desde Gmail cuando quieras." % (to, message["Subject"])
+            ),
+            "id": data.get("id"),
+            "draft_location": "gmail",
         }
 
     async def list_tasks(

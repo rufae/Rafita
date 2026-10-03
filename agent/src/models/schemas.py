@@ -145,6 +145,7 @@ COMMANDS_REGISTRY: list[BotCommand] = [
     BotCommand(command="backup", description="Generar respaldo ZIP de datos"),
     BotCommand(command="modo_voz", description="Activar/desactivar respuestas por voz"),
     BotCommand(command="status", description="Panel de control del sistema"),
+    BotCommand(command="demo", description="Recorrido guiado por las capacidades de Rafita"),
     BotCommand(command="clientes", description="Resumen del pipeline de clientes (CRM)"),
     BotCommand(command="ubicacion", description="Fijar tu ciudad para el tiempo y avisos"),
     BotCommand(

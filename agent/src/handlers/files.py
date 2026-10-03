@@ -15,7 +15,8 @@ from src.i18n import reply_instruction
 from src.logger import logger
 from src.ollama_client import llm
 from src.utils.path_safety import resolve_within
-from src.utils.tts_manager import convert_to_ogg, text_to_speech
+from src.utils.telegram_fmt import reply_md
+from src.utils.tts_manager import cleanup_tts_dir, convert_to_ogg, text_to_speech
 from src.vault_config import get_taxonomy
 
 VAULT_ROOT = Path("/data/obsidian_vault")
@@ -453,6 +454,7 @@ async def _process_uploaded_file(
 
     prefs = await db.get_or_create_preferences(chat_id)
     if prefs.get("voice_replies", False):
+        audio_path = None
         try:
             audio_path = await text_to_speech(
                 message_text.replace("✅", "Archivo clasificado y guardado.")
@@ -464,6 +466,8 @@ async def _process_uploaded_file(
                         await update.effective_message.reply_audio(audio=audio_f)
         except Exception as e:
             logger.debug("Voice reply failed for file ingest: %s", e)
+        finally:
+            cleanup_tts_dir(audio_path)
 
     logger.info("File ingested: %s -> %s (AI: %s)", original_name, relative, ai_reason or "default")
 
@@ -495,13 +499,13 @@ async def _handle_credentials_file(
     import shutil
 
     shutil.copy2(str(file_path), str(dest))
-    await update.effective_message.reply_text(
+    await reply_md(
+        update.effective_message,
         "✅ *Credencial guardada exitosamente!*"
         "\n\nArchivo: `%s`"
         "\nUbicacion: `/workspace/credentials/`"
         "\n\nEjecuta `/setup_google` para verificar el estado."
         "\nLuego reinicia el bot o usa `/status` para confirmar." % filename,
-        parse_mode="Markdown",
     )
     logger.info("Credentials file saved: %s (user %d)", filename, user_id)
     return True

@@ -12,6 +12,7 @@ from src.i18n import language_name
 from src.logger import logger, tail_logs
 from src.ollama_client import llm
 from src.utils import workspace_manager as wm
+from src.utils.telegram_fmt import reply_md
 from src.utils.vector_manager import vector_db
 from src.vault_config import get_taxonomy
 
@@ -303,7 +304,7 @@ async def cerebro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     lines.append("─── *RafAI - Segundo Cerebro v2.0* ───")
 
     text = "\n".join(lines)
-    await message.reply_text(text, parse_mode="Markdown")
+    await reply_md(message, text)
     logger.info("Cerebro panel sent to user %d", user.id)
 
 
@@ -343,10 +344,7 @@ async def escanear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     lines.append("\n%s" % item["content"][:1000])
         if result["messages_scanned"] == 0:
             lines.append("\n⚠️ No se encontraron mensajes nuevos para procesar.")
-        await message.reply_text(
-            "\n".join(lines),
-            parse_mode="Markdown",
-        )
+        await reply_md(message, "\n".join(lines))
     else:
         await message.reply_text("❌ %s" % result.get("message", "Error"))
 
@@ -358,12 +356,12 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
     args = context.args
     if len(args) < 2:
-        await message.reply_text(
+        await reply_md(
+            message,
             "Uso: `/guardar_clave <servicio> <valor>`\n"
             "Ejemplo: `/guardar_clave gemini AIza...`\n"
             "Ejemplo: `/guardar_clave wifi_casa MiPassword123`\n\n"
             "⚠️ El valor se cifra con Fernet (AES-128-CBC + HMAC). Solo tu puedes verlo.",
-            parse_mode="Markdown",
         )
         return
     service = args[0].lower().strip()
@@ -372,16 +370,16 @@ async def guardar_clave_command(update: Update, context: ContextTypes.DEFAULT_TY
         await db.store_credential(user.id, service, value)
     except Exception as e:
         logger.exception("Credential store failed: user=%d service=%s", user.id, service)
-        await message.reply_text(
+        await reply_md(
+            message,
             "❌ No se pudo cifrar y guardar la clave; no se almacenó nada. "
             "Revisa la configuración de `ENCRYPTION_KEY`. Detalle: %s" % str(e)[:200],
-            parse_mode="Markdown",
         )
         return
-    await message.reply_text(
+    await reply_md(
+        message,
         "🔐 Clave guardada para `%s` (cifrada con Fernet).\nUsa `/claves` para ver tus servicios."
         % service,
-        parse_mode="Markdown",
     )
     logger.info("Credential stored: user=%d service=%s", user.id, service)
 
@@ -401,9 +399,9 @@ async def clave_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await message.reply_text("No hay clave guardada para `%s`." % service)
         return
     masked = value[:4] + "..." + value[-4:] if len(value) > 8 else "***"
-    await message.reply_text(
+    await reply_md(
+        message,
         "🔐 `%s`: `%s`\n⚠️ _Valor parcial. Usa `/claves` para listar_." % (service, masked),
-        parse_mode="Markdown",
     )
 
 
@@ -423,7 +421,7 @@ async def claves_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         lines.append("  • `%s` — guardada %s" % (c["service"], c["updated_at"][:10]))
     lines.append("\nUsa `/clave <servicio>` para ver valor parcial.")
     lines.append("Usa `/borrar_clave <servicio>` para eliminar.")
-    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await reply_md(message, "\n".join(lines))
 
 
 async def borrar_clave_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -543,7 +541,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception:
         summary = "Error generando resumen. Datos:\n%s" % "\n".join(brain_data[:10])
 
-    await message.reply_text(summary[:4000], parse_mode="Markdown")
+    await reply_md(message, summary[:4000])
     logger.info("Resumen sent to user %d", user.id)
 
 
@@ -626,12 +624,12 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         folder=get_taxonomy().path("zettelkasten"),
     )
     if result.get("success"):
-        await message.reply_text(
+        await reply_md(
+            message,
             "🧠 Guardado en tu segundo cerebro:\n"
             "   *%s*\n"
             "   Carpeta: 05-Zettelkasten\n"
             "   ID: %s" % (title, note_id),
-            parse_mode="Markdown",
         )
     else:
         await message.reply_text("Error al guardar: %s" % result.get("message", "desconocido"))
