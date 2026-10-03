@@ -1014,3 +1014,74 @@ def test_tool_lista_ignorada():
     # Sin lista no aplica
     sin_lista = [{"role": "tool", "content": '{"success": true, "message": "Hoy 20 grados"}'}]
     assert not orch._tool_lista_ignorada(sin_lista, "No tengo acceso.")
+
+
+# ---------- citas [S#] y Fuentes (mejora 1) ----------
+
+
+def test_grounding_rules_incluye_cite_rule():
+    assert "CITE_RULE" in orch.GROUNDING_RULES
+    assert "[S1]" in orch.GROUNDING_RULES
+
+
+async def test_generate_response_anade_fuentes_de_citas(monkeypatch):
+    _patch_common(monkeypatch)
+    tool_call = {
+        "id": "t1",
+        "function": {"name": "search_second_brain", "arguments": '{"query": "Ana"}'},
+    }
+
+    async def respond(messages, tools):
+        if not any(m.get("role") == "tool" for m in messages):
+            return "", [tool_call]
+        return "Ana trabaja en Babel [S1] y vive en Sevilla [S2].", None
+
+    monkeypatch.setattr(orch, "llm", _FakeLLM(respond))
+    executed = []
+
+    async def fake_execute(chat_id, func_name, args):
+        executed.append(func_name)
+        from src.utils.citations import citations
+
+        sid = citations.add("ana.md", "Trabajo", "obsidian://ana")
+        return {"success": True, "message": "[%s] fragmento sobre Ana" % sid, "sources": []}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
+    out = await orch.generate_response("que dice Ana", 1)
+    assert executed == ["search_second_brain"]
+    assert "[S1]" in out
+    assert "[S2]" not in out  # S2 nunca se registro: se elimina
+    assert "Fuentes:" in out
+    assert "ana.md" in out
+    assert "[abrir](obsidian://ana)" in out
+
+
+async def test_generate_response_stream_voz_quita_marcas(monkeypatch):
+    _patch_common(monkeypatch)
+    tool_call = {
+        "id": "t1",
+        "function": {"name": "search_second_brain", "arguments": '{"query": "Ana"}'},
+    }
+
+    async def respond(messages, tools):
+        return "", [tool_call]
+
+    async def stream(messages, max_tokens=180, repeat_penalty=None):
+        for token in ["Ana", " trabaja", " en", " Babel", " [S1]", "."]:
+            yield token
+
+    fake = _FakeLLM(respond, stream_tokens=["Ana", " trabaja", " en", " Babel", " [S1]", "."])
+    monkeypatch.setattr(orch, "llm", fake)
+
+    async def fake_execute(chat_id, func_name, args):
+        from src.utils.citations import citations
+
+        citations.add("ana.md", "Trabajo", "obsidian://ana")
+        return {"success": True, "message": "• Ana trabaja en Babel"}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_execute)
+    chunks = [c async for c in orch.generate_response_stream("que dice Ana", 1, voice=True)]
+    full = "".join(chunks)
+    assert "[S1]" not in full
+    assert "Fuentes" not in full
+    assert "Ana trabaja en Babel." in full

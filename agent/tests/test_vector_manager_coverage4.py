@@ -295,6 +295,48 @@ async def test_query_without_results_reports_empty():
     assert "Sin resultados" in result["message"]
 
 
+# Mejora 1: reranking híbrido (entidad exacta gana al coseno).
+async def test_query_rerank_rescata_nombre_propio():
+    collection = FakeCollection(
+        count=2,
+        query_result=_query_result(
+            (
+                "texto sin el nombre buscado",
+                {"note_path": "generico.md", "filename": "generico.md", "tags_str": ""},
+                0.1,
+            ),
+            (
+                "Ana trabaja aqui desde enero",
+                {"note_path": "ana.md", "filename": "ana.md", "tags_str": ""},
+                0.5,
+            ),
+        ),
+    )
+    manager = _manager(collection)
+    result = await manager.query("que dice Ana", top_k=2, apply_threshold=False)
+    assert [r["note_path"] for r in result["results"]] == ["ana.md", "generico.md"]
+    assert "ana" in result["results"][0]["matched_terms"]
+
+
+async def test_query_rescata_entidad_bajo_umbral():
+    # Sin el rescate léxico, un fragmento con la entidad exacta pero baja
+    # similitud coseno quedaba fuera por el umbral.
+    collection = FakeCollection(
+        count=1,
+        query_result=_query_result(
+            (
+                "Ana trabaja aqui",
+                {"note_path": "ana.md", "filename": "ana.md", "tags_str": ""},
+                1.99,
+            ),
+        ),
+    )
+    manager = _manager(collection)
+    result = await manager.query("Ana", top_k=5)
+    assert [r["note_path"] for r in result["results"]] == ["ana.md"]
+    assert float(result["results"][0]["relevance"]) < 0.49
+
+
 # ---------------------------------------------------------------------------
 # document_exists / stats / health / close
 # ---------------------------------------------------------------------------

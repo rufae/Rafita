@@ -6,6 +6,7 @@ import pytest
 
 from src.config import settings
 from src.handlers import chat as chat_mod
+from src.handlers.demo import demo_command as _demo
 from src.ollama_client import OllamaClientError
 from src.utils.access_control import SlidingWindowLimiter
 
@@ -63,6 +64,9 @@ async def test_ayuda_command_lists_registry():
     text, kwargs = update.effective_message.replies[0]
     assert "Comandos disponibles" in text
     assert kwargs.get("parse_mode") == "Markdown"
+    # Bug 2026-10-02: el '_' de modo_voz rompia el Markdown de Telegram y el
+    # comando entero se caia con "Can't parse". Debe ir escapado.
+    assert "modo\\_voz" in text
 
 
 async def test_chat_command_without_args_shows_usage():
@@ -551,3 +555,59 @@ async def test_process_ai_message_long_response_skips_diary(monkeypatch):
     update = _update()
     result = await chat_mod._process_ai_message(update, "hola", _ctx())
     assert result == long_text
+
+
+# ---------- /demo (recorrido guiado, nunca se cae) ----------
+
+
+async def test_demo_command_ensambla_secciones(monkeypatch):
+    update = _update()
+    ejecutadas = []
+
+    async def fake_tool(chat_id, func_name, args):
+        ejecutadas.append(func_name)
+        return {"success": True, "message": "ok %s" % func_name}
+
+    async def fake_health():
+        return {"status": "ok", "detail": "modelo disponible"}
+
+    async def fake_events(chat_id):
+        return [{"title": "Cena", "event_datetime": "2026-12-25 18:00"}]
+
+    async def fake_stats():
+        return {"total_documents": 2, "total_chunks": 5}
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", fake_tool)
+    monkeypatch.setattr("src.ollama_client.llm.check_health", fake_health)
+    monkeypatch.setattr("src.database.db.get_upcoming_events", fake_events)
+    monkeypatch.setattr("src.utils.vector_manager.vector_db.get_stats", fake_stats)
+
+    await _demo(update, None)
+    text = update.effective_message.replies[0][0]
+    assert "Demo de Rafita" in text
+    assert "Cena" in text
+    assert "ok get_finance_summary" in text
+    assert "ok search_second_brain" in text
+    assert {"get_finance_summary", "get_weather", "search_second_brain"} <= set(ejecutadas)
+
+
+async def test_demo_command_sobrevive_a_secciones_rotas(monkeypatch):
+    update = _update()
+
+    async def broken_tool(chat_id, func_name, args):
+        raise RuntimeError("herramienta caida")
+
+    async def broken_health():
+        raise RuntimeError("ia caida")
+
+    async def broken_events(chat_id):
+        raise RuntimeError("bd caida")
+
+    monkeypatch.setattr("src.handlers.chat._execute_tool", broken_tool)
+    monkeypatch.setattr("src.ollama_client.llm.check_health", broken_health)
+    monkeypatch.setattr("src.database.db.get_upcoming_events", broken_events)
+
+    await _demo(update, None)
+    text = update.effective_message.replies[0][0]
+    assert "Demo de Rafita" in text
+    assert text.count("no disponible") >= 3

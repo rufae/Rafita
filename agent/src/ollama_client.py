@@ -11,6 +11,7 @@ from openai.types.chat import ChatCompletion
 
 from src.config import settings
 from src.logger import logger
+from src.utils.telemetry import record_llm_usage
 
 T = TypeVar("T")
 
@@ -545,6 +546,7 @@ class OllamaClient:
                 usage.completion_tokens,
                 usage.total_tokens,
             )
+        record_llm_usage(response)
         return content
 
     async def _chat_stream(self, params: dict[str, Any]) -> str:
@@ -639,6 +641,7 @@ class OllamaClient:
                 **params,
                 extra_body=self._ollama_extra_body(4096),
             )
+            record_llm_usage(response)
             _elapsed_api = _time.time() - _t_api_start
             _ts_d = _time.strftime("%H:%M:%S") + ".%03d" % int((_time.time() % 1) * 1000)
             logger.info(
@@ -796,8 +799,11 @@ class OllamaClient:
     async def close(self) -> None:
         if self._client:
             await self._client.close()
-            self._ready = False
-            logger.info("Ollama client closed")
+        gpu_client = getattr(self, "_gpu_client", None)
+        if gpu_client:
+            await gpu_client.close()
+        self._ready = False
+        logger.info("Ollama client closed")
 
 
 from src.ai.factory import create_ai_client  # noqa: E402

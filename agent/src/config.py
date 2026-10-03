@@ -151,6 +151,9 @@ class Settings(BaseSettings):
     brain_maintenance: bool = Field(False, alias="BRAIN_MAINTENANCE")
     brain_maintenance_interval: int = Field(1800, alias="BRAIN_MAINTENANCE_INTERVAL", ge=60)
 
+    infra_check_minutes: int = Field(60, alias="INFRA_CHECK_MINUTES", ge=5)
+    infra_alert_cooldown_hours: float = Field(6.0, alias="INFRA_ALERT_COOLDOWN_HOURS", gt=0)
+
     ai_provider: str = Field("ollama", alias="AI_PROVIDER")
     openai_api_key: str = Field("", alias="OPENAI_API_KEY")
     openai_base_url: str = Field("https://api.openai.com/v1", alias="OPENAI_BASE_URL")
@@ -256,5 +259,58 @@ class Settings(BaseSettings):
 
         return base64.urlsafe_b64decode(self.encryption_key)
 
+
+# Secretos file-based (mejora 7): si se define `<VAR>_FILE`, el valor se lee
+# del fichero indicado (estilo Docker secrets, p. ej. /run/secrets/telegram_token)
+# siempre que la variable no venga ya dada por el entorno o por el .env.
+_SECRET_ENVS = (
+    "TELEGRAM_TOKEN",
+    "WEBHOOK_SECRET",
+    "WEB_AUTH_SECRET",
+    "VOICE_CALL_TOKEN",
+    "WHISPER_REMOTE_TOKEN",
+    "WEB_ADMIN_PASSWORD",
+    "GOOGLE_WEB_CLIENT_SECRET",
+    "AEMET_API_KEY",
+    "ENCRYPTION_KEY",
+    "OPENAI_API_KEY",
+    "PASSWORD_APPLICATION",
+    "APPLICATION_PASSWORD",
+)
+
+
+def _value_in_env_file(name: str) -> bool:
+    try:
+        for line in ENV_FILE_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith(name + "="):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _apply_secret_files(entorno: dict[str, str] | None = None) -> None:
+    """Rellena variables de secreto desde `<VAR>_FILE` si no tienen valor.
+
+    Prioridad: variable de entorno > .env > fichero secreto. Un fichero ilevible
+    es un error duro (fail-closed): mejor no arrancar que quedarse sin secreto.
+    """
+    target = os.environ if entorno is None else entorno
+    for name in _SECRET_ENVS:
+        if target.get(name) or _value_in_env_file(name):
+            continue
+        path = target.get("%s_FILE" % name)
+        if not path:
+            continue
+        try:
+            valor = Path(path).read_text(encoding="utf-8").strip()
+        except OSError as e:
+            raise RuntimeError("No se pudo leer el secreto %s_FILE (%s): %s" % (name, path, e))
+        if valor:
+            target[name] = valor
+
+
+_apply_secret_files()
 
 settings = Settings()  # type: ignore[call-arg]

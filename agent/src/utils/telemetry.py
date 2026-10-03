@@ -89,6 +89,20 @@ class MetricsRegistry:
 metrics = MetricsRegistry()
 
 
+def record_llm_usage(response: Any) -> None:
+    """Registra tokens de una respuesta LLM en las métricas (mejora 2).
+
+    El coste de los modelos locales es 0 €, pero los tokens son la señal de
+    coste real: crecen con el contexto y con las herramientas ofrecidas.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    metrics.inc("llm_requests", 1)
+    metrics.inc("llm_prompt_tokens", int(getattr(usage, "prompt_tokens", 0) or 0))
+    metrics.inc("llm_completion_tokens", int(getattr(usage, "completion_tokens", 0) or 0))
+
+
 class TimingContext:
     """Context manager to track latency of an operation."""
 

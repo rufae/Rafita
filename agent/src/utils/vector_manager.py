@@ -3,6 +3,7 @@ import os
 import re
 import time
 import unicodedata
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from chromadb.config import Settings as ChromaSettings
 
 from src.config import settings
 from src.logger import logger
+from src.utils.rag_rerank import score_candidates
 from src.utils.telemetry import metrics
 
 
@@ -25,14 +27,29 @@ class OllamaEmbeddingFunction:
     """
 
     def __init__(self):
-        self._cache: dict[str, list[float]] = {}
+        # LRU acotada: select_tools_semantic embebe cada mensaje del usuario;
+        # sin tope la cache crecia indefinidamente durante la vida del proceso.
+        self._cache: OrderedDict[str, list[float]] = OrderedDict()
+        self._cache_max = 1024
+
+    def _cache_get(self, text: str) -> list[float] | None:
+        emb = self._cache.get(text)
+        if emb is not None:
+            self._cache.move_to_end(text)
+        return emb
+
+    def _cache_put(self, text: str, emb: list[float]) -> None:
+        self._cache[text] = emb
+        self._cache.move_to_end(text)
+        while len(self._cache) > self._cache_max:
+            self._cache.popitem(last=False)
 
     def __call__(self, input: list[str]) -> list[list[float]]:
         results: list[list[float] | None] = []
         uncached_texts: list[str] = []
         uncached_indices: list[int] = []
         for i, text in enumerate(input):
-            cached = self._cache.get(text)
+            cached = self._cache_get(text)
             if cached is not None:
                 results.append(cached)
             else:
@@ -50,7 +67,7 @@ class OllamaEmbeddingFunction:
                 )
             for idx, emb, text in zip(uncached_indices, embeddings, uncached_texts):
                 results[idx] = emb
-                self._cache[text] = emb
+                self._cache_put(text, emb)
         return [result for result in results if result is not None]
 
 
@@ -164,7 +181,9 @@ class VectorManager:
         loop = asyncio.get_running_loop()
         existing_ids = set()
         try:
-            existing = self._collection.get(ids=ids, include=[])
+            existing = await loop.run_in_executor(
+                None, lambda: self._collection.get(ids=ids, include=[])
+            )
             existing_ids = set(existing["ids"] if existing and "ids" in existing else [])
         except Exception:
             pass
@@ -208,7 +227,9 @@ class VectorManager:
         ids_to_delete: set[str] = set()
         for key in ("note_path", "source"):
             try:
-                results = self._collection.get(where={key: note_path}, include=[])
+                results = await loop.run_in_executor(
+                    None, lambda k=key: self._collection.get(where={k: note_path}, include=[])
+                )
                 ids_to_delete.update(results["ids"] if results and results.get("ids") else [])
             except Exception as e:
                 logger.debug("delete_by_note_path filter %s error: %s", key, e)
@@ -305,11 +326,14 @@ class VectorManager:
         where_filter = build_tag_where(filter_tags)
 
         try:
+            # Sobrrecuperación (mejora 1): el reranking híbrido necesita más
+            # candidatos que top_k para rescatar coincidencias exactas de
+            # nombres propios que el coseno ordena por detrás.
             results = await loop.run_in_executor(
                 None,
                 lambda: self._collection.query(
                     query_texts=[query_text],
-                    n_results=min(top_k, self._collection.count()),
+                    n_results=min(max(top_k * 4, 20), self._collection.count()),
                     where=where_filter,
                 ),
             )
@@ -338,48 +362,78 @@ class VectorManager:
         if not results or not results.get("documents") or not results["documents"][0]:
             return {"success": True, "results": [], "message": "Sin resultados relevantes."}
 
-        formatted = []
-        seen_notes = set()
+        candidates = []
         for i in range(len(results["documents"][0])):
             doc = results["documents"][0][i]
             meta = (results["metadatas"][0][i]) if results.get("metadatas") else {}
             distance = (results["distances"][0][i]) if results.get("distances") else 0.0
             note_path = meta.get("note_path", meta.get("source", "desconocido"))
-            seen_notes.add(note_path)
+            candidates.append(
+                {
+                    "text": doc,
+                    "semantic_score": max(0.0, 1.0 - float(distance) / 2.0),
+                    "meta": meta,
+                    "note_path": note_path,
+                }
+            )
+
+        # Reranking híbrido (mejora 1): señal léxica/entidad/fichero sobre la
+        # similitud vectorial para nombres propios y consultas exhaustivas.
+        scored = score_candidates(query_text, candidates)
+
+        threshold = settings.relevance_threshold
+        kept = []
+        for cand in scored:
+            if apply_threshold:
+                rescate = bool(cand["entity_matches"] or cand["file_matches"])
+                if cand["semantic_score"] < threshold and not rescate:
+                    continue
+            kept.append(cand)
+
+        if apply_threshold and not kept:
+            return {
+                "success": True,
+                "results": [],
+                "notes_found": [],
+                "message": (
+                    "NO_ENCONTRADO: ningun fragmento supera el umbral de relevancia "
+                    "(%.2f)." % threshold
+                ),
+            }
+
+        if filter_tags:
+            wanted = {normalize_tag(t) for t in filter_tags if normalize_tag(t)}
+            kept = [c for c in kept if wanted & {normalize_tag(t) for t in _parse_tags(c["meta"])}]
+
+        kept = kept[:top_k]
+
+        formatted = []
+        for cand in kept:
+            meta = cand["meta"]
+            note_path = cand["note_path"]
             formatted.append(
                 {
-                    "content": doc[:800],
+                    "content": cand["text"][:800],
                     "source": meta.get("filename", note_path),
                     "note_path": note_path,
                     "heading": meta.get("heading", ""),
                     "obsidian_uri": meta.get("obsidian_uri", ""),
                     "tags": _parse_tags(meta),
-                    "relevance": "%.3f" % max(0.0, 1.0 - distance / 2.0),
+                    "relevance": "%.3f" % cand["semantic_score"],
+                    "matched_terms": cand["matched_terms"],
                 }
             )
         metrics.observe("embedding_query_latency", time.perf_counter() - _t0)
-        if apply_threshold:
-            threshold = settings.relevance_threshold
-            formatted = [r for r in formatted if float(r["relevance"]) >= threshold]
-            if not formatted:
-                return {
-                    "success": True,
-                    "results": [],
-                    "notes_found": [],
-                    "message": (
-                        "NO_ENCONTRADO: ningun fragmento supera el umbral de relevancia "
-                        "(%.2f)." % threshold
-                    ),
-                }
-            seen_notes = {r["note_path"] for r in formatted}
-        if filter_tags:
-            wanted = {normalize_tag(t) for t in filter_tags if normalize_tag(t)}
-            formatted = [
-                r
-                for r in formatted
-                if wanted & {normalize_tag(t) for t in r["tags"]}  # type: ignore[union-attr]
-            ]
-            seen_notes = {r["note_path"] for r in formatted}
+
+        if not formatted:
+            return {
+                "success": True,
+                "results": [],
+                "notes_found": [],
+                "message": "Sin resultados relevantes.",
+            }
+
+        seen_notes = {r["note_path"] for r in formatted}
         return {
             "success": True,
             "results": formatted,
@@ -391,12 +445,16 @@ class VectorManager:
     async def document_exists(self, file_path: str) -> bool:
         if not self._collection:
             return False
+        loop = asyncio.get_running_loop()
         for key in ("note_path", "source"):
             try:
-                results = self._collection.get(
-                    where={key: file_path},
-                    limit=1,
-                    include=[],
+                results = await loop.run_in_executor(
+                    None,
+                    lambda k=key: self._collection.get(
+                        where={k: file_path},
+                        limit=1,
+                        include=[],
+                    ),
                 )
                 if results and results.get("ids"):
                     return True
@@ -407,9 +465,12 @@ class VectorManager:
     async def get_stats(self) -> dict[str, Any]:
         if not self._collection:
             return {"total_chunks": 0, "total_documents": 0}
-        count = self._collection.count()
+        loop = asyncio.get_running_loop()
+        count = await loop.run_in_executor(None, self._collection.count)
         try:
-            all_meta = self._collection.get(include=["metadatas"])
+            all_meta = await loop.run_in_executor(
+                None, lambda: self._collection.get(include=["metadatas"])
+            )
             sources = set()
             for m in all_meta["metadatas"]:
                 src = m.get("filename", m.get("source", ""))
@@ -438,6 +499,9 @@ class VectorManager:
 def chunk_text(text: str, chunk_size: int = 512, chunk_overlap: int = 64) -> list[str]:
     if not text or not text.strip():
         return []
+    if chunk_overlap >= chunk_size:
+        # Sin esto el paso era 0 o negativo y el bucle no avanzaba nunca.
+        chunk_overlap = 0
     text = re.sub(r"\s+", " ", text).strip()
     words = text.split()
     if len(words) <= chunk_size:

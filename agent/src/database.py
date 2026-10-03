@@ -271,6 +271,22 @@ class DatabaseManager:
                 UNIQUE(chat_id, service)
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_relations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                object TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(chat_id, subject, predicate, object)
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_knowledge_relations_chat
+            ON knowledge_relations(chat_id)
+            """,
         ]
         for stmt in schema:
             await self._conn.execute(stmt)
@@ -885,18 +901,29 @@ class DatabaseManager:
     async def search_personal_knowledge(
         self, chat_id: int, query: str, limit: int = 20
     ) -> list[dict[str, Any]]:
+        # El valor se guarda cifrado (Fernet), asi que un LIKE de SQL sobre
+        # `value` jamas coincidia con texto plano: buscar por contenido
+        # fallaba en silencio. Se filtra en Python tras descifrar (la tabla
+        # personal es pequena).
         sql = """
             SELECT * FROM personal_knowledge
             WHERE chat_id = ?
-              AND (key LIKE ? OR value LIKE ? OR category LIKE ?)
             ORDER BY updated_at DESC
-            LIMIT ?
         """
-        pattern = f"%{query.strip()}%"
-        rows = await self.fetchall(sql, (chat_id, pattern, pattern, pattern, limit))
+        rows = await self.fetchall(sql, (chat_id,))
+        needle = query.strip().lower()
+        results = []
         for row in rows:
             row["value"] = decrypt_value(row["value"])
-        return rows
+            if not needle or (
+                needle in (row.get("key") or "").lower()
+                or needle in (row.get("category") or "").lower()
+                or needle in (row.get("value") or "").lower()
+            ):
+                results.append(row)
+            if len(results) >= limit:
+                break
+        return results
 
     async def get_all_personal_knowledge(self, chat_id: int) -> list[dict[str, Any]]:
         sql = """
@@ -923,6 +950,124 @@ class DatabaseManager:
             (chat_id,),
         )
         return row["count"] if row else 0
+
+    # ------------------------------------------------------------------
+    # Grafo de conocimiento (mejora 8): relaciones tipadas
+    # ------------------------------------------------------------------
+
+    async def add_relation(
+        self, chat_id: int, subject: str, predicate: str, obj: str, source: str = ""
+    ) -> dict[str, Any]:
+        subject = subject.strip()
+        predicate = predicate.strip().lower()
+        obj = obj.strip()
+        if not subject or not predicate or not obj:
+            return {"success": False, "message": "Sujeto, predicado y objeto son obligatorios."}
+        await self.execute(
+            """
+            INSERT OR IGNORE INTO knowledge_relations
+                (chat_id, subject, predicate, object, source)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (chat_id, subject, predicate, obj, source),
+        )
+        await self._conn.commit()
+        row = await self.fetchone(
+            """
+            SELECT * FROM knowledge_relations
+            WHERE chat_id = ? AND subject = ? AND predicate = ? AND object = ?
+            """,
+            (chat_id, subject, predicate, obj),
+        )
+        return {"success": True, "relation": dict(row) if row else None}
+
+    async def search_relations(
+        self, chat_id: int, query: str = "", subject: str = ""
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM knowledge_relations WHERE chat_id = ?"
+        params: list[Any] = [chat_id]
+        if subject:
+            sql += " AND subject = ?"
+            params.append(subject.strip())
+        needle = query.strip().lower()
+        rows = await self.fetchall(sql + " ORDER BY subject, predicate, object", tuple(params))
+        if not needle:
+            return rows
+        return [
+            r
+            for r in rows
+            if needle in (r.get("subject") or "").lower()
+            or needle in (r.get("predicate") or "").lower()
+            or needle in (r.get("object") or "").lower()
+            or needle in (r.get("source") or "").lower()
+        ]
+
+    async def delete_relation(self, chat_id: int, relation_id: int) -> bool:
+        cursor = await self.execute(
+            "DELETE FROM knowledge_relations WHERE chat_id = ? AND id = ?",
+            (chat_id, relation_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # RGPD (mejora 7): exportar y borrar los datos de un usuario
+    # ------------------------------------------------------------------
+
+    _GDPR_TABLES = (
+        ("chat_history", "chat_id"),
+        ("events", "chat_id"),
+        ("tasks", "chat_id"),
+        ("alerts", "chat_id"),
+        ("finance_records", "chat_id"),
+        ("exports", "chat_id"),
+        ("user_preferences", "chat_id"),
+        ("personal_knowledge", "chat_id"),
+        ("voice_sessions", "chat_id"),
+        ("second_brain_log", "chat_id"),
+        ("knowledge_relations", "chat_id"),
+        ("credentials", "chat_id"),
+        ("meetings", "user_id"),
+    )
+
+    async def export_user_data(self, chat_id: int, *extra_ids: int) -> dict[str, Any]:
+        """Exporta todos los datos del usuario en JSON (derecho de acceso).
+
+        `extra_ids` cubre los espacios de id alternativos (p. ej. el usuario
+        web guarda su chat en WEB_CHAT_BASE + id y sus reuniones en user_id).
+        """
+        ids: tuple[Any, ...] = (chat_id, *extra_ids)
+        placeholders = ",".join("?" for _ in ids)
+        data: dict[str, Any] = {"chat_id": chat_id, "exported_at": datetime.utcnow().isoformat()}
+        for table, column in self._GDPR_TABLES:
+            try:
+                rows = await self.fetchall(
+                    "SELECT * FROM %s WHERE %s IN (%s)" % (table, column, placeholders), ids
+                )
+            except Exception:
+                rows = []
+            if table == "personal_knowledge":
+                for row in rows:
+                    row["value"] = decrypt_value(row["value"])
+            if rows:
+                data[table] = [dict(r) for r in rows]
+        return data
+
+    async def delete_user_data(self, chat_id: int, *extra_ids: int) -> dict[str, int]:
+        """Borra todos los datos del usuario (derecho de supresión)."""
+        ids: tuple[Any, ...] = (chat_id, *extra_ids)
+        placeholders = ",".join("?" for _ in ids)
+        deleted: dict[str, int] = {}
+        for table, column in self._GDPR_TABLES:
+            try:
+                cursor = await self.execute(
+                    "DELETE FROM %s WHERE %s IN (%s)" % (table, column, placeholders), ids
+                )
+                deleted[table] = cursor.rowcount
+            except Exception:
+                deleted[table] = 0
+        await self._conn.commit()
+        return {k: v for k, v in deleted.items() if v}
 
     async def add_recurring_alert(
         self,

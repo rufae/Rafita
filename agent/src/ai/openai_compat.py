@@ -17,6 +17,7 @@ from openai import AsyncOpenAI, OpenAI
 
 from src.config import settings
 from src.logger import logger
+from src.utils.telemetry import record_llm_usage
 
 
 class OpenAICompatClient:
@@ -102,6 +103,7 @@ class OpenAICompatClient:
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
             extra_body=self._extra_body(),
         )
+        record_llm_usage(response)
         return response.choices[0].message.content or ""
 
     async def chat_with_tools(
@@ -124,6 +126,7 @@ class OpenAICompatClient:
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
             extra_body=self._extra_body(),
         )
+        record_llm_usage(response)
         message = response.choices[0].message
         tool_calls = None
         if message.tool_calls:

@@ -1,7 +1,7 @@
 import asyncio
 import signal
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from src.bot import bot
@@ -24,12 +24,26 @@ GC_HOUR = 3
 GC_MINUTE = 0
 
 
+def _log_background_task_failure(task: asyncio.Task) -> None:
+    """Registra fallos de servicios lanzados con create_task.
+
+    Si uvicorn no puede bindear el puerto, la excepcion quedaba como
+    "Task exception was never retrieved" y el arranque decia que todo iba bien.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error("Servicio en segundo plano fallo: %s", exc, exc_info=exc)
+
+
 class ProactiveWorker:
     def __init__(self):
         self._task: asyncio.Task | None = None
         self._shutdown_event: asyncio.Event | None = None
         self._gc_run_count: int = 0
         self._consecutive_failures: int = 0
+        self._last_gc_date: date | None = None
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
         self._shutdown_event = shutdown_event
@@ -106,7 +120,12 @@ class ProactiveWorker:
         logger.info("Running proactive check...")
         try:
             now = datetime.now()
-            if now.hour == GC_HOUR and now.minute >= GC_MINUTE and now.minute < GC_MINUTE + 10:
+            # El GC corre una vez al dia, en la primera comprobacion proactiva
+            # de la jornada. Antes exigia que esa comprobacion cayera en la
+            # ventana de las 03:00 (GC_HOUR), pero el check se lanza a la hora
+            # configurada (09:00 por defecto): con la config real nunca corria.
+            if self._last_gc_date != now.date():
+                self._last_gc_date = now.date()
                 await self._run_garbage_collection()
             chat_ids = await db.get_all_chat_ids()
             for chat_id in chat_ids:
@@ -224,6 +243,9 @@ class Application:
         self._gateway_task: asyncio.Task | None = None
         self._voice_stream_task: asyncio.Task | None = None
         self._brain_maintainer = BrainMaintainer()
+        from src.utils.infra_monitor import InfraWorker
+
+        self._infra_worker = InfraWorker()
 
     async def _ensure_embedding_model(self) -> None:
         try:
@@ -368,6 +390,7 @@ class Application:
                 settings.web_auth_secret = web_auth_secret
             await bootstrap_admin()
             self._gateway_task = asyncio.create_task(start_gateway_server(port=8000))
+            self._gateway_task.add_done_callback(_log_background_task_failure)
             logger.info(
                 "Gateway started on port 8000 (webhook auth: %s, web login: %s)",
                 "enabled" if webhook_secret else "DISABLED - webhooks rejected",
@@ -381,6 +404,7 @@ class Application:
             from src.voice_stream.server import start_voice_stream_server
 
             self._voice_stream_task = asyncio.create_task(start_voice_stream_server(port=8001))
+            self._voice_stream_task.add_done_callback(_log_background_task_failure)
             logger.info("Voice Stream started on port 8001")
         except Exception as e:
             logger.warning("Voice Stream start skipped: %s", e)
@@ -393,6 +417,7 @@ class Application:
         await self._briefing_worker.start(self._shutdown_event)
         await self._indexer.start(self._shutdown_event)
         await self._brain_maintainer.start(self._shutdown_event)
+        await self._infra_worker.start(self._shutdown_event)
 
         asyncio.create_task(_catch_up_scan())
         asyncio.create_task(_health_monitor())
@@ -432,6 +457,10 @@ class Application:
             await self._brain_maintainer.stop()
         except Exception as e:
             logger.error("Error stopping BrainMaintainer: %s", e)
+        try:
+            await self._infra_worker.stop()
+        except Exception as e:
+            logger.error("Error stopping InfraWorker: %s", e)
         try:
             from src.utils.app_connector import connector
 
