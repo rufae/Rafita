@@ -58,6 +58,17 @@
           }
         ]
       ]
+    },
+    "Manual (chat)": {
+      "main": [
+        [
+          {
+            "node": "Procesar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

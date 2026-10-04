@@ -234,6 +234,17 @@
           }
         ]
       ]
+    },
+    "Manual (chat)": {
+      "main": [
+        [
+          {
+            "node": "Firmar HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
