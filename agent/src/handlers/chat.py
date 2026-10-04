@@ -1857,6 +1857,19 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             except Exception:
                 pass
 
+            # Contactos (People API) para distinguir PERSONAL de INFORMATIVO
+            # (idea 14, taxonomia: urgente/clientes/facturas/personal/
+            # informativo/sin_accion).
+            contactos_email: set[str] = set()
+            try:
+                data = await google_services.list_contacts(page_size=50)
+                for p in data.get("contacts", []) or []:
+                    valor = str(p.get("email") or "").strip().lower()
+                    if valor:
+                        contactos_email.add(valor)
+            except Exception:
+                pass
+
             clasificados: list[dict[str, Any]] = []
             borradores = 0
             borrador_fallos: list[str] = []
@@ -1898,8 +1911,27 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     nombre in de or nombre in texto for nombre in clientes_email if len(nombre) >= 4
                 ):
                     categoria = "clientes"
+                elif any(
+                    p in texto or p in de
+                    for p in (
+                        "no-reply",
+                        "no reply",
+                        "no respondas",
+                        "notificación automática",
+                        "notificacion automatica",
+                        "newsletter",
+                        "promoción",
+                        "promocion",
+                        "unsubscribe",
+                        "boletín",
+                        "boletin",
+                    )
+                ):
+                    categoria = "sin_accion"
+                elif de and any(correo in de for correo in contactos_email if len(correo) >= 6):
+                    categoria = "personal"
                 else:
-                    categoria = "otro"
+                    categoria = "informativo"
                 entrada: dict[str, Any] = {
                     "categoria": categoria,
                     "de": origen,

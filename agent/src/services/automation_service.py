@@ -744,10 +744,47 @@ async def build_briefing() -> dict[str, Any]:
 INBOX_PROMPT = (
     "Clasifica estos correos y responde SOLO con un JSON array, un objeto por "
     "correo, con las claves: id (el numero), categoria (una de: urgente, "
-    "factura, cliente, informativo), resumen (max 12 palabras) y borrador "
-    "(solo si categoria es urgente o cliente: respuesta breve y educada en "
-    "espanol; si no, cadena vacia). No inventes datos."
+    "cliente, factura, personal, informativo, sin_accion), resumen (max 12 "
+    "palabras) y borrador (solo si categoria es urgente o cliente: respuesta "
+    "breve y educada en espanol; si no, cadena vacia). sin_accion = automatico "
+    "o informativo que NO requiere respuesta (newsletter, promocion, aviso de "
+    "sistema, no-reply). personal = persona conocida, fuera del ambito "
+    "laboral. No inventes datos."
 )
+
+# Taxonomia unica (idea 14) y prioridad de orden: el briefing/n8n prioriza
+# lo accionable y los borradores primero.
+INBOX_CATEGORIES = ("urgente", "cliente", "factura", "personal", "informativo", "sin_accion")
+_INBOX_ALIASES = {
+    "sin_accion": "sin_accion",
+    "sin_acción": "sin_accion",
+    "sin-accion": "sin_accion",
+    "sinaccion": "sin_accion",
+    "automatico": "sin_accion",
+    "otro": "informativo",
+    "otros": "informativo",
+    "newsletter": "sin_accion",
+    "promo": "sin_accion",
+    "promocion": "sin_accion",
+}
+_INBOX_PRIORITY = {
+    "urgente": 0,
+    "cliente": 1,
+    "factura": 2,
+    "personal": 3,
+    "informativo": 4,
+    "sin_accion": 5,
+}
+
+
+def _norm_cat(value: Any) -> str:
+    """Normaliza la categoria del LLM a nuestra taxonomia (fallback: informativo)."""
+    cat = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if cat in _INBOX_PRIORITY:
+        return cat
+    if cat in _INBOX_ALIASES:
+        return _INBOX_ALIASES[cat]
+    return "informativo"
 
 
 async def scan_inbox(hours: int = 2, max_results: int = 8) -> dict[str, Any]:
@@ -796,7 +833,7 @@ async def scan_inbox(hours: int = 2, max_results: int = 8) -> dict[str, Any]:
                         "id": mail.get("id", ""),
                         "from": mail.get("from", ""),
                         "subject": mail.get("subject", ""),
-                        "categoria": str(item.get("categoria", "informativo")).lower(),
+                        "categoria": _norm_cat(item.get("categoria", "informativo")),
                         "resumen": item.get("resumen", ""),
                         "borrador": item.get("borrador", ""),
                     }
@@ -816,6 +853,15 @@ async def scan_inbox(hours: int = 2, max_results: int = 8) -> dict[str, Any]:
             }
             for m in mails
         ]
+
+    # Prioridad (idea 14): lo accionable primero y, a igual categoria, los
+    # correos con borrador listo antes que los que aun no lo tienen.
+    classified.sort(
+        key=lambda i: (
+            _INBOX_PRIORITY.get(i["categoria"], 9),
+            0 if i.get("borrador") else 1,
+        )
+    )
 
     # Deduplicacion (2026-09-28): el flujo corre cada 30 min y el correo sigue
     # sin leer; sin esto se avisaria del mismo correo una y otra vez.

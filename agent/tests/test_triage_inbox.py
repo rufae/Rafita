@@ -1,7 +1,8 @@
 """2.b.1 — Triaje de correo → borradores (triage_inbox).
 
-Clasifica la bandeja no leída (urgente/facturas/clientes/otro) con reglas
-deterministas y deja borradores profesionales en Gmail sin enviar.
+Clasifica la bandeja no leída (urgente/facturas/clientes/personal/
+informativo/sin_accion) con reglas deterministas y deja borradores
+profesionales en Gmail sin enviar.
 """
 
 from src.handlers import chat as chat_mod
@@ -21,6 +22,7 @@ def test_definicion():
     assert "triaja" in desc or "clasifica" in desc
     assert "urgente" in desc
     assert "facturas" in desc
+    assert "sin_accion" in desc
     assert "SIN enviar" in desc
     assert "Gmail conectado" in desc
 
@@ -81,7 +83,7 @@ async def test_clasifica_y_no_borradores_para_otro(monkeypatch):
     result = await chat_mod._execute_tool(1, "triage_inbox", {"max_drafts": 0})
     assert result["success"] is True
     cats = [c["categoria"] for c in result["correos"]]
-    assert cats == ["urgente", "facturas", "clientes", "otro"]
+    assert cats == ["urgente", "facturas", "clientes", "sin_accion"]
     assert result["borradores"] == 0
     assert fake.drafts == []
     assert fake.queries == ["newer_than:3d is:unread"]
@@ -97,7 +99,7 @@ async def test_borradores_profesionales_para_accionables(monkeypatch):
 
     result = await chat_mod._execute_tool(1, "triage_inbox", {})
     assert result["success"] is True
-    assert result["borradores"] == 3  # urgente + facturas + clientes (no 'otro')
+    assert result["borradores"] == 3  # urgente + facturas + clientes (no sin_accion)
     assert len(fake.drafts) == 3
     assert fake.drafts[0]["to"] == "soporte@empresa.com"
     assert fake.drafts[0]["subject"].startswith("Re: ")
@@ -169,3 +171,44 @@ def _crm_ana():
         ]
 
     return _listar
+
+
+class _FakeGConContactos(_FakeG):
+    async def list_contacts(self, page_size=50):
+        return {
+            "success": True,
+            "contacts": [{"name": "Marta", "email": "marta@gmail.com", "phone": ""}],
+        }
+
+
+async def test_clasifica_personal_y_sin_accion(monkeypatch):
+    # idea 14: PERSONAL (contacto conocido) y SIN ACCIÓN (automatico) en vez
+    # del cajon 'otro'.
+    msgs = [
+        {
+            "subject": "¿Quedamos el viernes?",
+            "from": "Marta <marta@gmail.com>",
+            "date": "2026-10-03",
+            "snippet": "te aviso por si no lo viste",
+        },
+        {
+            "subject": "Aviso de seguridad",
+            "from": "no-reply@banco.com",
+            "date": "2026-10-02",
+            "snippet": "hemos detectado un acceso nuevo",
+        },
+        {
+            "subject": "Newsletter semanal",
+            "from": "news@revista.com",
+            "date": "2026-10-01",
+            "snippet": "resumen de la semana",
+        },
+    ]
+    fake = _FakeGConContactos(messages=msgs)
+    monkeypatch.setattr(chat_mod, "google_services", fake)
+    monkeypatch.setattr(_fake_crm_mod(), "listar", _crm_ana())
+
+    result = await chat_mod._execute_tool(1, "triage_inbox", {"max_drafts": 0})
+    assert result["success"] is True
+    cats = [c["categoria"] for c in result["correos"]]
+    assert cats == ["personal", "sin_accion", "sin_accion"]
