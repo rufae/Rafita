@@ -104,6 +104,33 @@ se usa **etiqueta + prefijo de categoría en el nombre**.
 
 ---
 
+## Robustez y observabilidad (Fase 1, 2026-10-04)
+
+Endurecimiento aplicado a **todos** los flujos (con `test_n8n_robustez.py`
+en el gate):
+
+- **Reintentos con backoff**: todo nodo HTTP reintenta 3 veces con 2 s de
+  espera (`retryOnFail`/`maxTries`/`waitBetweenTries`).
+- **Timeouts**: 30 s para las llamadas a Rafita, 15 s para Telegram, 10 s
+  para el informe. Nada se queda colgado.
+- **Fallo controlado**: `onError=continueRegularOutput` en las llamadas a
+  Rafita y a Telegram. Si un servicio cae, el flujo **degrada** (los filtros
+  posteriores no avisan con basura, y el nodo «Mensaje Telegram» no manda
+  `undefined`) en vez de tumbarse ni spamear.
+- **Informe de cada ejecución**: una rama paralela con «Firmar informe» +
+  «Reportar a Rafita» envía `{execution_id, workflow, status, error,
+  finished_at}` firmado con HMAC a `POST /api/n8n/run`. Rafita lo guarda en
+  la tabla `automation_runs` (**idempotente por `execution_id`**: los
+  reintentos no duplican filas).
+- **Alertas sin spam**: solo se avisa a los admins si la **misma**
+  automatización falla **dos veces seguidas**.
+- **Respuesta con datos reales**: desde el chat, «¿qué automatizaciones han
+  fallado esta semana?» usa la tool `get_automation_runs` (últimos N días,
+  solo errores opcional).
+
+> Al actualizar las plantillas, **reimporta los flujos** en n8n (sección
+> *Importar*): las copias activas en tu instancia n8n no se actualizan solas.
+
 ## Requisitos (.env)
 
 | Variable | Para qué |
@@ -143,6 +170,9 @@ docker restart n8n
 3. **Captura**: prueba el `curl` de la sección 03 y comprueba la nota en
    `00-Inbox/`.
 4. **Informe semanal**: *Execute Workflow* del 05 y revisa el informe.
+5. **Informe de ejecución**: al terminar cualquier flujo, pregunta a Rafita
+   «¿qué automatizaciones han corrido?» y debe listar la ejecución (tabla
+   `automation_runs`, sin duplicados aunque repitas el informe).
 
 ## Seguridad
 
