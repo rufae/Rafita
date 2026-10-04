@@ -142,6 +142,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-radar-ia",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b8b27815-c6d5-4158-a77c-2f8143eba589",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

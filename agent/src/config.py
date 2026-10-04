@@ -136,6 +136,8 @@ class Settings(BaseSettings):
 
     # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.
     n8n_webhooks: str = Field("", alias="N8N_WEBHOOKS")
+    # Base para los webhooks manuales del catalogo (tarea 13, orquestador).
+    n8n_base_url: str = Field("http://n8n:5678", alias="N8N_BASE_URL")
 
     # Radar de IA (punto 4): feeds RSS separados por coma (vacio = lista por
     # defecto del codigo).

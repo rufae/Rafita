@@ -156,6 +156,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-secuencias-email",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "28d5ef6a-7fc2-4e52-bf77-9c67de225e47",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

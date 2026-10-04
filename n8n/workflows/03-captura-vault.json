@@ -112,6 +112,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-captura-vault",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "135387eb-1d2b-4857-b1be-2fd6cc5b17f1",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

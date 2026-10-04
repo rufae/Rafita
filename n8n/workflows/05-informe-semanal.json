@@ -145,6 +145,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-informe-semanal",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "500a8155-2d8a-4012-b8a3-65558a1f7034",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

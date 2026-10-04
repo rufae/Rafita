@@ -1016,6 +1016,45 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "list_automations",
+            "description": "Lista el catalogo de automatizaciones de n8n con su modo de "
+            "permiso (lectura=auto, escritura=auto, accion externa=requiere confirmacion) "
+            "y su horario. Usala antes de run_automation o cuando el usuario pregunte "
+            "que puede automatizar o lanzar.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_automation",
+            "description": "Lanza una automatizacion del catalogo en n8n (seleccion + "
+            "permisos). Si devuelve needs_confirmation, pide confirmacion al usuario y "
+            "repite la llamada con confirm=true. Para peticiones compuestas (CRM+correo+"
+            "calendario+tareas), combina las herramientas directas en vez de esto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Clave de la automatizacion (ver list_automations)",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parametros opcionales que el flujo necesite",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "true SOLO tras pedirselo al usuario (modo accion externa)",
+                    },
+                },
+                "required": ["key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_google_tasks",
             "description": "Gestiona las tareas pendientes del usuario (Google Tasks si esta "
             "conectado; si no, locales): list, create (con titulo y fecha en "

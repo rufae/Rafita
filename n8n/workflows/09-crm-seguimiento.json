@@ -159,6 +159,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-crm-seguimiento",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "3d78df9d-c599-4715-a826-d821da7bcb8b",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

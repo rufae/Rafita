@@ -118,6 +118,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-plantilla-aviso",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "21cb5c05-9255-469b-aadb-bc382a904e93",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {
