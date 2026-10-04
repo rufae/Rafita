@@ -16,10 +16,11 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 ### Conversación y herramientas
 - **Chat con IA local** (Ollama, p. ej. `gemma4:12b`) por **Telegram**, **web**
   y **llamada de voz**, con el mismo cerebro en los tres canales.
-- **39 herramientas** que el modelo decide invocar solo (sin enrutado por
+- **43 herramientas** que el modelo decide invocar solo (sin enrutado por
   palabras clave): eventos, alertas, finanzas, contactos, correo, tareas,
   Google Calendar/Drive/Gmail/Tasks, búsqueda web, bóveda, CRM, grafo de
-  conocimiento, n8n, exportaciones RGPD…
+  conocimiento, n8n, copias de seguridad bajo demanda, estado de las
+  automatizaciones, exportaciones RGPD…
 - **Honestidad garantizada**: guardias deterministas impiden que el modelo
   diga «he creado el evento» si ninguna herramienta lo hizo.
 
@@ -54,7 +55,8 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 
 ### Operación y privacidad
 - **Backups verificados**: restic cifrado al USB + Google Drive, copia horaria
-  de la BD, restore-drill mensual y alertas si el backup falla.
+  de la BD, restore-drill mensual y alertas si el backup falla. Copia
+  completa **bajo demanda** con `/backup` o «hazme un backup ahora».
 - **Observabilidad**: métricas de latencia por herramienta y tokens LLM en
   `/metrics`, y un vigilante de infraestructura (disco, IA, RAG, backup) que
   avisa por Telegram solo cuando algo se degrada.
@@ -62,7 +64,10 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 - **Secretos file-based** (Docker secrets), webhooks HMAC, bot privado por
   whitelist y cifrado fail-closed de credenciales.
 - **Automatizaciones n8n** (briefing matutino, inbox zero, sync Google,
-  informe semanal, radar de IA, CRM…): ver [n8n/README.md](n8n/README.md).
+  informe semanal, radar de IA, CRM…) con reintentos, timeouts y fallo
+  controlado; cada ejecución se informa a Rafita y puedes preguntarle
+  «¿qué automatizaciones han fallado esta semana?». Ver
+  [n8n/README.md](n8n/README.md).
 
 ## Filosofía
 
@@ -134,7 +139,8 @@ backups, voz, bóveda…) con el siguiente paso de cada pendiente.
 | `/recordar [tema]` | Guardar la conversación como nota Zettelkasten |
 | `/guardar_clave <srv> <val>` | Guardar API key cifrada (Fernet) |
 | `/ubicacion <ciudad>` | Fijar tu ciudad (tiempo y avisos CAP) |
-| `/backup` | Generar respaldo ZIP de datos |
+| `/backup` | Lanzar una copia de seguridad completa del sistema ahora |
+| `/backup_zip` | Generar respaldo ZIP de datos en el chat |
 | `/setup_google` | Conectar Google (Calendar, Drive, Gmail, Contactos…) |
 | `/sync_google` | Copiar Google al segundo cerebro |
 | `/status` | Panel de control completo del sistema |
@@ -202,7 +208,7 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests (≈1460, sin paralelo)
+# Tests (≈1497, sin paralelo)
 pytest agent/tests -v
 
 # Todos los checks (pre-commit)
