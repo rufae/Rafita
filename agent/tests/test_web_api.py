@@ -604,3 +604,38 @@ def test_web_chat_comando_backup_dispara_sistema(monkeypatch, tmp_path):
     resp_zip = client.post("/api/chat", json={"message": "/backup_zip"}, headers=headers)
     assert resp_zip.status_code == 200
     assert "/backup_zip" in resp_zip.json()["reply"]
+
+
+def test_web_chat_comando_sync_google(monkeypatch, tmp_path):
+    """'/sync_google' ejecuta la copia al vault; no cae en el modelo."""
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+
+    async def fake_generate(text, chat_id):
+        raise AssertionError("un comando no debe caer en el modelo")
+
+    monkeypatch.setattr("src.core.generate_response", fake_generate)
+
+    async def fake_ok():
+        return {"success": True, "message": "Copia local creada: 3 contactos.", "files": []}
+
+    monkeypatch.setattr("src.utils.google_brain_sync.sync_google_to_vault", fake_ok)
+    resp = client.post("/api/chat", json={"message": "/sync_google"}, headers=headers)
+    assert resp.status_code == 200
+    assert "Copia local creada" in resp.json()["reply"]
+
+    async def fake_falla():
+        raise RuntimeError("boom de Google")
+
+    monkeypatch.setattr("src.utils.google_brain_sync.sync_google_to_vault", fake_falla)
+    resp = client.post("/api/chat", json={"message": "/sync_google"}, headers=headers)
+    assert resp.status_code == 200
+    assert "No pude sincronizar Google" in resp.json()["reply"]
+    assert "boom de Google" in resp.json()["reply"]
+    assert "/setup_google" in resp.json()["reply"]
