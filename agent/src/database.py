@@ -1098,6 +1098,10 @@ class DatabaseManager:
             "VALUES (?, ?, ?, ?, ?)",
             (execution_id, workflow, status, error, finished_at),
         )
+        # execute() no commitea: sin esto la fila queda en la transaccion
+        # abierta y otros procesos (otras tools) no la ven (visto en vivo
+        # 2026-10-04: automation_runs vacia pese a respuestas success:true).
+        await self._conn.commit()
         return cursor.rowcount > 0
 
     async def list_automation_runs(
