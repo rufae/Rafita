@@ -129,6 +129,13 @@ class VectorManager:
         import logging as _logging
 
         _logging.getLogger("chromadb.telemetry.product.posthog").setLevel(_logging.CRITICAL)
+        # chroma 0.5.0 avisa "Add of existing embedding ID" en CADA upsert de
+        # una nota ya indexada (por diseño el reindex es idempotente): en el
+        # arranque eso son ~660 lineas de WARNING inutiles. El mensaje de
+        # indice ya queda en los logs de Vector DB.
+        _logging.getLogger("chromadb.segment.impl.vector.local_persistent_hnsw").setLevel(
+            _logging.ERROR
+        )
         db_path = settings.vector_db_path
         db_path.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
