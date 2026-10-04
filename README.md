@@ -16,7 +16,7 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 ### Conversación y herramientas
 - **Chat con IA local** (Ollama, p. ej. `gemma4:12b`) por **Telegram**, **web**
   y **llamada de voz**, con el mismo cerebro en los tres canales.
-- **43 herramientas** que el modelo decide invocar solo (sin enrutado por
+- **46 herramientas** que el modelo decide invocar solo (sin enrutado por
   palabras clave): eventos, alertas, finanzas, contactos, correo, tareas,
   Google Calendar/Drive/Gmail/Tasks, búsqueda web, bóveda, CRM, grafo de
   conocimiento, n8n, copias de seguridad bajo demanda, estado de las
@@ -172,6 +172,9 @@ gateway:
   transcribir) y **Llamada** de voz en tiempo real.
 - Login por **email y contraseña** (JWT) y, opcionalmente, **Sign in with
   Google**.
+- **Notificaciones push** (PWA): el botón «Avisos» de la cabecera las
+  activa; el briefing diario y las alertas de automatizaciones llegan también
+  al móvil (claves VAPID con `scripts/generate_vapid_keys.py`).
 - **La llamada con micrófono requiere HTTPS o localhost** (restricción de los
   navegadores): en móvil usa la URL segura de Tailscale o activa SSL en el
   proxy. Ver [docs/web.md](docs/web.md) para puertos, proxy y configuración.
@@ -208,7 +211,7 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests (≈1497, sin paralelo)
+# Tests (≈1546, sin paralelo)
 pytest agent/tests -v
 
 # Todos los checks (pre-commit)

@@ -647,6 +647,15 @@ async def build_briefing() -> dict[str, Any]:
 
     await _save_briefing_copy(text)
 
+    # PWA (mejora 6): el briefing tambien llega como notificacion web push.
+    try:
+        from src.services.push_service import send_web_push
+
+        preview = " ".join(text.split())[:180]
+        await send_web_push("Briefing de hoy", preview or "Resumen del dia")
+    except Exception:
+        logger.debug("Briefing: web push omitido", exc_info=True)
+
     return {
         "success": True,
         "text": text,

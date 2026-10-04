@@ -2,9 +2,10 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -975,6 +976,15 @@ async def execute_tool_measured(
         metrics.inc("tool_calls.%s" % func_name)
 
 
+_EMAIL_FROM_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w+")
+
+
+def _email_from(origen: str) -> str:
+    """Extrae la dirección de un header From tipo «Ana <ana@x.com>»."""
+    match = _EMAIL_FROM_RE.search(origen or "")
+    return match.group(0) if match else ""
+
+
 async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> dict[str, Any]:
     metrics.inc("tool_calls_total")
     metrics.inc("tool_calls_%s" % func_name)
@@ -1601,6 +1611,355 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 ),
             }
 
+        elif func_name == "get_week_plan":
+            # 2.b.2 «Prepara mi semana»: agenda + tareas + CRM pendientes en
+            # UNA sola llamada; el modelo compone el resumen y propone horario.
+            try:
+                days = int(args.get("days", 7) or 7)
+            except (TypeError, ValueError):
+                days = 7
+            days = max(1, min(days, 14))
+            try:
+                ahora = datetime.now(ZoneInfo(settings.timezone))
+            except Exception:
+                ahora = datetime.now()
+            fin = ahora + timedelta(days=days)
+            corte = fin.strftime("%Y-%m-%d")
+            avisos: list[str] = []
+            eventos: list[dict[str, Any]] = []
+            tareas: list[dict[str, Any]] = []
+            clientes: list[dict[str, Any]] = []
+
+            try:
+                if google_services.is_ready:
+                    crudos = await google_services.list_events(
+                        max_results=50, time_min=ahora.isoformat()
+                    )
+                    for ev in crudos:
+                        inicio = (
+                            (ev.get("start") or {}).get("dateTime")
+                            or (ev.get("start") or {}).get("date")
+                            or ""
+                        )
+                        if inicio and inicio[:10] > corte:
+                            continue
+                        eventos.append(
+                            {
+                                "titulo": ev.get("summary") or "(sin titulo)",
+                                "inicio": inicio,
+                                "fin": (ev.get("end") or {}).get("dateTime")
+                                or (ev.get("end") or {}).get("date")
+                                or "",
+                            }
+                        )
+                else:
+                    for fila in await db.get_upcoming_events(chat_id, limit=50):
+                        dt = str(fila.get("event_datetime") or "")
+                        if dt and dt[:10] > corte:
+                            continue
+                        eventos.append(
+                            {
+                                "titulo": fila.get("title") or "(sin titulo)",
+                                "inicio": dt,
+                                "fin": "",
+                            }
+                        )
+            except Exception as exc:
+                avisos.append("agenda no disponible: %s" % exc)
+
+            try:
+                if google_services.is_ready:
+                    paquete = await google_services.list_tasks()
+                    filas_tareas = paquete.get("tasks", [])
+                else:
+                    filas_tareas = await db.list_tasks(chat_id)
+                for tarea in filas_tareas:
+                    vence = str(tarea.get("due") or "")
+                    if vence and vence[:10] > corte:
+                        continue
+                    tareas.append(
+                        {
+                            "titulo": tarea.get("title") or "",
+                            "vence": vence,
+                        }
+                    )
+            except Exception as exc:
+                avisos.append("tareas no disponibles: %s" % exc)
+
+            try:
+                from src.services.crm_service import listar as crm_listar
+
+                for c in await crm_listar(None):
+                    estado = str(c.get("estado") or "lead").strip().lower() or "lead"
+                    if estado in ("cerrado", "perdido"):
+                        continue
+                    clientes.append(
+                        {
+                            "nombre": c.get("nombre") or "",
+                            "estado": estado,
+                            "proximo_paso": c.get("proximo_paso") or "",
+                            "seguimiento": c.get("proximo_seguimiento") or "",
+                        }
+                    )
+            except Exception as exc:
+                avisos.append("CRM no disponible: %s" % exc)
+
+            plan: dict[str, Any] = {
+                "desde": ahora.strftime("%Y-%m-%d %H:%M"),
+                "hasta": fin.strftime("%Y-%m-%d %H:%M"),
+                "agenda": eventos,
+                "tareas": tareas,
+                "crm": clientes,
+                "avisos": avisos,
+            }
+            return {
+                "success": True,
+                **plan,
+                "message": (
+                    "Plan %s a %s: %d evento(s), %d tarea(s), %d cliente(s) "
+                    "abiertos%s. Con estos datos resume la semana y propone "
+                    "un horario."
+                    % (
+                        plan["desde"],
+                        plan["hasta"],
+                        len(eventos),
+                        len(tareas),
+                        len(clientes),
+                        ("; avisos: " + "; ".join(avisos)) if avisos else "",
+                    )
+                ),
+            }
+
+        elif func_name == "create_meeting_tasks":
+            # 2.b.4 «Actas de reunión → seguimiento»: N tareas en una llamada,
+            # con responsable antepuesto al titulo y fecha relativa resuelta.
+            from src.services.google_services_manager import parse_relative_datetime
+
+            raw = args.get("tasks") or args.get("items") or []
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except ValueError:
+                    raw = []
+            if isinstance(raw, dict):
+                raw = [raw]
+            if not isinstance(raw, list) or not raw:
+                return {
+                    "success": False,
+                    "message": (
+                        "Pasa las tareas del acta como lista (title, "
+                        "responsable opcional, due opcional)."
+                    ),
+                }
+            use_google = google_services.is_ready
+            creadas: list[dict[str, Any]] = []
+            fallidas: list[dict[str, Any]] = []
+            for item in raw[:10]:
+                if isinstance(item, str):
+                    item = {"title": item}
+                if not isinstance(item, dict):
+                    continue
+                titulo = str(item.get("title") or item.get("titulo") or "").strip()
+                if not titulo:
+                    continue
+                responsable = str(item.get("responsable") or "").strip()
+                if responsable:
+                    titulo = "[%s] %s" % (responsable, titulo)
+                when = str(item.get("due") or item.get("fecha") or "").strip()
+                due_date = ""
+                if when:
+                    parsed = parse_relative_datetime(when)
+                    if parsed:
+                        due_date = parsed.date().isoformat()
+                    else:
+                        # Fecha absoluta ('2026-10-10'): parse_relative_datetime
+                        # solo entiende relativas y la descartaba.
+                        try:
+                            due_date = datetime.fromisoformat(when[:10]).date().isoformat()
+                        except ValueError:
+                            due_date = ""
+                try:
+                    if use_google:
+                        res = await google_services.create_task(titulo, due=due_date or None)
+                        if not res.get("success"):
+                            raise RuntimeError(
+                                res.get("message") or "Google Tasks rechazo la tarea"
+                            )
+                    else:
+                        await db.add_task(chat_id, titulo, due=due_date or None)
+                    creadas.append({"titulo": titulo, "due": due_date or "sin fecha"})
+                except Exception as exc:
+                    fallidas.append({"titulo": titulo, "error": str(exc)})
+            partes = ["creadas %d de %d" % (len(creadas), len(raw[:10]))]
+            if creadas:
+                detalles = "\n".join("• %s · %s" % (c["titulo"], c["due"]) for c in creadas)
+                partes.append(detalles)
+            if fallidas:
+                partes.append(
+                    "fallidas: "
+                    + "; ".join("%s (%s)" % (f["titulo"], f["error"]) for f in fallidas)
+                )
+            return {
+                "success": bool(creadas),
+                "creadas": creadas,
+                "fallidas": fallidas,
+                "message": " — ".join(partes),
+            }
+
+        elif func_name == "triage_inbox":
+            # 2.b.1 «Triaje de correo → borradores»: clasifica la bandeja no
+            # leida (urgente/facturas/clientes/otro) y deja borradores
+            # profesionales en Gmail SIN enviar para que el usuario revise.
+            if not google_services.is_ready:
+                return {
+                    "success": False,
+                    "message": (
+                        "Gmail no está conectado: sin Google no puedo triar "
+                        "la bandeja. Usa /setup_google para conectar."
+                    ),
+                }
+            try:
+                days = int(args.get("days", 3) or 3)
+            except (TypeError, ValueError):
+                days = 3
+            days = max(1, min(days, 14))
+            crudo_drafts = args.get("max_drafts")
+            try:
+                max_drafts = 5 if crudo_drafts is None else int(crudo_drafts)
+            except (TypeError, ValueError):
+                max_drafts = 5
+            max_drafts = max(0, min(max_drafts, 10))
+            query = "newer_than:%dd is:unread" % days
+            extra = str(args.get("query") or "").strip()
+            if extra:
+                query = "%s %s" % (query, extra)
+            res = await google_services.search_gmail(query=query, max_results=25)
+            mensajes = res.get("messages", []) if isinstance(res, dict) else []
+
+            clientes_email: set[str] = set()
+            try:
+                from src.services.crm_service import listar as crm_listar
+
+                for c in await crm_listar(None):
+                    for campo in ("nombre", "email"):
+                        valor = str(c.get(campo) or "").strip().lower()
+                        if valor:
+                            clientes_email.add(valor)
+            except Exception:
+                pass
+
+            clasificados: list[dict[str, Any]] = []
+            borradores = 0
+            borrador_fallos: list[str] = []
+            for m in mensajes:
+                asunto = str(m.get("subject") or "(sin asunto)")
+                origen = str(m.get("from") or "")
+                snippet = str(m.get("snippet") or "")
+                texto = ("%s %s" % (asunto, snippet)).lower()
+                de = origen.lower()
+                if any(
+                    p in texto
+                    for p in (
+                        "urgente",
+                        "asap",
+                        "inmediato",
+                        "cuanto antes",
+                        "24 horas",
+                        "48 horas",
+                    )
+                ):
+                    categoria = "urgente"
+                elif any(
+                    p in texto
+                    for p in (
+                        "factura",
+                        "facturación",
+                        "facturacion",
+                        "recibo",
+                        "iban",
+                        "nómina",
+                        "nomina",
+                        "hacienda",
+                        "impuesto",
+                        "transferencia",
+                    )
+                ):
+                    categoria = "facturas"
+                elif any(
+                    nombre in de or nombre in texto for nombre in clientes_email if len(nombre) >= 4
+                ):
+                    categoria = "clientes"
+                else:
+                    categoria = "otro"
+                entrada: dict[str, Any] = {
+                    "categoria": categoria,
+                    "de": origen,
+                    "asunto": asunto,
+                    "fecha": str(m.get("date") or ""),
+                    "snippet": snippet[:160],
+                }
+                if (
+                    max_drafts
+                    and categoria in ("urgente", "facturas", "clientes")
+                    and borradores < max_drafts
+                ):
+                    destino = _email_from(origen)
+                    if destino:
+                        cuerpo = (
+                            "Hola:\n\nEn respuesta a tu correo «%s»:\n\n"
+                            "[Indica aquí tu respuesta]\n\n"
+                            "Saludos cordiales." % asunto
+                        )
+                        try:
+                            draft = await google_services.create_draft(
+                                to=destino,
+                                subject=("Re: %s" % asunto).strip(),
+                                body=cuerpo,
+                            )
+                            if draft.get("success"):
+                                borradores += 1
+                                entrada["borrador"] = draft.get("id") or "creado"
+                            else:
+                                borrador_fallos.append(
+                                    "%s: %s" % (asunto, draft.get("message") or "fallo")
+                                )
+                        except Exception as exc:
+                            borrador_fallos.append("%s: %s" % (asunto, exc))
+                clasificados.append(entrada)
+
+            if not clasificados:
+                return {
+                    "success": True,
+                    "correos": [],
+                    "borradores": 0,
+                    "message": ("Sin correos no leídos en los últimos %d días." % days),
+                }
+            conteo: dict[str, int] = {}
+            lineas = []
+            for c in clasificados:
+                conteo[c["categoria"]] = conteo.get(c["categoria"], 0) + 1
+                linea = "• %s · %s · %s" % (c["categoria"], c["asunto"], c["de"])
+                if c.get("borrador"):
+                    linea += " · borrador listo"
+                lineas.append(linea)
+            resumen = ", ".join("%d %s" % (n, cat) for cat, n in sorted(conteo.items()))
+            mensaje = "%d correo(s): %s.\n%s" % (
+                len(clasificados),
+                resumen,
+                "\n".join(lineas),
+            )
+            if borradores:
+                mensaje += "\n%d borrador(es) creados en Gmail (revisa y envía)." % borradores
+            if borrador_fallos:
+                mensaje += "\nBorradores fallidos: " + "; ".join(borrador_fallos)
+            return {
+                "success": True,
+                "correos": clasificados,
+                "borradores": borradores,
+                "borradores_fallidos": borrador_fallos,
+                "message": mensaje,
+            }
+
         elif func_name == "delete_my_data":
             if args.get("confirm") is not True:
                 return {
@@ -1847,8 +2206,6 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return result
 
         elif func_name == "get_google_calendar_events":
-            from datetime import timedelta
-
             max_results = min(int(args.get("max_results", 10)), 25)
             try:
                 days_ahead = int(args.get("days") or args.get("days_ahead") or 0)
@@ -2165,6 +2522,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     parsed = parse_relative_datetime(when)
                     if parsed:
                         due_date = parsed.date().isoformat()
+                    else:
+                        # Fecha absoluta ('2026-10-01'): la descripcion de la
+                        # tool la prometia y parse_relative_datetime la
+                        # descartaba (bug 2026-10-04).
+                        try:
+                            due_date = datetime.fromisoformat(when[:10]).date().isoformat()
+                        except ValueError:
+                            due_date = ""
                 if use_google:
                     result = await google_services.create_task(title, due=due_date or None)
                     if due_date and result.get("success"):

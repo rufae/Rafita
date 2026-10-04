@@ -3,12 +3,12 @@
    Decision (Fase 3): call_rafita.html queda FUERA de la experiencia
    instalable a proposito: vive en otro origen (voz.*) y se embebe desde la
    vista Llamada; aqui solo va el shell de la SPA. */
-const CACHE = 'rafita-shell-249bcc07';
+const CACHE = 'rafita-shell-2c791971';
 const SHELL = [
   './',
   './index.html',
   './styles-0c397e72.css',
-  './app-d78d30ae.js',
+  './app-ffac73c9.js',
   './config.js',
   './design-tokens-93353fc1.css',
   './manifest.webmanifest',
@@ -69,5 +69,38 @@ self.addEventListener('fetch', (event) => {
           })
           .catch(() => caches.match('./index.html')),
     ),
+  );
+});
+
+/* Notificaciones push (PWA, mejora 6): el servidor publica con VAPID y el
+   SW muestra la notificacion; el clic enfoca la app (o la abre). */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_e) {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+  const title = data.title || 'Rafita';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      data: { url: data.url || './' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((lista) => {
+      for (const cliente of lista) {
+        if ('focus' in cliente) return cliente.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });

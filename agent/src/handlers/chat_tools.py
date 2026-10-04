@@ -1060,6 +1060,106 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_week_plan",
+            "description": "Prepara el plan de la semana en UNA sola llamada: "
+            "junta la agenda de los proximos dias (Google Calendar o "
+            "calendario local), las tareas pendientes (Google Tasks o "
+            "locales) y los clientes abiertos del CRM con su proximo paso. "
+            "Usalo SIEMPRE que el usuario pida 'prepara mi semana', 'plan "
+            "semanal', 'organizame la semana', 'que tengo esta semana' o "
+            "similar; con los datos que devuelva, resume la semana y "
+            "propone una sugerencia de horario. NO llames por separado a "
+            "manage_google_calendar, manage_google_tasks ni manage_crm para "
+            "esta peticion: esta tool las agrega todas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Dias a cubrir desde hoy (por defecto 7, maximo 14).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_meeting_tasks",
+            "description": "Crea VARIAS tareas de seguimiento de UNA vez a "
+            "partir de un acta, minuta o notas de reunion (2.b.4). Usalo "
+            "cuando el usuario pegue un acta/notas de una reunion y pida "
+            "'extrae las tareas', 'seguimiento de la reunion', 'pasalo a "
+            "tareas': devuelve una lista con una tarea por accion, cada una "
+            "con su responsable y su fecha cuando se conozcan. El responsable "
+            "se antepone al titulo ([Ana] Enviar presupuesto) porque Google "
+            "Tasks no tiene campo de responsable. Respetar el orden: crea "
+            "todas las que puedas y reporta cual fallo (si alguna falla, "
+            "dilo; nunca digas 'hecho' si fallaron todas).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "description": "Tareas a crear (maximo 10).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {
+                                    "type": "string",
+                                    "description": "Titulo de la accion (sin responsable).",
+                                },
+                                "responsable": {
+                                    "type": "string",
+                                    "description": "Quien la hace (si el acta lo indica).",
+                                },
+                                "due": {
+                                    "type": "string",
+                                    "description": "Fecha limite tal cual ('el viernes', "
+                                    "'2026-10-10'); si no hay, se omite.",
+                                },
+                            },
+                            "required": ["title"],
+                        },
+                    },
+                },
+                "required": ["tasks"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "triage_inbox",
+            "description": "Triaja la bandeja de correo y prepara borradores "
+            "de respuesta listos para revisar (2.b.1): busca los correos no "
+            "leidos recientes en Gmail, los clasifica (urgente / facturas / "
+            "clientes / otro) y crea borradores profesionales de respuesta "
+            "para los que lo necesiten (quedan en Gmail SIN enviar; el "
+            "usuario los revisa y manda). Usalo con 'triaja mi correo', "
+            "'clasifica la bandeja', 'prepara borradores', 'que correos son "
+            "urgentes'. Necesita Gmail conectado; di claramente si no lo "
+            "esta.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Dias hacia atras para buscar no leidos (por defecto 3, maximo 14).",
+                    },
+                    "max_drafts": {
+                        "type": "integer",
+                        "description": "Maximo de borradores a crear (por defecto 5; 0 = solo clasificar).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "find_contact",
             "description": "Busca un contacto en Google Contacts por nombre, correo o telefono. "
             "Usalo para 'dame el telefono de...', 'cual es el correo de...'.",
