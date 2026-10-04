@@ -279,6 +279,21 @@ async def web_chat(request: Request, user: dict[str, Any] = Depends(require_user
                 ),
                 "chat_id": chat_id,
             }
+        if comando == "sync_google":
+            # Mismo cerebro que Telegram (/sync_google): antes caia en el
+            # modelo, que respondia con un enlace de enlace en vez de sincronizar.
+            from src.utils.google_brain_sync import sync_google_to_vault
+
+            try:
+                result = await sync_google_to_vault()
+                reply = str(result.get("message", "Resultado desconocido."))
+            except Exception as e:  # noqa: BLE001 - honestidad ante fallos
+                logger.warning("Web /sync_google fallo: %s", str(e)[:200])
+                reply = (
+                    "No pude sincronizar Google (%s). Revisa la conexión "
+                    "con /setup_google." % str(e)[:150]
+                )
+            return {"reply": reply, "chat_id": chat_id}
 
     from src.core import generate_response
 
