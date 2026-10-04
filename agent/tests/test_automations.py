@@ -298,3 +298,40 @@ def test_settings_have_aemet_fields():
 def test_simple_namespace_placeholder():
     # Evita imports sin uso tras refactors
     assert SimpleNamespace(x=1).x == 1
+
+
+async def test_scan_inbox_normaliza_y_ordena_por_prioridad(monkeypatch):
+    # idea 14: taxonomia personal/sin_accion + borradores priorizados.
+    _install_kv(monkeypatch)
+    monkeypatch.setattr(
+        "src.services.google_services_manager.google_services",
+        _FakeGS(
+            mails=[
+                {"id": "m1", "from": "news@x.com", "subject": "Boletin", "snippet": "..."},
+                {"id": "m2", "from": "marta@gmail.com", "subject": "Quedamos?", "snippet": "..."},
+                {"id": "m3", "from": "jefe@empresa.com", "subject": "Urgente", "snippet": "..."},
+            ]
+        ),
+    )
+    fake_llm = _FakeLLM(
+        '[{"id": 0, "categoria": "SIN ACCIÓN", "resumen": "boletin", "borrador": ""}, '
+        '{"id": 1, "categoria": "personal", "resumen": "amiga", "borrador": ""}, '
+        '{"id": 2, "categoria": "urgente", "resumen": "reunion", "borrador": "Voy."}]'
+    )
+    monkeypatch.setattr("src.ollama_client.llm", fake_llm)
+
+    result = await auto.scan_inbox()
+    assert result["success"]
+    cats = [i["categoria"] for i in result["items"]]
+    assert cats == ["urgente", "personal", "sin_accion"]
+    assert result["urgent_count"] == 1
+    assert "sin_accion" in auto.INBOX_PROMPT
+
+
+def test_norm_cat_aliases():
+    assert auto._norm_cat("sin acción") == "sin_accion"
+    assert auto._norm_cat("Sin-Accion") == "sin_accion"
+    assert auto._norm_cat("otro") == "informativo"
+    assert auto._norm_cat("URGENTE") == "urgente"
+    assert auto._norm_cat(None) == "informativo"
+    assert auto._norm_cat("desconocida") == "informativo"
