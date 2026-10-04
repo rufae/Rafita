@@ -4,6 +4,7 @@ vault:
   # son PARA+Zettelkasten. `structure` e `ignored_dirs` son opcionales.
   folders:
     inbox: 00-Inbox
+    estilos_correo: 00-Estilos-correo
     projects: 01-Proyectos
     areas: 02-Areas
     areas_salud: 02-Areas/Salud

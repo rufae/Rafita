@@ -20,6 +20,7 @@ import yaml
 
 DEFAULT_FOLDERS: dict[str, str] = {
     "inbox": "00-Inbox",
+    "estilos_correo": "00-Estilos-correo",
     "projects": "01-Proyectos",
     "areas": "02-Areas",
     "areas_salud": "02-Areas/Salud",
@@ -38,6 +39,7 @@ DEFAULT_FOLDERS: dict[str, str] = {
 # Keys whose folder values form the default structure created at startup.
 STRUCTURE_KEYS = [
     "inbox",
+    "estilos_correo",
     "projects",
     "areas_finanzas",
     "areas_salud",

@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     google_web_client_id: str = Field("", alias="GOOGLE_WEB_CLIENT_ID")
     google_web_client_secret: str = Field("", alias="GOOGLE_WEB_CLIENT_SECRET")
     google_web_redirect_uri: str = Field("", alias="GOOGLE_WEB_REDIRECT_URI")
+    # Web push para la PWA (mejora 6, 2026-10-04): fichero PEM con la clave
+    # privada VAPID (generar con scripts/generate_vapid_keys.py) y el "sub"
+    # de las claims (mailto de contacto). Sin clave -> push desactivado.
+    vapid_key_file: str = Field("/data/vapid_private.pem", alias="VAPID_KEY_FILE")
+    vapid_subject: str = Field("mailto:admin@example.com", alias="VAPID_SUBJECT")
 
     # Briefing matutino y recordatorios proactivos (mejoras 2 y 6, 2026-09-28).
     briefing_enabled: bool = Field(True, alias="BRIEFING_ENABLED")

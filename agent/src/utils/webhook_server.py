@@ -684,13 +684,24 @@ async def _notify_automation_error(workflow: str, error: str | None) -> bool:
     """Aviso a admins SOLO tras 2 fallos seguidos del mismo workflow (sin spam)."""
     from src.config import settings
 
-    targets = list(settings.admin_ids or [])
-    if not targets or _bot_ref is None:
-        return False
     text = "⚠️ *Automatización con 2 fallos seguidos*\nWorkflow: %s\nError: %s" % (
         workflow,
         error or "sin detalle",
     )
+    # PWA (mejora 6): el mismo aviso como notificacion web push (best effort,
+    # funciona incluso si no hay admins de Telegram configurados).
+    try:
+        from src.services.push_service import send_web_push
+
+        await send_web_push(
+            "Automatización con fallos",
+            "Workflow: %s — %s" % (workflow, (error or "sin detalle")[:140]),
+        )
+    except Exception:
+        logger.debug("Aviso de automatizacion: web push omitido", exc_info=True)
+    targets = list(settings.admin_ids or [])
+    if not targets or _bot_ref is None:
+        return False
     ok = False
     for admin_id in targets:
         try:

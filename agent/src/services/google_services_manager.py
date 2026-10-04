@@ -1134,6 +1134,7 @@ class GoogleServicesManager:
                 "start": e["start"].get("dateTime", e["start"].get("date")),
                 "end": e["end"].get("dateTime", e["end"].get("date")),
                 "description": e.get("description", ""),
+                "updated": e.get("updated", ""),
             }
             for e in data.get("items", [])
         ]

@@ -124,6 +124,7 @@ async function enterApp() {
     show('app');
     setView('chat');
     loadChatHistory();
+    initPush();
   } catch (_e) {
     logout();
   }
@@ -958,6 +959,71 @@ if (location.hash.startsWith('#token=')) {
   state.token = decodeURIComponent(location.hash.slice(7));
   localStorage.setItem(TOKEN_KEY, state.token);
   history.replaceState(null, '', '/app/');
+}
+
+/* ---------- Notificaciones web push (PWA, mejora 6) ---------- */
+
+function urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function ensurePushSubscription() {
+  const cfg = await api('/push/config');
+  if (!cfg.enabled || !cfg.publicKey) return false;
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(cfg.publicKey),
+    });
+  }
+  await api('/push/subscribe', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
+  return true;
+}
+
+async function initPush() {
+  const boton = document.getElementById('notify-enable');
+  try {
+    if (!('serviceWorker' in navigator) || !('Notification' in window) || !boton) return;
+    const cfg = await api('/push/config');
+    if (!cfg.enabled) return;
+    if (Notification.permission === 'granted') {
+      await ensurePushSubscription();
+      boton.textContent = 'Avisos: sí';
+      boton.classList.remove('hidden');
+      return;
+    }
+    if (Notification.permission === 'default') {
+      boton.classList.remove('hidden');
+      boton.addEventListener(
+        'click',
+        async () => {
+          const perm = await Notification.requestPermission();
+          if (perm === 'granted') {
+            try {
+              await ensurePushSubscription();
+              boton.textContent = 'Avisos: sí';
+            } catch (_e) {
+              boton.classList.add('hidden');
+            }
+          } else {
+            boton.classList.add('hidden');
+          }
+        },
+        { once: true },
+      );
+    }
+  } catch (_e) {
+    /* Sin push la app sigue funcionando: el aviso llega por Telegram. */
+  }
 }
 
 if ('serviceWorker' in navigator) {

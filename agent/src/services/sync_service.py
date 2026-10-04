@@ -14,6 +14,7 @@ estado real de Google: no hace falta mantener mapeos que se queden obsoletos.
 
 import re
 import unicodedata
+from datetime import datetime
 from typing import Any
 
 from src.logger import logger
@@ -22,8 +23,36 @@ TASKS_TITLE = "Tareas"
 CAL_TITLE = "Calendario"
 INBOX_FOLDER = "00-Inbox"
 
-_TASK_RE = re.compile(r"^\s*-\s*\[( |x|X)\]\s*(.+?)\s*$")
+_TASK_RE = re.compile(r"^\s*-\s*\[( |x|X)\]\s+(.+?)\s*$")
 _EVENT_RE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})\s*\|\s*(.+?)\s*$")
+
+# Maximo de altas que se anaden en una pasada desde Google (evita inundar la
+# nota si hay decenas de tareas/eventos pendientes de anadir).
+MAX_ALTA_GOOGLE = 20
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _event_line_from_iso(iso: str) -> str | None:
+    dt = _parse_iso(iso)
+    if dt is None:
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _note_mtime(title: str) -> float:
+    """mtime de la nota en la boveda (para el choque de conflictos)."""
+    try:
+        from src.utils.obsidian_manager import OBSIDIAN_VAULT
+
+        return (OBSIDIAN_VAULT / INBOX_FOLDER / ("%s.md" % title)).stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _normalize(text: str) -> str:
@@ -57,8 +86,19 @@ async def _google_ready() -> bool:
 
 
 async def _sync_tasks() -> dict[str, int]:
-    """Boveda -> Google Tasks (y completadas de Google -> boveda)."""
-    stats = {"created": 0, "completed_google": 0, "completed_vault": 0}
+    """Boveda <-> Google Tasks.
+
+    - Boveda -> Google: crea las `[ ]` que no estan y completa `[x]`.
+    - Google -> boveda: completa lo completado en Google y **anade** las
+      tareas pendientes que solo existen en Google (cierre del circulo).
+    - Politica: completar gana siempre.
+    """
+    stats = {
+        "created": 0,
+        "completed_google": 0,
+        "completed_vault": 0,
+        "added_from_google": 0,
+    }
     lines = await _read_lines(TASKS_TITLE, INBOX_FOLDER)
     if not lines:
         return stats
@@ -78,6 +118,7 @@ async def _sync_tasks() -> dict[str, int]:
 
     changed = False
     out: list[str] = []
+    note_keys: set[str] = set()
     for line in lines:
         match = _TASK_RE.match(line)
         if not match:
@@ -86,6 +127,7 @@ async def _sync_tasks() -> dict[str, int]:
         done = match.group(1).lower() == "x"
         title = match.group(2).strip()
         key = _normalize(title)
+        note_keys.add(key)
         if done and key in pending:
             result = await google_services.complete_task(pending[key]["id"])
             if result.get("success"):
@@ -100,14 +142,36 @@ async def _sync_tasks() -> dict[str, int]:
             stats["completed_vault"] += 1
             changed = True
         out.append(line)
+
+    # Google -> boveda: pendientes de Google ausentes de la nota.
+    added = 0
+    for key, task in pending.items():
+        if added >= MAX_ALTA_GOOGLE:
+            break
+        if key in note_keys:
+            continue
+        out.append("- [ ] %s" % str(task.get("title", "")).strip())
+        note_keys.add(key)
+        stats["added_from_google"] += 1
+        added += 1
+        changed = True
+
     if changed or stats["created"] or stats["completed_google"]:
         await _write_lines(TASKS_TITLE, INBOX_FOLDER, out)
     return stats
 
 
 async def _sync_events() -> dict[str, int]:
-    """Boveda -> Google Calendar (crea o mueve; nunca duplica)."""
-    stats = {"created": 0, "moved": 0}
+    """Boveda <-> Google Calendar (crea, mueve y resuelve conflictos).
+
+    - Boveda -> Google: crea los que faltan y mueve los que cambian de hora.
+    - Google -> boveda: anade los eventos que solo existen en Google.
+    - **Conflicto** (mismo titulo, horas distintas): gana el lado que cambio
+      despues de la ultima modificacion de la otra parte — Google si su
+      `updated` es posterior al mtime de la nota; si no, la nota (se mueve
+      el evento). Nunca se duplica.
+    """
+    stats = {"created": 0, "moved": 0, "google_wins": 0, "added_from_google": 0}
     lines = await _read_lines(CAL_TITLE, INBOX_FOLDER)
     if not lines:
         return stats
@@ -123,17 +187,34 @@ async def _sync_events() -> dict[str, int]:
         if key:
             by_title.setdefault(key, event)
 
+    note_mtime = _note_mtime(CAL_TITLE)
+    changed = False
+    out: list[str] = []
+    matched: set[str] = set()
     for line in lines:
         match = _EVENT_RE.match(line)
         if not match:
+            out.append(line)
             continue
         date, hm, title = match.groups()
         start_iso = "%sT%s:00" % (date, hm)
         key = _normalize(title)
+        matched.add(key)
         existing = by_title.get(key)
         if existing:
             current = str(existing.get("start", ""))
             if current[:16] != start_iso[:16]:
+                google_updated = _parse_iso(existing.get("updated", ""))
+                if google_updated is not None and google_updated.timestamp() > note_mtime:
+                    # Conflicto: el evento se movio en Google DESPUES de la
+                    # ultima edicion de la nota -> gana Google y se reescribe
+                    # la linea (no se revierte el movimiento).
+                    fecha = _event_line_from_iso(current)
+                    if fecha:
+                        out.append("%s | %s" % (fecha, title))
+                        stats["google_wins"] += 1
+                        changed = True
+                        continue
                 result = await gcal.move_event(existing.get("id", ""), start_iso)
                 if result.get("success"):
                     stats["moved"] += 1
@@ -141,6 +222,27 @@ async def _sync_events() -> dict[str, int]:
             result = await google_services.create_event(title, start_iso)
             if result.get("success"):
                 stats["created"] += 1
+        out.append(line)
+
+    # Google -> boveda: eventos de Google ausentes de la nota.
+    added = 0
+    for event in events:
+        if added >= MAX_ALTA_GOOGLE:
+            break
+        key = _normalize(event.get("title", ""))
+        if not key or key in matched:
+            continue
+        fecha = _event_line_from_iso(str(event.get("start", "")))
+        if fecha is None:
+            continue
+        out.append("%s | %s" % (fecha, str(event.get("title", "")).strip()))
+        matched.add(key)
+        stats["added_from_google"] += 1
+        added += 1
+        changed = True
+
+    if changed:
+        await _write_lines(CAL_TITLE, INBOX_FOLDER, out)
     return stats
 
 
@@ -162,8 +264,13 @@ async def sync_google_vault() -> dict[str, Any]:
         result["events"] = await _sync_events()
     else:
         result["export"] = False
-        result["tasks"] = {"created": 0, "completed_google": 0, "completed_vault": 0}
-        result["events"] = {"created": 0, "moved": 0}
+        result["tasks"] = {
+            "created": 0,
+            "completed_google": 0,
+            "completed_vault": 0,
+            "added_from_google": 0,
+        }
+        result["events"] = {"created": 0, "moved": 0, "google_wins": 0, "added_from_google": 0}
 
     tasks = result["tasks"]
     events = result["events"]
@@ -171,14 +278,18 @@ async def sync_google_vault() -> dict[str, Any]:
     result["changes"] = changes
     result["message"] = (
         "Sync %s: %d tareas creadas, %d completadas (Google->nota: %d), "
-        "%d eventos creados, %d movidos."
+        "%d anadidas desde Google; %d eventos creados, %d movidos, "
+        "%d ajustados a Google y %d anadidos desde Google."
         % (
             "completa" if google_ok else "sin Google (solo lectura local)",
             tasks.get("created", 0),
             tasks.get("completed_google", 0),
             tasks.get("completed_vault", 0),
+            tasks.get("added_from_google", 0),
             events.get("created", 0),
             events.get("moved", 0),
+            events.get("google_wins", 0),
+            events.get("added_from_google", 0),
         )
     )
     logger.info("Sync Google<->vault: %s", result["message"])
