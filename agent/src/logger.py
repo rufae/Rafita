@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Mapping
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -47,14 +48,21 @@ class RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = redact_text(str(record.msg))
         if record.args:
-            if isinstance(record.args, dict):
+            if isinstance(record.args, Mapping):
+                # Python desempaqueta un mapping unico como args (p. ej.
+                # requests CaseInsensitiveDict en requests_oauthlib): el
+                # antiguo else lo iteraba y dejaba una tupla de CLAVES, con
+                # lo que "%s" explotaba con "not all arguments converted"
+                # (visto en vivo 2026-10-04 durante el re-enlace OAuth).
                 record.args = {
                     k: redact_text(v) if isinstance(v, str) else v for k, v in record.args.items()
                 }
-            else:
+            elif isinstance(record.args, tuple):
                 record.args = tuple(
                     redact_text(a) if isinstance(a, str) else a for a in record.args
                 )
+            else:
+                record.args = (record.args,)
         return True
 
 
@@ -150,6 +158,11 @@ def setup_logging(
 
     telegram_logger = logging.getLogger("telegram")
     telegram_logger.setLevel(logging.INFO)
+
+    # Chatty en DEBUG y con calls de logging rotos (requests_oauthlib pasa un
+    # mapping a "%s"): el exchange OAuth los dispara en cada /setup_google.
+    for ruidoso in ("requests_oauthlib", "oauthlib", "urllib3", "googleapiclient"):
+        logging.getLogger(ruidoso).setLevel(logging.WARNING)
 
     return logging.getLogger("rafita")
 

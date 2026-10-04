@@ -35,7 +35,14 @@ def _frontmatter(title: str, extra: list[str] | None = None) -> list[str]:
 
 
 async def sync_google_to_vault() -> dict[str, Any]:
-    """Vuelca contactos, proximos eventos y Drive al vault (carpeta Google/)."""
+    """Vuelca contactos, proximos eventos y Drive al vault (carpeta Google/).
+
+    Degradacion honesta (2026-10-04): cada fuente de Google se exporta por
+    separado; si una falla (p. ej. Gmail con credenciales caducadas) se
+    exporta lo disponible, NO se sobreescriben las notas de las fuentes
+    caidas y el mensaje dice que se omitio y por que, en vez de tumbar el
+    comando con un \"error interno\".
+    """
     await google_services.initialize()
     if not google_services.is_ready:
         return {
@@ -43,12 +50,33 @@ async def sync_google_to_vault() -> dict[str, Any]:
             "message": "Google no esta conectado. Usa /setup_google primero.",
         }
 
-    contacts = (await google_services.list_all_contacts()).get("contacts", [])
-    events = (await google_services.list_calendar_events(days=90)).get("events", [])
-    drive = (await google_services.list_drive(kind="all", max_results=50)).get("files", [])
-    tasks = (await google_services.list_tasks()).get("tasks", [])
+    omitidas: list[tuple[str, str]] = []
+
+    async def _fuente(seccion: str, coro):
+        try:
+            return await coro
+        except Exception as e:
+            motivo = str(e)[:160]
+            omitidas.append((seccion, motivo))
+            logger.warning("Sync google->vault: fuente '%s' omitida: %s", seccion, motivo)
+            return None
+
+    contacts = (await _fuente("contactos", google_services.list_all_contacts()) or {}).get(
+        "contacts", []
+    )
+    events = (await _fuente("calendario", google_services.list_calendar_events(days=90)) or {}).get(
+        "events", []
+    )
+    drive = (
+        await _fuente("drive", google_services.list_drive(kind="all", max_results=50)) or {}
+    ).get("files", [])
+    tasks = (await _fuente("tareas", google_services.list_tasks()) or {}).get("tasks", [])
     mails = (
-        await google_services.search_gmail(query="is:unread newer_than:7d", max_results=10)
+        await _fuente(
+            "correos",
+            google_services.search_gmail(query="is:unread newer_than:7d", max_results=10),
+        )
+        or {}
     ).get("messages", [])
 
     contact_lines = _frontmatter("Contactos Google")
@@ -105,13 +133,29 @@ async def sync_google_to_vault() -> dict[str, Any]:
         )
     mail_lines.append("")
 
-    notes = [
-        ("Contactos Google", "\n".join(contact_lines)),
-        ("Calendario Google", "\n".join(event_lines)),
-        ("Drive Google", "\n".join(drive_lines)),
-        ("Tareas Google", "\n".join(task_lines)),
-        ("Correo Google", "\n".join(mail_lines)),
+    secciones = [
+        ("contactos", "Contactos Google", "\n".join(contact_lines)),
+        ("calendario", "Calendario Google", "\n".join(event_lines)),
+        ("drive", "Drive Google", "\n".join(drive_lines)),
+        ("tareas", "Tareas Google", "\n".join(task_lines)),
+        ("correos", "Correo Google", "\n".join(mail_lines)),
     ]
+    claves_omitidas = {s for s, _ in omitidas}
+    # Una fuente caida NO sobreescribe su nota: se conserva la copia
+    # anterior (con datos reales) en vez de dejarla vacia.
+    notes = [(titulo, cuerpo) for s, titulo, cuerpo in secciones if s not in claves_omitidas]
+
+    if not notes:
+        return {
+            "success": False,
+            "message": (
+                "No pude copiar nada de Google: %s. Vuelve a conectar la cuenta "
+                "con /setup_google." % _detalle_omitidas(omitidas)
+            ),
+            "omitidas": [s for s, _ in omitidas],
+            "files": [],
+        }
+
     results = []
     for title, content in notes:
         results.append(await overwrite_note(title, content, folder=FOLDER))
@@ -126,13 +170,23 @@ async def sync_google_to_vault() -> dict[str, Any]:
         len(tasks),
         len(mails),
     )
+    mensaje = (
+        "Copia local creada en el segundo cerebro: %d contactos, %d eventos, "
+        "%d elementos de Drive, %d tareas y %d correos (carpeta Google/). "
+        "Ya puedes preguntarme por ellos sin depender de la API."
+        % (len(contacts), len(events), len(drive), len(tasks), len(mails))
+    )
+    if omitidas:
+        mensaje += " Fuentes omitidas: %s (sus notas anteriores se conservan)." % _detalle_omitidas(
+            omitidas
+        )
     return {
         "success": ok,
-        "message": (
-            "Copia local creada en el segundo cerebro: %d contactos, %d eventos, "
-            "%d elementos de Drive, %d tareas y %d correos (carpeta Google/). "
-            "Ya puedes preguntarme por ellos sin depender de la API."
-            % (len(contacts), len(events), len(drive), len(tasks), len(mails))
-        ),
+        "message": mensaje,
+        "omitidas": [s for s, _ in omitidas],
         "files": [r.get("filepath") for r in results],
     }
+
+
+def _detalle_omitidas(omitidas: list[tuple[str, str]]) -> str:
+    return "; ".join("%s (%s)" % (seccion, motivo) for seccion, motivo in omitidas)

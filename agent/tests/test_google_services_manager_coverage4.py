@@ -983,3 +983,36 @@ async def test_oauth_refresca_sin_scopes_nuevos_si_google_los_rechaza(monkeypatc
     assert ok is True
     assert any("gmail.compose" in s for s in intentsos[0])
     assert all("gmail.compose" not in s for s in intentsos[1:])
+
+
+async def test_initialize_resetea_servicios_cacheados(monkeypatch):
+    """Tras un re-enlace OAuth los servicios lazy se reconstruyen.
+
+    Antes solo se re construian calendar/drive: gmail seguia con la
+    service_account y devolvia 400 failedPrecondition (vivo 2026-10-04).
+    """
+    manager = GoogleServicesManager()
+    cache_sa = object()
+    manager._gmail = cache_sa
+    manager._tasks = cache_sa
+    manager._ready = True
+
+    async def fake_oauth():
+        return True
+
+    class _DB:
+        async def kv_get(self, key):
+            return None
+
+    monkeypatch.setattr(manager, "_load_oauth_sync", fake_oauth)
+    monkeypatch.setattr(manager, "_build", lambda service, version: SimpleNamespace(name=service))
+    monkeypatch.setattr(gsm, "db", _DB())
+
+    ok = await manager.initialize(force=True)
+
+    assert ok is True
+    assert manager._gmail is None  # cache SA descartada
+    assert manager._tasks is None
+    assert manager._calendar.name == "calendar"
+    assert manager._drive.name == "drive"
+    assert manager.gmail.name == "gmail"  # se reconstruye con las credenciales nuevas

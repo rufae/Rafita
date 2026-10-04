@@ -128,3 +128,44 @@ def test_tail_logs_rejects_unknown_file(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "log_dir", str(tmp_path))
     (tmp_path / "secret.txt").write_text("no debe leerse", encoding="utf-8")
     assert tail_logs(5, filename="../secret.txt") == []
+
+
+def test_filtro_soporta_mapping_args_de_requests():
+    """requests_oauthlib pasa CaseInsensitiveDict como args con '%s'.
+
+    El antiguo else lo iteraba (claves) y el format reventaba con
+    'not all arguments converted during string formatting' (vivo 2026-10-04).
+    """
+    import logging
+
+    from requests.structures import CaseInsensitiveDict
+
+    from src.logger import RedactingFilter
+
+    rec = logging.LogRecord(
+        "t",
+        logging.DEBUG,
+        "f",
+        1,
+        "Request headers were %s",
+        (CaseInsensitiveDict({"Authorization": "Bearer sk-abc1234567890123", "User-Agent": "x"}),),
+        None,
+    )
+    assert RedactingFilter().filter(rec) is True
+    msg = rec.getMessage()  # no debe lanzar TypeError
+    assert "Request headers were" in msg
+    assert "sk-abc" not in msg  # el valor Authorization sigue redactado
+    assert "User-Agent" in msg
+
+
+def test_setup_logging_silencia_libs_ruidosas(tmp_path):
+    root = logging.getLogger()
+    try:
+        setup_logging(log_dir=tmp_path, log_format="text")
+        for nombre in ("requests_oauthlib", "oauthlib", "urllib3", "googleapiclient"):
+            assert logging.getLogger(nombre).level == logging.WARNING, nombre
+    finally:
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+            handler.close()
+        setup_logging()
