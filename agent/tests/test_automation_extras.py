@@ -273,14 +273,28 @@ async def test_infra_report_reads_status_files(tmp_path, monkeypatch):
     async def fake_server():
         return {"ia": "ok", "rag": "ok", "google": "conectado"}
 
+    async def fake_checks():
+        return [
+            {"name": "docker", "ok": True, "severity": "info", "detail": "3 contenedores"},
+            {
+                "name": "conectividad",
+                "ok": True,
+                "severity": "info",
+                "detail": "2 destinos accesibles",
+            },
+        ]
+
     monkeypatch.setattr(auto, "_server_status", fake_server)
     monkeypatch.setattr("src.ollama_client.llm", _FakeLLM("🖥 Informe semanal OK"))
+    monkeypatch.setattr("src.utils.infra_monitor.run_infra_checks", fake_checks)
 
     result = await auto.infra_report()
     assert result["success"]
     assert result["backup"]["snapshot"] == "abc123"
     assert result["drill"]["integrity"] == "ok"
     assert "Informe" in result["text"]
+    assert result["checks"][0]["detail"] == "3 contenedores"
+    assert len(result["checks"]) == 2
 
 
 async def test_infra_report_alerts_without_backup(tmp_path, monkeypatch):
@@ -289,11 +303,23 @@ async def test_infra_report_alerts_without_backup(tmp_path, monkeypatch):
     async def fake_server():
         return {}
 
+    async def fake_checks():
+        return [
+            {
+                "name": "certificados",
+                "ok": False,
+                "severity": "critical",
+                "detail": "web: caduca en 3 d",
+            }
+        ]
+
     monkeypatch.setattr(auto, "_server_status", fake_server)
     monkeypatch.setattr("src.ollama_client.llm", _FakeLLM(""))
+    monkeypatch.setattr("src.utils.infra_monitor.run_infra_checks", fake_checks)
     result = await auto.infra_report()
     assert "ALERTAS" in result["text"]
     assert "backup" in result["text"].lower()
+    assert "certificados" in result["text"].lower()
 
 
 # ---------------- endpoint send-voice ----------------

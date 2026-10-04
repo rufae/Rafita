@@ -972,15 +972,29 @@ async def infra_report() -> dict[str, Any]:
         pass
 
     server = await _server_status()
+    checks: list[dict[str, Any]] = []
+    try:
+        from src.utils.infra_monitor import run_infra_checks
+
+        checks = await run_infra_checks()
+    except Exception as e:
+        logger.warning("Infra report: comprobaciones no disponibles (%s)", str(e)[:80])
+    checks_txt = (
+        "\n\nCOMPROBACIONES:\n"
+        + "\n".join("- %s: %s" % (c.get("name", "?"), c.get("detail", "")) for c in checks)
+        if checks
+        else ""
+    )
     raw = (
         "BACKUP:\n%s\n\nRESTORE-DRILL:\n%s\n\nDISCO (/data):\n%s\n\n"
-        "TAMANO BD: %s\n\nSERVICIOS:\n%s"
+        "TAMANO BD: %s\n\nSERVICIOS:\n%s%s"
         % (
             json.dumps(backup, ensure_ascii=False) or "(sin datos)",
             json.dumps(drill, ensure_ascii=False) or "(sin datos)",
             json.dumps(disk, ensure_ascii=False),
             db_size or "?",
             json.dumps(server, ensure_ascii=False),
+            checks_txt,
         )
     )
     text = ""
@@ -1023,10 +1037,24 @@ async def infra_report() -> dict[str, Any]:
         alerts.append("Disco /data al %s%%" % disk.get("pct"))
     if drill.get("integrity") not in (None, "", "ok"):
         alerts.append("Restore-drill con integridad '%s'" % drill.get("integrity"))
+    # Comprobaciones nuevas (las de backup/disco/drill ya tienen mensaje propio)
+    for c in checks:
+        if c.get("ok") or c.get("alertable") is False:
+            continue
+        if c.get("name") in ("backup", "disco", "restore-drill"):
+            continue
+        alerts.append("%s: %s" % (c.get("name", "?"), c.get("detail", "")))
     if alerts:
         text = "🚨 *ALERTAS:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
 
-    return {"success": True, "text": text, "backup": backup, "drill": drill, "disk": disk}
+    return {
+        "success": True,
+        "text": text,
+        "backup": backup,
+        "drill": drill,
+        "disk": disk,
+        "checks": checks,
+    }
 
 
 async def _save_vault_note(title: str, text: str, folder: str) -> None:
