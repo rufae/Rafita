@@ -11,8 +11,9 @@ gateway son HMAC y devuelven JSON listo para n8n:
 """
 
 import json
+import time
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -388,7 +389,7 @@ async def _agenda_tasks_mail() -> tuple[list[str], list[str], list[str], list[di
                     when = start
                 agenda.append("%s — %s" % (when, ev.get("title") or "sin titulo"))
             tasks = (await google_services.list_tasks()).get("tasks", [])
-            tareas = [t.get("title", "") for t in tasks[:10]]
+            tareas = [_fmt_task(t.get("title", ""), t.get("due", "")) for t in tasks[:10]]
             mails = (
                 await google_services.search_gmail(query="is:unread newer_than:12h", max_results=6)
             ).get("messages", [])
@@ -409,7 +410,7 @@ async def _agenda_tasks_mail() -> tuple[list[str], list[str], list[str], list[di
         logger.warning("Briefing: eventos locales no disponibles: %s", str(e)[:120])
     try:
         rows = await db.list_tasks(chat_id)
-        tareas = [r.get("title", "") for r in rows[:10]]
+        tareas = [_fmt_task(r.get("title", ""), r.get("due", "")) for r in rows[:10]]
     except Exception as e:
         logger.warning("Briefing: tareas locales no disponibles: %s", str(e)[:120])
     return agenda, tareas, correo, events
@@ -566,13 +567,73 @@ def _urgent_line(events: list[dict[str, Any]], now: datetime) -> str:
 # ---------------------------------------------------------------- briefing
 
 
+def _fmt_task(title: str, due: str) -> str:
+    """Tarea con su vencimiento a la vista (idea 13: 'qué vence próximamente')."""
+    if not due:
+        return title
+    fecha = str(due)[:10]
+    try:
+        vence = datetime.fromisoformat(fecha).date()
+        if vence < datetime.now().date():
+            return "%s — ⚠️ VENCIDA (%s)" % (title, fecha)
+    except Exception:
+        pass
+    return "%s (vence %s)" % (title, fecha)
+
+
+async def _desde_ayer() -> str:
+    """Resumen de lo ocurrido desde la ultima noche (idea 13: 'qué ha ocurrido').
+
+    Best-effort: cualquier fallo devuelve "" y el briefing sigue funcionando.
+    """
+    partes: list[str] = []
+    # SQLite datetime('now') = 'YYYY-MM-DD HH:MM:SS' (UTC): mismo formato para comparar.
+    desde = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        from src.database import db
+
+        row = await db.fetchone(
+            "SELECT COUNT(*) AS n FROM chat_history WHERE created_at > ?", (desde,)
+        )
+        n = int((row or {}).get("n", 0))
+        if n:
+            partes.append("%d mensajes de chat" % n)
+    except Exception as e:
+        logger.debug("Briefing: chat desde ayer no disponible: %s", str(e)[:80])
+    try:
+        from src.database import db
+
+        rows = await db.fetchall(
+            "SELECT status FROM automation_runs WHERE created_at > ?", (desde,)
+        )
+        if rows:
+            ok = sum(1 for r in rows if r.get("status") == "ok")
+            partes.append("automatizaciones %d ok / %d fallo" % (ok, len(rows) - ok))
+    except Exception as e:
+        logger.debug("Briefing: automatizaciones desde ayer no disponibles: %s", str(e)[:80])
+    try:
+        limite = time.time() - 86400
+        nuevas = sum(
+            1 for f in settings.obsidian_vault_path.rglob("*.md") if f.stat().st_mtime > limite
+        )
+        if nuevas:
+            partes.append("%d notas nuevas en la boveda" % nuevas)
+    except Exception as e:
+        logger.debug("Briefing: notas desde ayer no disponibles: %s", str(e)[:80])
+    if not partes:
+        return ""
+    return "DESDE AYER: " + ", ".join(partes) + "."
+
+
 BRIEFING_PROMPT = (
     "Eres %s, el asistente personal del usuario. Redacta su BRIEFING MATUTINO "
     "en espanol, breve y jerarquizado por prioridad. Estructura: 1) una linea "
-    "de resumen del dia; 2) Agenda (con horas); 3) Tareas pendientes; 4) Correo "
-    "destacado; 5) Tiempo y estado del servidor si aportan algo. Usa negritas "
-    "de Telegram (*texto*) para los titulos de seccion. Nada de Markdown de "
-    "tablas. Maximo 15 lineas."
+    "de resumen del dia; 2) QUÉ HA OCURRIDO DESDE AYER (solo si te paso datos); "
+    "3) Agenda (con horas); 4) Tareas pendientes (marca los vencimientos); "
+    "5) QUÉ PUEDE ESPERAR (lo que no vence hoy y no es urgente, para cerrar la "
+    "seccion); 6) Correo destacado; 7) Tiempo y estado del servidor si aportan "
+    "algo. Usa negritas de Telegram (*texto*) para los titulos de seccion. "
+    "Nada de Markdown de tablas. Maximo 18 lineas."
 )
 
 
@@ -602,6 +663,9 @@ async def build_briefing() -> dict[str, Any]:
             "\n".join("- " + a for a in alerts),
             raw,
         )
+    desde_ayer = await _desde_ayer()
+    if desde_ayer:
+        raw = "%s\n\n%s" % (desde_ayer, raw)
     prompt = BRIEFING_PROMPT % settings.assistant_name
     if weekend:
         prompt += (

@@ -92,6 +92,72 @@ async def test_build_briefing_falls_back_to_raw_without_llm(monkeypatch):
     assert "Briefing de hoy" in result["text"]
 
 
+def test_fmt_task_muestra_vencimiento():
+    # idea 13: el briefing pinta vencimientos
+    assert auto._fmt_task("Pagar luz", "") == "Pagar luz"
+    assert "(vence" in auto._fmt_task("Pagar luz", "2099-12-31T00:00:00.000Z")
+    assert "VENCIDA" in auto._fmt_task("Pagar luz", "2000-01-01")
+    assert "(vence 2099-12-31)" in auto._fmt_task("Pago", "2099-12-31")
+
+
+async def test_desde_ayer_resume_chat_y_automatizaciones(monkeypatch):
+    async def fake_fetchone(sql, params=()):
+        assert "chat_history" in sql
+        return {"n": 7}
+
+    async def fake_fetchall(sql, params=()):
+        assert "automation_runs" in sql
+        return [{"status": "ok"}, {"status": "ok"}, {"status": "error"}]
+
+    from src.database import db
+
+    monkeypatch.setattr(db, "fetchone", fake_fetchone)
+    monkeypatch.setattr(db, "fetchall", fake_fetchall)
+    texto = await auto._desde_ayer()
+    assert texto.startswith("DESDE AYER:")
+    assert "7 mensajes de chat" in texto
+    assert "2 ok / 1 fallo" in texto
+
+
+async def test_desde_ayer_no_rompe_si_bd_falla(monkeypatch, tmp_path):
+    async def boom(*a, **k):
+        raise RuntimeError("sin bd")
+
+    from src.database import db
+
+    monkeypatch.setattr(db, "fetchone", boom)
+    monkeypatch.setattr(db, "fetchall", boom)
+    monkeypatch.setattr(
+        auto, "settings", SimpleNamespace(obsidian_vault_path=tmp_path / "no-vault")
+    )
+    # notas: ruta inexistente -> 0, sin excepcion
+    assert await auto._desde_ayer() == ""
+
+
+async def test_build_briefing_pasa_desde_ayer_al_llm(monkeypatch):
+    monkeypatch.setattr("src.services.google_services_manager.google_services", _FakeGS())
+
+    async def fake_weather():
+        return ""
+
+    async def fake_server():
+        return {}
+
+    async def fake_desde():
+        return "DESDE AYER: 3 mensajes de chat."
+
+    monkeypatch.setattr(auto, "_weather", fake_weather)
+    monkeypatch.setattr(auto, "_server_status", fake_server)
+    monkeypatch.setattr(auto, "_desde_ayer", fake_desde)
+    fake_llm = _FakeLLM("☀️ *Briefing*")
+    monkeypatch.setattr("src.ollama_client.llm", fake_llm)
+
+    result = await auto.build_briefing()
+    assert result["success"]
+    user = "".join(m["content"] for call in fake_llm.calls for m in call if m["role"] == "user")
+    assert "DESDE AYER: 3 mensajes de chat." in user
+
+
 # ---------------- inbox ----------------
 
 
