@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import threading
 from datetime import datetime
@@ -16,6 +17,11 @@ from src.vault_config import get_taxonomy
 VAULT_PATH = Path(settings.obsidian_vault_dir)
 VAULT_NAME = settings.obsidian_vault_name
 DEBOUNCE_SECONDS = 2.0
+
+# Documentos no-md que el watcher procesa (tarea 10: resumen+etiquetado
+# automaticos al caer en la boveda). Extensiones con extractor de texto.
+INTAKE_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv"}
+INTAKE_MAX_BYTES = 10 * 1024 * 1024
 
 
 def _ignored_dirs() -> set[str]:
@@ -399,7 +405,7 @@ class VaultIndexer:
         if event.is_directory:
             return
         src_path = Path(event.src_path)
-        if src_path.suffix != ".md":
+        if src_path.suffix != ".md" and src_path.suffix.lower() not in INTAKE_EXTENSIONS:
             return
         try:
             rel = src_path.relative_to(VAULT_PATH)
@@ -414,6 +420,140 @@ class VaultIndexer:
 
         with self._pending_lock:
             self._pending_paths[rel_str] = now
+
+    async def intake_document(self, doc_path: Path) -> dict[str, Any]:
+        """Crea la nota compañera de un documento no-md caído en la bóveda.
+
+        Flujo del ítem 10: extrae el texto (PDF/DOCX/TXT/CSV), escribe
+        `<nombre>.md` al lado con `## Archivo original` y `## Contenido
+        extraido`; la nota nueva dispara después su indexación y el
+        enriquecimiento con IA (`_enrich_note`). Best-effort e idempotente:
+        si ya existe la nota, no la pisa.
+        """
+        from src.handlers.files import _create_companion_note, _extract_text_from_file
+
+        note_path = doc_path.with_suffix(".md")
+        if note_path.exists():
+            return {"success": True, "skipped": "ya existe %s" % note_path.name}
+        try:
+            if doc_path.stat().st_size > INTAKE_MAX_BYTES:
+                return {"success": False, "message": "archivo demasiado grande"}
+        except OSError:
+            return {"success": False, "message": "archivo no accesible"}
+        texto = _extract_text_from_file(doc_path)
+        creada = _create_companion_note(VAULT_PATH, doc_path, texto, "documento", [], "")
+        if not creada:
+            return {"success": False, "message": "no se pudo crear la nota"}
+        logger.info(
+            "VaultIndexer: documento %s -> nota %s (%d chars extraidos)",
+            doc_path.name,
+            creada.name,
+            len(texto),
+        )
+        return {"success": True, "note": creada.name, "chars": len(texto)}
+
+    async def _enrich_note(self, note_path: Path) -> bool:
+        """Rellena `tags` y `## Resumen` de notas nuevas sin metadata (ítem 10).
+
+        Solo actúa si faltan etiquetas o falta el resumen; si el LLM no
+        responde, la nota queda como está (el siguiente evento lo reintentará).
+        La escritura dispara un nuevo evento, y como ya no falta nada, no hay
+        bucle.
+        """
+        try:
+            content = note_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return False
+        metadata, body = parse_frontmatter(content)
+        tags = metadata.get("tags") if isinstance(metadata.get("tags"), list) else []
+        tiene_resumen = bool(re.search(r"^##\s+Resumen\s*$", body, re.MULTILINE))
+        if tags and tiene_resumen:
+            return False
+        muestra = body[:3000].strip()
+        if not muestra:
+            return False
+        try:
+            from src.ollama_client import llm
+
+            respuesta = await asyncio.wait_for(
+                llm.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Eres el catalogador de un segundo cerebro personal. "
+                                "Respondes SOLO con JSON."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Etiqueta y resume esta nota en espanol.\n\n"
+                                "Responde SOLO con JSON:\n"
+                                '{"tags": ["etiqueta1", "etiqueta2"], '
+                                '"summary": "resumen de 2 frases"}\n\n'
+                                "Nota:\n%s" % muestra
+                            ),
+                        },
+                    ],
+                    temperature=0.3,
+                    max_tokens=300,
+                ),
+                timeout=90.0,
+            )
+        except Exception as e:
+            logger.debug("Enrich %s: LLM no disponible (%s)", note_path.name, str(e)[:80])
+            return False
+        datos: dict[str, Any] = {}
+        match = re.search(r"\{.*\}", respuesta or "", re.DOTALL)
+        if match:
+            try:
+                cargado = json.loads(match.group())
+                if isinstance(cargado, dict):
+                    datos = cargado
+            except (json.JSONDecodeError, ValueError):
+                datos = {}
+        nuevos_tags = (
+            [str(t).strip() for t in datos.get("tags", []) if str(t).strip()]
+            if isinstance(datos.get("tags"), list)
+            else []
+        )
+        resumen = str(datos.get("summary") or "").strip()
+        if not nuevos_tags and not resumen:
+            return False
+        if not nuevos_tags and tags:
+            nuevos_tags = tags
+        if not resumen and nuevos_tags == tags:
+            # Nada que cambiar (el LLM no aporto resumen ni etiquetas nuevas).
+            return False
+        nuevo_body = body
+        if resumen and not tiene_resumen:
+            lineas = body.split("\n")
+            idx = 0
+            for i, linea in enumerate(lineas):
+                if linea.startswith("# "):
+                    idx = i + 1
+                    break
+            lineas[idx:idx] = ["", "## Resumen", resumen, ""]
+            nuevo_body = "\n".join(lineas)
+        metadata["tags"] = nuevos_tags
+        nuevo_fm = (
+            "---\n"
+            + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip()
+            + "\n---"
+        )
+        try:
+            note_path.write_text(nuevo_fm + "\n" + nuevo_body, encoding="utf-8")
+        except Exception as e:
+            logger.warning("Enrich %s: no se pudo escribir (%s)", note_path.name, e)
+            return False
+        logger.info(
+            "VaultIndexer: %s enriquecida (%d tags%s)",
+            note_path.name,
+            len(nuevos_tags),
+            ", resumen" if resumen and not tiene_resumen else "",
+        )
+        return True
 
     async def _debounce_loop(self) -> None:
         while not self._shutdown_event.is_set():
@@ -432,7 +572,11 @@ class VaultIndexer:
                 note_path = VAULT_PATH / path_str
                 if note_path.exists():
                     try:
-                        await self.index_note(note_path)
+                        if note_path.suffix.lower() == ".md":
+                            await self.index_note(note_path)
+                            await self._enrich_note(note_path)
+                        else:
+                            await self.intake_document(note_path)
                     except Exception as e:
                         logger.warning("Debounced index error %s: %s", path_str, e)
                 else:
