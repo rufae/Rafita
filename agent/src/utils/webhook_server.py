@@ -680,6 +680,62 @@ async def automation_sequences_run(request: Request):
     )
 
 
+async def _notify_automation_error(workflow: str, error: str | None) -> bool:
+    """Aviso a admins SOLO tras 2 fallos seguidos del mismo workflow (sin spam)."""
+    from src.config import settings
+
+    targets = list(settings.admin_ids or [])
+    if not targets or _bot_ref is None:
+        return False
+    text = "⚠️ *Automatización con 2 fallos seguidos*\nWorkflow: %s\nError: %s" % (
+        workflow,
+        error or "sin detalle",
+    )
+    ok = False
+    for admin_id in targets:
+        try:
+            await _bot_ref.send_proactive_message(admin_id, text)
+            ok = True
+        except Exception as e:
+            logger.error("n8n-run: fallo avisando a %s: %s", admin_id, e)
+    return ok
+
+
+@app.post("/api/n8n/run")
+async def n8n_run_report(request: Request):
+    """Informe de ejecución de automatizaciones n8n (tareas.md, Fase 1).
+
+    Cada workflow notifica aquí al terminar (nodo «Reportar a Rafita»).
+    Idempotente por `execution_id` (reintentos de n8n no duplican filas) y
+    alerta a los admins solo si la MISMA automatización falla dos veces
+    seguidas. Permite responder «¿qué automatizaciones han fallado esta
+    semana?» con datos reales (tool `get_automation_runs`).
+    """
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    workflow = str(payload.get("workflow") or "").strip()[:120]
+    execution_id = str(payload.get("execution_id") or "").strip()[:80]
+    status = str(payload.get("status") or "").strip()
+    if not workflow or not execution_id or status not in ("ok", "error"):
+        raise HTTPException(
+            status_code=400,
+            detail="workflow, execution_id y status (ok|error) son obligatorios",
+        )
+    error = str(payload.get("error") or "").strip()[:500] or None
+    finished_at = str(payload.get("finished_at") or "").strip()[:40] or None
+    previo = await db.last_automation_run(workflow)
+    stored = await db.record_automation_run(execution_id, workflow, status, error, finished_at)
+    alerted = False
+    if status == "error" and stored and previo and previo.get("status") == "error":
+        alerted = await _notify_automation_error(workflow, error)
+    return {"success": True, "duplicate": not stored, "alerted": alerted}
+
+
 async def start_gateway_server(host: str = "0.0.0.0", port: int = 8000):
     config_obj = uvicorn.Config(
         app,

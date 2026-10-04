@@ -287,6 +287,21 @@ class DatabaseManager:
             CREATE INDEX IF NOT EXISTS idx_knowledge_relations_chat
             ON knowledge_relations(chat_id)
             """,
+            """
+            CREATE TABLE IF NOT EXISTS automation_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL UNIQUE,
+                workflow TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('ok','error')),
+                error TEXT,
+                finished_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_automation_runs_workflow
+            ON automation_runs(workflow, id DESC)
+            """,
         ]
         for stmt in schema:
             await self._conn.execute(stmt)
@@ -1029,6 +1044,53 @@ class DatabaseManager:
         ("credentials", "chat_id"),
         ("meetings", "user_id"),
     )
+
+    # --- Ejecuciones de automatizaciones n8n (tareas.md, Fase 1) ---
+
+    async def record_automation_run(
+        self,
+        execution_id: str,
+        workflow: str,
+        status: str,
+        error: str | None = None,
+        finished_at: str | None = None,
+    ) -> bool:
+        """Registra una ejecucion de automatizacion.
+
+        Idempotente por `execution_id` (UNIQUE): si n8n reintenta el
+        informe, no se duplica la fila. Devuelve False si ya existia.
+        """
+        cursor = await self.execute(
+            "INSERT OR IGNORE INTO automation_runs "
+            "(execution_id, workflow, status, error, finished_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (execution_id, workflow, status, error, finished_at),
+        )
+        return cursor.rowcount > 0
+
+    async def list_automation_runs(
+        self, days: int = 7, only_errors: bool = False, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Ejecuciones de los ultimos N dias (errores primero no: por fecha)."""
+        sql = (
+            "SELECT execution_id, workflow, status, error, finished_at, created_at "
+            "FROM automation_runs WHERE created_at >= datetime('now', ?)"
+        )
+        params: list[Any] = ["-%d days" % max(1, int(days))]
+        if only_errors:
+            sql += " AND status = 'error'"
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(min(max(1, int(limit)), 200))
+        return await self.fetchall(sql, tuple(params))
+
+    async def last_automation_run(self, workflow: str) -> dict[str, Any] | None:
+        """Ultima ejecucion registrada de un workflow (para alerta 2 fallos)."""
+        rows = await self.fetchall(
+            "SELECT status, created_at FROM automation_runs "
+            "WHERE workflow = ? ORDER BY id DESC LIMIT 1",
+            (workflow,),
+        )
+        return rows[0] if rows else None
 
     async def export_user_data(self, chat_id: int, *extra_ids: int) -> dict[str, Any]:
         """Exporta todos los datos del usuario en JSON (derecho de acceso).

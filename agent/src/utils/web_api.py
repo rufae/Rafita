@@ -266,6 +266,19 @@ async def web_chat(request: Request, user: dict[str, Any] = Depends(require_user
             from src.handlers.chat import build_ayuda_text
 
             return {"reply": build_ayuda_text(), "chat_id": chat_id}
+        if comando == "backup":
+            from src.utils.backup import trigger_system_backup
+
+            return {"reply": trigger_system_backup("web").get("message", ""), "chat_id": chat_id}
+        if comando == "backup_zip":
+            return {
+                "reply": (
+                    "El respaldo ZIP de datos (BD + excels) se genera en "
+                    "Telegram con /backup_zip. Desde aqui pide la copia "
+                    "completa con /backup."
+                ),
+                "chat_id": chat_id,
+            }
 
     from src.core import generate_response
 
