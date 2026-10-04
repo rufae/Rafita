@@ -312,6 +312,22 @@ class GoogleServicesManager:
         if not loaded:
             logger.info("GoogleServices: sin credenciales válidas (modo=%s) en %s", mode, CRED_DIR)
             return False
+        # Los servicios lazy se construyen con las credenciales vivas: si estas
+        # cambian (el usuario re-enlaza OAuth tras un invalid_grant), los
+        # cacheados seguian apuntando a la service_account y Gmail devolvia
+        # 400 failedPrecondition (visto en vivo 2026-10-04 22:02 tras
+        # /setup_google). Se descartan todos; calendar/drive se re construyen.
+        for _svc in (
+            "_calendar",
+            "_drive",
+            "_sheets",
+            "_docs",
+            "_tasks",
+            "_gmail",
+            "_people",
+            "_fitness",
+        ):
+            setattr(self, _svc, None)
         self._calendar = self._build("calendar", "v3")
         self._drive = self._build("drive", "v3")
         stored = await db.kv_get("google_calendar_id")
@@ -1388,6 +1404,8 @@ class GoogleServicesManager:
         self._docs = None
         self._tasks = None
         self._gmail = None
+        self._people = None
+        self._fitness = None
         self._creds = None
         self._ready = False
 
