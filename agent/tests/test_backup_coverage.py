@@ -91,9 +91,11 @@ async def test_create_backup_zip_error_returns_none(tmp_path, monkeypatch):
 
 async def test_backup_command_without_message_or_user():
     message = _FakeMessage()
-    await backup.backup_command(SimpleNamespace(effective_message=None, effective_user=None), None)
+    await backup.backup_zip_command(
+        SimpleNamespace(effective_message=None, effective_user=None), None
+    )
     assert message.texts == []
-    await backup.backup_command(
+    await backup.backup_zip_command(
         SimpleNamespace(effective_message=message, effective_user=None), None
     )
     assert message.texts == []
@@ -107,7 +109,7 @@ async def test_backup_command_reports_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr(backup, "create_backup", fake_create)
     message = _FakeMessage()
-    await backup.backup_command(_update(message), None)
+    await backup.backup_zip_command(_update(message), None)
     assert message.chat_actions == ["upload_document"]
     assert any("Error al generar el respaldo" in t for t in message.texts)
     assert message.documents == []
@@ -121,7 +123,7 @@ async def test_backup_command_sends_document(tmp_path, monkeypatch):
 
     monkeypatch.setattr(backup, "create_backup", fake_create)
     message = _FakeMessage()
-    await backup.backup_command(_update(message, user_id=7), None)
+    await backup.backup_zip_command(_update(message, user_id=7), None)
 
     assert len(message.documents) == 1
     document, filename, caption = message.documents[0]
@@ -140,5 +142,5 @@ async def test_backup_command_send_error_falls_back_to_text(tmp_path, monkeypatc
 
     monkeypatch.setattr(backup, "create_backup", fake_create)
     message = _FakeMessage(document_error=RuntimeError("telegram caido"))
-    await backup.backup_command(_update(message), None)
+    await backup.backup_zip_command(_update(message), None)
     assert any("no pudo enviarse" in t for t in message.texts)
