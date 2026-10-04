@@ -154,6 +154,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-sync-google-vault",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "97fb45c1-c49a-4e77-93cc-d1c80a8292f3",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

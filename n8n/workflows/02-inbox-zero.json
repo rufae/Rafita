@@ -154,6 +154,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-inbox-zero",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "2c465173-afd9-400d-ab10-71ff7a8e470a",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

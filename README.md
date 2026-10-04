@@ -16,11 +16,12 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 ### Conversación y herramientas
 - **Chat con IA local** (Ollama, p. ej. `gemma4:12b`) por **Telegram**, **web**
   y **llamada de voz**, con el mismo cerebro en los tres canales.
-- **46 herramientas** que el modelo decide invocar solo (sin enrutado por
+- **48 herramientas** que el modelo decide invocar solo (sin enrutado por
   palabras clave): eventos, alertas, finanzas, contactos, correo, tareas,
   Google Calendar/Drive/Gmail/Tasks, búsqueda web, bóveda, CRM, grafo de
-  conocimiento, n8n, copias de seguridad bajo demanda, estado de las
-  automatizaciones, exportaciones RGPD…
+  conocimiento, catálogo de automatizaciones n8n con permisos
+  (`list_automations`/`run_automation`), copias de seguridad bajo demanda,
+  estado de las automatizaciones, exportaciones RGPD…
 - **Honestidad garantizada**: guardias deterministas impiden que el modelo
   diga «he creado el evento» si ninguna herramienta lo hizo.
 
@@ -211,7 +212,7 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests (≈1578, sin paralelo)
+# Tests (≈1590, sin paralelo)
 pytest agent/tests -v
 
 # Todos los checks (pre-commit)

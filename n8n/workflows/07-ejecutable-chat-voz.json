@@ -29,6 +29,22 @@
         220,
         0
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-ejecutable",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "daa3f68e-ba21-4b70-84eb-577db05f2110",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

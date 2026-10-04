@@ -204,6 +204,22 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manual-briefing",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "c4a12c0d-e8ed-4a3b-91bf-eb60c7990165",
+      "name": "Manual (chat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -200
+      ]
     }
   ],
   "connections": {

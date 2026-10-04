@@ -898,6 +898,15 @@ async def _trigger_n8n(args: dict[str, Any]) -> dict[str, Any]:
     payload = args.get("payload") or {}
     if not isinstance(payload, dict):
         payload = {"value": payload}
+    # Catalogo (tarea 13): si el nombre es una automatizacion conocida, pasa
+    # por la capa de seleccion + permisos en vez del webhook suelto.
+    if not workflow.startswith("http"):
+        from src.core.orchestration import resolve as _resolve_automation
+        from src.core.orchestration import run_automation as _run_automation
+
+        spec = _resolve_automation(workflow)
+        if spec:
+            return await _run_automation(spec.key, payload, bool(args.get("confirm")))
     url = workflow if workflow.startswith("http") else ""
     if not url:
         import json as _json
@@ -2439,6 +2448,21 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "trigger_n8n":
             return await _trigger_n8n(args)
+
+        elif func_name == "list_automations":
+            from src.core.orchestration import describe_automations
+
+            return describe_automations()
+
+        elif func_name == "run_automation":
+            from src.core.orchestration import run_automation
+
+            params = args.get("params")
+            return await run_automation(
+                (args.get("key") or "").strip(),
+                params if isinstance(params, dict) else {},
+                bool(args.get("confirm")),
+            )
 
         elif func_name == "send_gmail":
             from src.utils.voice_text import normalize_dictated_email
