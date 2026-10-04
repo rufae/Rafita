@@ -212,7 +212,7 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests (≈1590, sin paralelo)
+# Tests (≈1591, sin paralelo)
 pytest agent/tests -v
 
 # Todos los checks (pre-commit)

@@ -107,6 +107,19 @@ async def test_list_vacio_fuera_de_ventana(db):
     assert await db.list_automation_runs(days=1, only_errors=True) == []
 
 
+async def test_record_es_visible_para_otros_procesos(db, tmp_path):
+    # Regresión 2026-10-04 (visto en vivo en el HP): execute() no commitea,
+    # la fila quedaba en la transaccion abierta y otros procesos veian
+    # automation_runs vacia pese a que /api/n8n/run respondia success:true.
+    import sqlite3
+
+    assert await db.record_automation_run("exec-commit", "Briefing", "ok") is True
+    conn = sqlite3.connect(str(tmp_path / "runs.db"))
+    rows = conn.execute("SELECT execution_id, status FROM automation_runs").fetchall()
+    conn.close()
+    assert rows == [("exec-commit", "ok")]
+
+
 # ---------- Endpoint ----------
 
 
