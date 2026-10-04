@@ -196,4 +196,11 @@ else
     log "AVISO: no existe $CONF; solo se actualiza Rafita"
 fi
 
+# Estado de contenedores para el check "docker" del agente (best-effort;
+# también lo genera el cron de usuario: deploy/hp/infra/docker_status.sh).
+if [ -f "$REPO/deploy/hp/infra/docker_status.sh" ]; then
+    bash "$REPO/deploy/hp/infra/docker_status.sh" >>"$LOG" 2>&1 \
+        || log "AVISO: docker_status.sh devolvió error"
+fi
+
 exit "$RC"

@@ -1,10 +1,12 @@
 """Alertas proactivas de infraestructura (mejora 2).
 
-Vigila las piezas críticas (disco, IA, base vectorial, backup, restore-drill y
-STT remoto) cada `INFRA_CHECK_MINUTES` minutos y avisa al administrador por
-Telegram solo cuando algo se degrada, con un enfriamiento por incidencia
-(`INFRA_ALERT_COOLDOWN_HOURS`) para no repetir el mismo aviso. Además registra
-latencia y tokens en las métricas (ver `utils.telemetry` y `/metrics`).
+Vigila las piezas críticas (disco, IA, base vectorial, backup, restore-drill,
+STT remoto, contenedores del nodo, conectividad y certificados) cada
+`INFRA_CHECK_MINUTES` minutos y avisa al administrador por Telegram solo
+cuando algo se degrada, con un enfriamiento por incidencia
+(`INFRA_ALERT_COOLDOWN_HOURS`) para no repetir el mismo aviso. Además
+registra latencia y tokens en las métricas (ver `utils.telemetry` y
+`/metrics`).
 """
 
 import asyncio
@@ -22,6 +24,10 @@ from src.utils.telemetry import metrics
 DISK_WARN_PCT = 85.0
 DISK_CRIT_PCT = 90.0
 BACKUP_MAX_AGE_H = 26.0
+CERT_WARN_DAYS = 30
+CERT_CRIT_DAYS = 7
+DOCKER_STATUS_MAX_AGE_H = 30.0
+RESTART_LOOP_MIN = 10
 
 
 def check_disk() -> dict[str, Any]:
@@ -174,10 +180,178 @@ async def check_whisper_remote() -> dict[str, Any]:
     return {"name": "stt", "ok": True, "severity": "info", "detail": "STT remoto OK"}
 
 
+def check_docker_services() -> dict[str, Any]:
+    """Contenedores del nodo en restart-loop (mejora Fase 3, ítems 11-12).
+
+    Lee `data/docker-status.json`, que escribe el script del host
+    `deploy/hp/infra/docker_status.sh` (cron de usuario o hook de
+    auto_update.sh): el agente no tiene docker.sock. Sin fichero (o con
+    datos viejos) lo dice y no alerta.
+    """
+    from datetime import datetime
+
+    data = read_status_file("docker-status.json")
+    conts = data.get("containers")
+    if not isinstance(conts, list) or not conts:
+        return {
+            "name": "docker",
+            "ok": True,
+            "severity": "info",
+            "detail": "sin datos de contenedores (docker_status.sh sin ejecutar)",
+        }
+    age_h: float | None = None
+    try:
+        when = datetime.fromisoformat(str(data.get("generated_at") or ""))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        age_h = (datetime.now(UTC).timestamp() - when.timestamp()) / 3600.0
+    except Exception:
+        age_h = None
+    stale = age_h is not None and age_h > DOCKER_STATUS_MAX_AGE_H
+    loops: list[str] = []
+    for c in conts:
+        try:
+            count = int(c.get("restart_count") or 0)
+        except Exception:
+            count = 0
+        if str(c.get("state") or "") == "restarting" or count >= RESTART_LOOP_MIN:
+            loops.append("%s (reinicios: %d)" % (c.get("name", "?"), count))
+    if loops:
+        detail = "restart-loop: " + ", ".join(loops)[:140]
+        if stale:
+            detail += " [datos de hace %.0f h]" % (age_h or 0)
+        return {"name": "docker", "ok": False, "severity": "warning", "detail": detail}
+    detail = "%d contenedores, ninguno en restart-loop" % len(conts)
+    if stale:
+        detail += " (datos de hace %.0f h)" % (age_h or 0)
+    return {"name": "docker", "ok": True, "severity": "info", "detail": detail}
+
+
+async def check_connectivity() -> dict[str, Any]:
+    """Salida a red desde el contenedor (Telegram, GitHub, URLs de CONFIG)."""
+    urls = [u.strip() for u in (settings.connectivity_urls or "").split(",") if u.strip()]
+    if not urls:
+        return {
+            "name": "conectividad",
+            "ok": True,
+            "severity": "info",
+            "detail": "sin URLs configuradas (CONNECTIVITY_URLS)",
+        }
+    fallos: list[str] = []
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            for url in urls:
+                host = url.split("//", 1)[-1].split("/", 1)[0]
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code >= 500:
+                        fallos.append("%s (HTTP %d)" % (host, resp.status_code))
+                except Exception as e:
+                    fallos.append("%s (%s)" % (host, str(e)[:40]))
+    except Exception as e:
+        return {
+            "name": "conectividad",
+            "ok": False,
+            "severity": "warning",
+            "detail": "comprobación no disponible (%s)" % str(e)[:80],
+        }
+    if fallos:
+        return {
+            "name": "conectividad",
+            "ok": False,
+            "severity": "warning",
+            "detail": "sin respuesta: " + ", ".join(fallos)[:150],
+        }
+    return {
+        "name": "conectividad",
+        "ok": True,
+        "severity": "info",
+        "detail": "%d destinos accesibles" % len(urls),
+    }
+
+
+async def check_certificates() -> dict[str, Any]:
+    """Caducidad de los certificados X.509 de CERT_CHECK_DIR (*.crt/*.pem).
+
+    En el HP el override monta `~/certs/tailscale` en `/data/certs`. Aviso
+    con <30 días (warning) y <7 días (critical).
+    """
+    from datetime import date
+
+    from cryptography import x509
+
+    directory = getattr(settings, "cert_check_dir", "") or ""
+    files: list[Any] = []
+    if directory:
+        try:
+            from pathlib import Path
+
+            base = Path(directory)
+            if base.is_dir():
+                files = [
+                    f
+                    for f in sorted([*base.glob("*.crt"), *base.glob("*.pem")])
+                    if "key" not in f.name.lower() and "priv" not in f.name.lower()
+                ]
+        except Exception:
+            files = []
+    if not files:
+        return {
+            "name": "certificados",
+            "ok": True,
+            "severity": "info",
+            "alertable": False,
+            "detail": "sin certificados en %s (CERT_CHECK_DIR)" % (directory or "(sin configurar)"),
+        }
+    hoy = date.today()
+    detalles: list[str] = []
+    malos: list[str] = []
+    peor = "info"
+    for f in files:
+        try:
+            cert = x509.load_pem_x509_certificate(f.read_bytes())
+            fin = getattr(cert, "not_valid_after_utc", None)
+            if fin is None:
+                fin = cert.not_valid_after
+            dias = (fin.date() - hoy).days
+        except Exception as e:
+            malos.append("%s: ilegible (%s)" % (f.stem, str(e)[:40]))
+            peor = "warning"
+            continue
+        detalles.append("%s: %d d" % (f.stem, dias))
+        if dias < CERT_CRIT_DAYS:
+            malos.append("%s: caduca en %d d" % (f.stem, dias))
+            peor = "critical"
+        elif dias < CERT_WARN_DAYS and peor != "critical":
+            malos.append("%s: caduca en %d d" % (f.stem, dias))
+            peor = "warning"
+    if malos:
+        return {
+            "name": "certificados",
+            "ok": False,
+            "severity": peor,
+            "detail": "; ".join(malos)[:150],
+        }
+    return {
+        "name": "certificados",
+        "ok": True,
+        "severity": "info",
+        "detail": "; ".join(detalles)[:150],
+    }
+
+
 async def run_infra_checks() -> list[dict[str, Any]]:
     """Ejecuta todas las comprobaciones y devuelve sus resultados."""
-    checks = [check_disk(), check_backup(), check_restore_drill()]
-    for fn in (check_llm, check_vector_db, check_whisper_remote):
+    checks = [check_disk(), check_backup(), check_restore_drill(), check_docker_services()]
+    for fn in (
+        check_llm,
+        check_vector_db,
+        check_whisper_remote,
+        check_connectivity,
+        check_certificates,
+    ):
         checks.append(await fn())
     metrics.set_gauge("infra_checks_ok", 1.0 if all(c.get("ok") for c in checks) else 0.0)
     return checks

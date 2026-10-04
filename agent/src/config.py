@@ -158,6 +158,10 @@ class Settings(BaseSettings):
 
     infra_check_minutes: int = Field(60, alias="INFRA_CHECK_MINUTES", ge=5)
     infra_alert_cooldown_hours: float = Field(6.0, alias="INFRA_ALERT_COOLDOWN_HOURS", gt=0)
+    cert_check_dir: str = Field("/data/certs", alias="CERT_CHECK_DIR")
+    connectivity_urls: str = Field(
+        "https://api.telegram.org,https://github.com", alias="CONNECTIVITY_URLS"
+    )
 
     ai_provider: str = Field("ollama", alias="AI_PROVIDER")
     openai_api_key: str = Field("", alias="OPENAI_API_KEY")
