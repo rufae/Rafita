@@ -11,6 +11,11 @@ class _LLMFalso:
         self.respuesta = respuesta
         self.llamadas = 0
         self.contenidos = []
+        self._ready = False
+        self.inicializado = False
+
+    async def initialize(self):
+        self.inicializado = True
 
     async def chat(self, **kwargs):
         self.llamadas += 1
@@ -129,6 +134,7 @@ async def test_crea_tarea_local_desde_chat(monkeypatch):
     assert res["success"] is True
     assert store["tareas"] == [("Renovar el dominio", "2026-10-15")]
     assert store["kv"]["commitments:last"]
+    assert llm.inicializado is True  # one-shot sin arranque de app
     assert enviados and "dominio" in enviados[0][1]
     assert res["fuentes"]["chats"] == 1
 
