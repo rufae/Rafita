@@ -1169,7 +1169,10 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
         logger.warning("Compromisos: correo no disponible (%s)", str(e)[:80])
 
     if not lineas:
-        await db.kv_set("commitments:last", hoy)
+        try:
+            await db.kv_set("commitments:last", hoy)
+        except Exception as e:
+            logger.warning("Compromisos: no se pudo guardar el gate (%s)", str(e)[:80])
         return {
             "success": True,
             "creadas": [],
@@ -1181,6 +1184,8 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
     try:
         from src.ollama_client import llm
 
+        if not getattr(llm, "_ready", False):
+            await llm.initialize()
         respuesta = await llm.chat(
             messages=[
                 {
