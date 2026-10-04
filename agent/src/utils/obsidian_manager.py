@@ -222,6 +222,24 @@ async def initialize_vault_structure() -> None:
     for folder_path in structure:
         target = OBSIDIAN_VAULT / folder_path
         target.mkdir(parents=True, exist_ok=True)
+    # Guía de la carpeta de estilos de correo (2.b.3): los ejemplos que el
+    # usuario guarde aquí definen firma/tono "por destinatario".
+    try:
+        leeme = OBSIDIAN_VAULT / get_taxonomy().path("estilos_correo") / "LEEME.md"
+        if not leeme.exists():
+            leeme.write_text(
+                "# Estilos de correo\n\n"
+                "Guarda aquí ejemplos (`.md`) de correos cuyo estilo quieras "
+                "que Rafita imite: uno por destinatario o tipo de correo "
+                "(p. ej. `Ana.md`, `Clientes.md`, `Facturas.md`), con el "
+                "saludo, el tono, la firma y cualquier fórmula que uses.\n\n"
+                "Al redactar un borrador o enviar un correo, Rafita lee el "
+                "ejemplo del destinatario y replica tu estilo. Este LEEME.md "
+                "se ignora (no cuenta como ejemplo).\n",
+                encoding="utf-8",
+            )
+    except Exception:
+        logger.debug("No se pudo crear LEEME de estilos de correo", exc_info=True)
     logger.info("Obsidian vault structure initialized (%d folders)", len(structure))
 
 

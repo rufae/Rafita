@@ -299,6 +299,16 @@ class DatabaseManager:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 0,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE INDEX IF NOT EXISTS idx_automation_runs_workflow
             ON automation_runs(workflow, id DESC)
             """,
@@ -480,6 +490,27 @@ class DatabaseManager:
 
     async def delete_task(self, chat_id: int, task_id: int) -> None:
         await self.execute("DELETE FROM tasks WHERE id = ? AND chat_id = ?", (task_id, chat_id))
+        await self._conn.commit()
+
+    # ---------- suscripciones web push (PWA, mejora 6) ----------
+
+    async def add_push_subscription(
+        self, user_id: int, endpoint: str, p256dh: str, auth: str
+    ) -> None:
+        await self.execute(
+            "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET "
+            "user_id = excluded.user_id, p256dh = excluded.p256dh, "
+            "auth = excluded.auth",
+            (user_id, endpoint, p256dh, auth),
+        )
+        await self._conn.commit()
+
+    async def list_push_subscriptions(self) -> list[dict[str, Any]]:
+        return await self.fetchall("SELECT * FROM push_subscriptions ORDER BY id")
+
+    async def delete_push_subscription(self, endpoint: str) -> None:
+        await self.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
         await self._conn.commit()
 
     # ---------- secuencias de email (Fase 2) ----------
@@ -1043,6 +1074,7 @@ class DatabaseManager:
         ("knowledge_relations", "chat_id"),
         ("credentials", "chat_id"),
         ("meetings", "user_id"),
+        ("push_subscriptions", "user_id"),
     )
 
     # --- Ejecuciones de automatizaciones n8n (tareas.md, Fase 1) ---

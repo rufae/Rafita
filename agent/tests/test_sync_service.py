@@ -1,5 +1,7 @@
 """Sync inteligente Google <-> boveda (automatizacion A, 2026-09-28)."""
 
+from datetime import datetime
+
 import pytest
 
 from src.services import sync_service as sync
@@ -81,7 +83,12 @@ async def test_sync_tasks_creates_completes_and_marks(vault, monkeypatch):
     # -> se completa; "Llamar gestor" completada en Google -> se marca [x].
     assert fake_gs.created_tasks == ["Comprar pan"]
     assert fake_gs.completed_tasks == ["t1"]
-    assert stats == {"created": 1, "completed_google": 1, "completed_vault": 1}
+    assert stats == {
+        "created": 1,
+        "completed_google": 1,
+        "completed_vault": 1,
+        "added_from_google": 0,
+    }
     content = (vault / "00-Inbox" / "Tareas.md").read_text(encoding="utf-8")
     assert "- [x] Llamar gestor" in content
 
@@ -92,6 +99,7 @@ async def test_sync_tasks_without_note_does_nothing(vault, monkeypatch):
         "created": 0,
         "completed_google": 0,
         "completed_vault": 0,
+        "added_from_google": 0,
     }
 
 
@@ -118,7 +126,7 @@ async def test_sync_events_creates_and_moves(vault, monkeypatch):
     # Dentista existe a otra hora -> se mueve; Gimnasio no existe -> se crea.
     assert fake_gcal.moved == [("ev1", "2026-10-01T10:00:00")]
     assert fake_gs.created_events == [("Gimnasio", "2026-10-02T09:00:00")]
-    assert stats == {"created": 1, "moved": 1}
+    assert stats == {"created": 1, "moved": 1, "google_wins": 0, "added_from_google": 0}
 
 
 async def test_sync_events_same_time_does_nothing(vault, monkeypatch):
@@ -131,7 +139,7 @@ async def test_sync_events_same_time_does_nothing(vault, monkeypatch):
     monkeypatch.setattr("src.utils.google_calendar_manager.gcal", fake_gcal)
 
     stats = await sync._sync_events()
-    assert stats == {"created": 0, "moved": 0}
+    assert stats == {"created": 0, "moved": 0, "google_wins": 0, "added_from_google": 0}
     assert not fake_gcal.moved and not fake_gs.created_events
 
 
@@ -183,3 +191,105 @@ def test_sync_endpoint_requires_signature():
     client = TestClient(webhook_server.app)
     resp = client.post("/automation/sync", json={})
     assert resp.status_code in (401, 503)
+
+
+# ---------------- altas Google -> boveda (mejora 5) ----------------
+
+
+async def test_sync_tasks_adds_from_google(vault, monkeypatch):
+    _write_note(vault, "Tareas", "- [ ] Solo en la nota\n- [x] Hecha aqui\n")
+    fake_gs = _FakeGS(
+        tasks=[
+            {"id": "t1", "title": "Solo en la nota", "status": "needsAction"},
+            {"id": "t2", "title": "Hecha aqui", "status": "completed"},
+            {"id": "t3", "title": "Creada en Google", "status": "needsAction"},
+            {"id": "t4", "title": "Completada en Google", "status": "completed"},
+        ]
+    )
+    monkeypatch.setattr("src.services.google_services_manager.google_services", fake_gs)
+
+    stats = await sync._sync_tasks()
+
+    # "Creada en Google" (pendiente) se anade; las completadas de Google no.
+    assert stats["added_from_google"] == 1
+    content = (vault / "00-Inbox" / "Tareas.md").read_text(encoding="utf-8")
+    assert "- [ ] Creada en Google" in content
+    assert "Completada en Google" not in content
+    assert "- [x] Hecha aqui" in content
+
+
+async def test_sync_events_adds_from_google(vault, monkeypatch):
+    _write_note(vault, "Calendario", "2026-10-01 10:00 | Dentista\n")
+    fake_gs = _FakeGS(
+        events=[
+            {"id": "ev1", "title": "Dentista", "start": "2026-10-01T10:00:00+02:00"},
+            {"id": "ev2", "title": "Reunion proveedor", "start": "2026-10-02T11:00:00+02:00"},
+        ]
+    )
+    monkeypatch.setattr("src.services.google_services_manager.google_services", fake_gs)
+    monkeypatch.setattr("src.utils.google_calendar_manager.gcal", _FakeGcal())
+
+    stats = await sync._sync_events()
+
+    assert stats["added_from_google"] == 1
+    assert stats == {"created": 0, "moved": 0, "google_wins": 0, "added_from_google": 1}
+    content = (vault / "00-Inbox" / "Calendario.md").read_text(encoding="utf-8")
+    assert "2026-10-02 11:00 | Reunion proveedor" in content
+    assert "2026-10-01 10:00 | Dentista" in content
+
+
+# ---------------- conflictos (mejora 5) ----------------
+
+
+async def test_conflicto_gana_google_si_se_movio_despues(vault, monkeypatch):
+    """Google movio el evento tras la ultima edicion de la nota -> gana Google."""
+    _write_note(vault, "Calendario", "2026-10-01 10:00 | Dentista\n")
+    futuro = datetime.now().astimezone().isoformat()
+    fake_gs = _FakeGS(
+        events=[
+            {
+                "id": "ev1",
+                "title": "Dentista",
+                "start": "2026-10-01T18:00:00+02:00",
+                "updated": futuro,
+            }
+        ]
+    )
+    fake_gcal = _FakeGcal()
+    monkeypatch.setattr("src.services.google_services_manager.google_services", fake_gs)
+    monkeypatch.setattr("src.utils.google_calendar_manager.gcal", fake_gcal)
+
+    stats = await sync._sync_events()
+
+    assert stats["google_wins"] == 1
+    assert stats["moved"] == 0
+    assert fake_gcal.moved == []
+    content = (vault / "00-Inbox" / "Calendario.md").read_text(encoding="utf-8")
+    assert "2026-10-01 18:00 | Dentista" in content
+
+
+async def test_conflicto_gana_nota_si_google_no_cambio(vault, monkeypatch):
+    """Google tiene otro horario pero sin actualizarse -> se mueve a la nota."""
+    _write_note(vault, "Calendario", "2026-10-01 10:00 | Dentista\n")
+    antiguo = "2020-01-01T00:00:00+00:00"
+    fake_gs = _FakeGS(
+        events=[
+            {
+                "id": "ev1",
+                "title": "Dentista",
+                "start": "2026-10-01T18:00:00+02:00",
+                "updated": antiguo,
+            }
+        ]
+    )
+    fake_gcal = _FakeGcal()
+    monkeypatch.setattr("src.services.google_services_manager.google_services", fake_gs)
+    monkeypatch.setattr("src.utils.google_calendar_manager.gcal", fake_gcal)
+
+    stats = await sync._sync_events()
+
+    assert stats["moved"] == 1
+    assert stats["google_wins"] == 0
+    assert fake_gcal.moved == [("ev1", "2026-10-01T10:00:00")]
+    content = (vault / "00-Inbox" / "Calendario.md").read_text(encoding="utf-8")
+    assert "2026-10-01 10:00 | Dentista" in content

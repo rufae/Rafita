@@ -269,6 +269,9 @@ SYSTEM_PROMPT_VOICE = (
     "- search_web / remember_fact / search_knowledge\n"
     "- create_event / create_alert / manage_google_calendar\n"
     "- manage_google_tasks (tareas: guardar, listar, completar)\n"
+    "- get_week_plan (plan semanal: agenda + tareas + CRM de una vez)\n"
+    "- create_meeting_tasks (acta de reunion -> varias tareas con responsable)\n"
+    "- triage_inbox (triaje de bandeja: urgente/facturas/clientes + borradores)\n"
     "- get_weather (tiempo) / get_alerts (alertas pendientes)\n"
     "- search_gmail / send_gmail (correo)\n"
     "- find_contact (telefonos y correos de contactos)\n"
@@ -338,6 +341,47 @@ GROUNDING_RULES = (
 )
 
 
+EMAIL_STYLE_RULE = (
+    "EMAIL_STYLE_RULE (2.b.3): al redactar o enviar un correo (draft_gmail, "
+    "send_gmail) usa SIEMPRE estilo profesional y claro: asunto concreto, "
+    "saludo formal adecuado al destinatario, una idea por parrafo, frases "
+    "cortas, peticion o proximo paso al final y despedida formal ('Saludos "
+    "cordiales'). Sin muletillas, sin exclamaciones innecesarias y sin "
+    "relleno. Nunca inventes datos: si falta un importe, fecha o dato clave, "
+    "deja un marcador [indicar ...] en lugar de suponer. Firma solo con la "
+    "firma que el usuario haya pedido o fijado; si no la hay, no anadas "
+    "firma alguna.\n"
+)
+
+
+def _estilos_correo_hint() -> str:
+    """Ejemplos de estilo de correo en la bóveda (00-Estilos-correo/).
+
+    Vacío si la carpeta no tiene ejemplos; se ignora LEEME.md. Los ejemplos
+    se nombran por destinatario (Ana.md, Clientes.md...) para que el tono y la
+    firma se apliquen «por destinatario» (2.b.3).
+    """
+    try:
+        from src.utils.obsidian_manager import OBSIDIAN_VAULT
+
+        carpeta = OBSIDIAN_VAULT / get_taxonomy().path("estilos_correo")
+        archivos = sorted(
+            p.name for p in carpeta.glob("*.md") if p.is_file() and p.name != "LEEME.md"
+        )
+    except Exception:
+        return ""
+    if not archivos:
+        return ""
+    return (
+        "EMAIL_STYLE_HINT: tienes ejemplos de TU estilo de correo en "
+        f"{get_taxonomy().path('estilos_correo')}/ ({', '.join(archivos[:5])}). "
+        "Antes de redactar, leelos con manage_obsidian_note (action=read, "
+        "folder 00-Estilos-correo) y saluda/firma/tono igual que en el "
+        "ejemplo; si el destinatario coincide con un archivo (p. ej. Ana.md), "
+        "ese es su ejemplo prioritario.\n"
+    )
+
+
 def _commands_line() -> str:
     """Lista compacta de comandos para que el modelo pueda explicarlos."""
     from src.models.schemas import COMMANDS_REGISTRY
@@ -397,6 +441,8 @@ def build_system_prompt(voice: bool = False) -> str:
         "manage_google_tasks, create_event o create_alert segun corresponda; "
         "si es un compromiso de otra persona hacia ti, crea ademas un "
         "recordatorio de seguimiento para la fecha prometida.\n"
+        + EMAIL_STYLE_RULE
+        + _estilos_correo_hint()
     )
     format_rule = (
         "FORMAT_RULE: cuando el usuario pida una tabla, estadisticas, "

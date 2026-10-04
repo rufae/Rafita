@@ -527,3 +527,37 @@ async def gdpr_delete(request: Request, user: dict[str, Any] = Depends(require_u
     uid = int(user["id"])
     deleted = await db.delete_user_data(WEB_CHAT_BASE + uid, uid)
     return {"success": True, "deleted": deleted}
+
+
+# ---------- Notificaciones web push (PWA, mejora 6) ----------
+
+
+@router.get("/push/config")
+async def push_public_config() -> dict[str, Any]:
+    """Clave publica VAPID y estado del push (no sensible; sin auth)."""
+    from src.services.push_service import push_config
+
+    return await push_config()
+
+
+@router.post("/push/subscribe")
+async def push_subscribe(request: Request, user: dict[str, Any] = Depends(require_user)):
+    """Guarda la suscripcion push del navegador (PushSubscription.toJSON())."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON invalido")
+    from src.services.push_service import subscribe
+
+    return await subscribe(payload, int(user["id"]))
+
+
+@router.post("/push/unsubscribe")
+async def push_unsubscribe(request: Request, user: dict[str, Any] = Depends(require_user)):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON invalido")
+    from src.services.push_service import unsubscribe
+
+    return await unsubscribe(payload)

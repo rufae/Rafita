@@ -75,3 +75,12 @@ inline se prueba con tests).
 localhost) para instalarse y para el micrófono de la llamada.
 `call_rafita.html` queda **fuera** de la experiencia instalable a propósito
 (otro origen, fuera del `scope`; se embebe en la vista Llamada).
+
+**Notificaciones push (2026-10-04)**: el SW implementa `push` y
+`notificationclick`; la SPA se suscribe con `pushManager.subscribe()` usando
+la clave pública de `GET /api/push/config` (la privada vive en
+`VAPID_KEY_FILE`, generada por `scripts/generate_vapid_keys.py`; el botón
+«Avisos» de la cabecera pide permiso). El backend (`push_service`) publica
+con pywebpush y limpia endpoints caducos (404/410); briefing y alertas de
+automatizaciones salen también por push. Sin clave VAPID responde
+`enabled: false` y no se rompe nada (el aviso sigue llegando por Telegram).

@@ -196,6 +196,7 @@ async def test_list_calendar_events_supports_all_day(monkeypatch):
         "title": "Todo el dia",
         "start": "2026-10-01",
         "end": "2026-10-02",
+        "updated": "",
         "description": "",
     }
     assert result["events"][1]["title"] == "Sin titulo"
