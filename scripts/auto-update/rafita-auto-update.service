@@ -1,5 +1,5 @@
 [Unit]
-Description=Rafita autoactualizacion (git + build + health check + rollback)
+Description=Autoactualizacion diaria del nodo (Rafita + projects.conf): git, build, health check y rollback
 Documentation=file:///home/server/proyectos/rafita/docs/runbook.md
 After=network-online.target docker.service
 Wants=network-online.target
