@@ -326,7 +326,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "BD, espacio en disco, errores recientes en logs, y "
             "chats activos. Úsalo cuando el usuario pregunte "
             "'cómo estás funcionando', 'ha habido errores', "
-            "'muéstrame el estado del sistema', 'estado de salud'.",
+            "'muéstrame el estado del sistema', 'estado de salud'. "
+            "NO es para consultar ejecuciones de automatizaciones o "
+            "flujos n8n: para eso está get_automation_runs.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -1157,6 +1159,64 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["filename", "folder", "note_type"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_backup",
+            "description": "Lanza la copia de seguridad COMPLETA del servidor "
+            "ahora (restic al USB de backup; tarda unos minutos y Rafita "
+            "avisa por Telegram al terminar o fallar). Usalo cuando el "
+            "usuario pida 'haz un backup', 'respaldame ahora', 'copia de "
+            "seguridad del sistema' o similar. Para solo exportar SUS datos "
+            "personales en JSON usa export_my_data.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_backup_status",
+            "description": "Estado de la ultima copia de seguridad COMPLETA "
+            "del servidor: fecha, snapshot, tamanio, espacio libre en el USB, "
+            "servicios omitidos y si hay una peticion reciente sin ejecutar. "
+            "Usalo cuando pregunte si el backup va bien o cuando acabe de "
+            "pedir un backup.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_automation_runs",
+            "description": "Historial de ejecuciones de las automatizaciones "
+            "programadas (briefing, inbox, sync Google, radar, CRM, "
+            "secuencias, informes...): fecha, resultado y error. Usalo cuando "
+            "pregunten que automatizaciones han fallado, cuantas veces han "
+            "corrido o como ha ido algo programado.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Dias hacia atras (defecto 7)",
+                    },
+                    "only_errors": {
+                        "type": "boolean",
+                        "description": "true para ver solo los fallos",
+                    },
+                },
+                "required": [],
             },
         },
     },

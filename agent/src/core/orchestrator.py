@@ -82,6 +82,16 @@ _SALUDO_GENERICO_RE = re.compile(
     r"en\s+qu[eé]\s+puedo\s+ayudarte)",
     re.IGNORECASE,
 )
+# Saludo generico en la RESPUESTA del modelo: cualquier frase que abra con
+# "hola/buenas/buenos días" tras haber llamado una herramienta. Más ancha que
+# _es_saludo_generico (que exige "soy rafita"/"en qué puedo ayudarte"): en
+# 2026-10-04 gemma respondió "¡Hola! Soy tu asistente personal..." al final
+# de una pregunta con datos y el guard no la cazó.
+_ABRE_CON_SALUDO_RE = re.compile(
+    r"^\s*[¡!]?\s*(?:hola|buenas(?:\s+tardes|\s+noches)?|buen(?:os)?\s+d[ií]as|hey)\b",
+    re.IGNORECASE,
+)
+
 # Negacion falsa tras una herramienta que SI devolvio datos (2026-09-30:
 # list_google_drive respondio con la lista y el modelo dijo "no tengo acceso").
 _NEGACION_FALSA_RE = re.compile(
@@ -104,6 +114,21 @@ def _es_saludo_generico(texto: str | None) -> bool:
     return bool(_SALUDO_GENERICO_RE.match((texto or "").strip()))
 
 
+def _abre_con_saludo(texto: str | None) -> bool:
+    return bool(_ABRE_CON_SALUDO_RE.match((texto or "").strip()))
+
+
+def _es_saludo_solo(texto: str | None) -> bool:
+    """El USUARIO solo saluda (sin pregunta ni encargo).
+
+    En ese caso un modelo que contesta con un saludo no es una desviación.
+    Si el mensaje trae '?' o es largo, es una pregunta real y el guard de
+    respuestas desviadas debe seguir activo aunque empiece por "hola".
+    """
+    t = (texto or "").strip()
+    return bool(_ABRE_CON_SALUDO_RE.match(t)) and "?" not in t and len(t) <= 40
+
+
 def _es_negacion_falsa(texto: str | None) -> bool:
     return bool(_NEGACION_FALSA_RE.search(texto or ""))
 
@@ -123,7 +148,12 @@ def _tiene_placeholders(texto: str | None) -> bool:
 
 def _respuesta_desviada(texto: str | None) -> bool:
     """Saludo, negacion falsa o plantilla inventada en vez de los datos."""
-    return _es_saludo_generico(texto) or _es_negacion_falsa(texto) or _tiene_placeholders(texto)
+    return (
+        _abre_con_saludo(texto)
+        or _es_saludo_generico(texto)
+        or _es_negacion_falsa(texto)
+        or _tiene_placeholders(texto)
+    )
 
 
 _ITEM_LISTA_RE = re.compile(r"[•]\s*[^\w\n]*([\w\u00c0-\u024f][\w\u00c0-\u024f .\-]{2,30})")
@@ -361,6 +391,12 @@ def build_system_prompt(voice: bool = False) -> str:
         "pide el nombre exacto con el que lo tiene guardado. Cuando el usuario "
         "diga 'X es mi madre/padre/...', guardalo con remember_fact para "
         "resolverlo la proxima vez.\n"
+        "TASK_RULE: si en la conversacion aparece una tarea o un compromiso "
+        "con fecha («tengo que renovar el dominio el mes que viene», «te envio "
+        "el presupuesto el viernes»), propone crearlo YA con "
+        "manage_google_tasks, create_event o create_alert segun corresponda; "
+        "si es un compromiso de otra persona hacia ti, crea ademas un "
+        "recordatorio de seguimiento para la fecha prometida.\n"
     )
     format_rule = (
         "FORMAT_RULE: cuando el usuario pida una tabla, estadisticas, "
@@ -831,7 +867,7 @@ async def generate_response(text: str, chat_id: int) -> str:
         # Rafita..." y "no tengo acceso"). Se reintenta y, si insiste, se usa
         # el mensaje real de la herramienta (determinista).
         desviado = (
-            not _es_saludo_generico(text)
+            not _es_saludo_solo(text)
             and (_respuesta_desviada(content) or _tool_lista_ignorada(messages_for_llm, content))
             and not todas_fallidas
             and _hay_tool_results(messages_for_llm)
@@ -922,7 +958,7 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                 if not listo:
                     continue
                 if (
-                    not _es_saludo_generico(text)
+                    not _es_saludo_solo(text)
                     and _respuesta_desviada(buffer)
                     and _hay_tool_results(messages_for_llm)
                 ):
@@ -945,7 +981,7 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                 buffer = ""
             if buffer and not validado:
                 if (
-                    not _es_saludo_generico(text)
+                    not _es_saludo_solo(text)
                     and _respuesta_desviada(buffer)
                     and _hay_tool_results(messages_for_llm)
                 ):

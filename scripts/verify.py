@@ -5,11 +5,10 @@ Valida imports, configuración, y conectividad básica sin
 iniciar el bot de Telegram ni requerir Ollama.
 """
 
-import sys
-import os
 import importlib
+import os
+import sys
 from pathlib import Path
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AGENT_SRC = PROJECT_ROOT / "agent" / "src"
@@ -49,13 +48,13 @@ def check_env_file() -> bool:
         return True
 
     missing_vars = []
-    with open(env_example, "r", encoding="utf-8") as f:
+    with open(env_example, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 var_name = line.split("=")[0].strip()
                 if var_name not in os.environ:
-                    with open(env_path, "r", encoding="utf-8") as ef:
+                    with open(env_path, encoding="utf-8") as ef:
                         env_content = ef.read()
                     if var_name not in env_content:
                         missing_vars.append(var_name)
@@ -106,16 +105,9 @@ def check_config() -> bool:
 def check_schema_models() -> bool:
     try:
         from src.models.schemas import (
-            ChatMessage,
-            Event,
-            Alert,
-            FinanceRecord,
-            FinanceSummary,
-            ExportRequest,
-            BotCommand,
-            MessageRole,
-            FinanceCategory,
             COMMANDS_REGISTRY,
+            ChatMessage,
+            MessageRole,
         )
 
         assert len(COMMANDS_REGISTRY) == 12

@@ -1552,6 +1552,55 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 "counts": counts,
             }
 
+        elif func_name == "run_backup":
+            from src.utils.backup import trigger_system_backup
+
+            return trigger_system_backup("tool")
+
+        elif func_name == "get_backup_status":
+            from src.utils.backup import system_backup_status
+
+            return system_backup_status()
+
+        elif func_name == "get_automation_runs":
+            days = max(1, min(int(args.get("days", 7) or 7), 90))
+            only_errors = bool(args.get("only_errors", False))
+            rows = await db.list_automation_runs(days=days, only_errors=only_errors)
+            if not rows:
+                return {
+                    "success": True,
+                    "runs": [],
+                    "errors": 0,
+                    "message": (
+                        "Sin ejecuciones de automatizaciones registradas en "
+                        "los ultimos %d dias." % days
+                    ),
+                }
+            errores = sum(1 for r in rows if r.get("status") == "error")
+            lineas = []
+            for r in rows[:15]:
+                # Formato «• workflow · fecha · estado»: la viñeta permite que
+                # _tool_lista_ignorada detecte si la respuesta ignora los datos
+                # (2026-10-04: el modelo respondió un saludo con estas filas
+                # delante) y el nombre extraído es el que el usuario espera.
+                linea = "• %s · %s · %s" % (
+                    str(r.get("workflow", "?")),
+                    str(r.get("created_at", ""))[:16],
+                    str(r.get("status", "?")),
+                )
+                if r.get("error"):
+                    linea += " · %s" % str(r["error"])[:120]
+                lineas.append(linea)
+            return {
+                "success": True,
+                "runs": rows[:50],
+                "errors": errores,
+                "message": (
+                    "%d ejecucion(es) en %d dia(s), %d fallo(s):\n%s"
+                    % (len(rows), days, errores, "\n".join(lineas))
+                ),
+            }
+
         elif func_name == "delete_my_data":
             if args.get("confirm") is not True:
                 return {

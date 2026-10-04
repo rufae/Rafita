@@ -106,7 +106,8 @@ class RafitaBot:
             TelegramBotCommand("finanzas", "Resumen financiero del mes"),
             TelegramBotCommand("exportar", "Exportar datos a Excel"),
             TelegramBotCommand("limpiar", "Limpiar historial de conversación"),
-            TelegramBotCommand("backup", "Generar respaldo ZIP de datos"),
+            TelegramBotCommand("backup", "Copias de seguridad completas ahora"),
+            TelegramBotCommand("backup_zip", "Respaldo ZIP de datos al chat"),
             TelegramBotCommand("modo_voz", "Activar/desactivar respuestas por voz"),
             TelegramBotCommand("status", "Panel de control completo del sistema"),
             TelegramBotCommand("demo", "Recorrido guiado por las capacidades de Rafita"),
@@ -157,7 +158,7 @@ class RafitaBot:
             ingreso_command,
         )
         from src.handlers.settings import modo_voz_command
-        from src.utils.backup import backup_command
+        from src.utils.backup import backup_command, backup_zip_command
 
         self._app.add_handler(CommandHandler("start", self._wrap(start_command)))
         self._app.add_handler(CommandHandler("ayuda", self._wrap(ayuda_command)))
@@ -175,6 +176,7 @@ class RafitaBot:
         self._app.add_handler(CommandHandler("alertas", self._wrap(alertas_command)))
 
         self._app.add_handler(CommandHandler("backup", self._wrap(backup_command)))
+        self._app.add_handler(CommandHandler("backup_zip", self._wrap(backup_zip_command)))
 
         self._app.add_handler(CommandHandler("setup_google", self._wrap(setup_google_command)))
         self._app.add_handler(CommandHandler("sync_google", self._wrap(sync_google_command)))

@@ -57,7 +57,9 @@
         "contentType": "raw",
         "rawContentType": "application/json",
         "body": "={{ $json.body }}",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "c3000009-0000-4000-8000-000000000003",
       "name": "Rafita crm-remind",
@@ -66,7 +68,11 @@
       "position": [
         440,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -89,7 +95,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": {}
+        "options": {
+          "timeout": 15000
+        }
       },
       "id": "c3000009-0000-4000-8000-000000000005",
       "name": "Enviar Telegram",
@@ -98,7 +106,59 @@
       "position": [
         880,
         0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = 'PEGA_AQUI_TU_WEBHOOK_SECRET';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+      },
+      "id": "c3000009-0000-4000-8000-0000000000E1",
+      "name": "Firmar informe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        240
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://rafita-agent-core:8000/api/n8n/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "c3000009-0000-4000-8000-0000000000E2",
+      "name": "Reportar a Rafita",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -131,6 +191,11 @@
             "node": "Solo si pendientes",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Firmar informe",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -140,6 +205,17 @@
         [
           {
             "node": "Enviar Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firmar informe": {
+      "main": [
+        [
+          {
+            "node": "Reportar a Rafita",
             "type": "main",
             "index": 0
           }

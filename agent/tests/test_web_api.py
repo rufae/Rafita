@@ -575,3 +575,32 @@ def test_web_chat_comandos_demo_y_ayuda(monkeypatch, tmp_path):
     ayuda = client.post("/api/chat", json={"message": "/ayuda"}, headers=headers)
     assert ayuda.status_code == 200
     assert "Comandos disponibles" in ayuda.json()["reply"]
+
+
+def test_web_chat_comando_backup_dispara_sistema(monkeypatch, tmp_path):
+    client, fake = _cliente(monkeypatch, tmp_path)
+    import asyncio
+
+    asyncio.run(_crear_usuario(fake))
+    token = client.post(
+        "/api/auth/login", json={"email": "admin@x.com", "password": "clave12345"}
+    ).json()["token"]
+    headers = {"Authorization": "Bearer " + token}
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setattr(settings, "data_dir", str(data_dir))
+
+    async def fake_generate(text, chat_id):
+        raise AssertionError("un comando no debe caer en el modelo")
+
+    monkeypatch.setattr("src.core.generate_response", fake_generate)
+
+    resp = client.post("/api/chat", json={"message": "/backup"}, headers=headers)
+    assert resp.status_code == 200
+    assert "Backup completo" in resp.json()["reply"]
+    assert (data_dir / "backup.trigger").exists()
+
+    resp_zip = client.post("/api/chat", json={"message": "/backup_zip"}, headers=headers)
+    assert resp_zip.status_code == 200
+    assert "/backup_zip" in resp_zip.json()["reply"]
