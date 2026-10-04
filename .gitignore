@@ -61,6 +61,22 @@ piper-models/
 # === Credenciales (OAuth de Google, etc.) ===
 credentials/
 
-cambios.mdweb/app-dist/
+# === Temporales / locales ===
+cambios.md
+.env.bak-*
+
+# === Build output del frontend (lo genera scripts/build_web.py y lo sirve el gateway) ===
+web/app-dist/
+web/app/tokens.css
+
+# === Estado runtime en data/ (nunca se trackea) ===
+data/backup-status.json
+data/backup.trigger
+data/docker-status.json
+data/meetings/
+data/tts_models/
+data/vapid_private.pem
+data/certs/
+data/obsidian_vault/
 
 daily-work/
