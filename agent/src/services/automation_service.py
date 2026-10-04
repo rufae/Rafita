@@ -1105,3 +1105,228 @@ async def capture_to_vault(
         "filepath": result.get("filepath", ""),
         "title": clean_title,
     }
+
+
+# --------------- Deteccion autonoma de tareas y compromisos (tareas 6/7) ---
+
+
+async def detect_commitments(force: bool = False) -> dict[str, Any]:
+    """Pasada autónoma sobre conversaciones y correo: detecta tareas y
+    compromisos explícitos y los crea (tareas.md ítems 6 y 7).
+
+    Honestidad: solo crea lo que el LLM marca como confianza «alta» con
+    evidencia textual (fecha o compromiso citado); dedup por hash en KV,
+    una vez al día (salvo `force`), y si el LLM o el correo fallan lo dice
+    en vez de inventar. Sin Google, las tareas van a la BD local.
+    """
+    import re
+    from datetime import UTC
+
+    from src.database import db
+
+    hoy = datetime.now(UTC).strftime("%Y-%m-%d")
+    if not force and (await db.kv_get("commitments:last")) == hoy:
+        return {"success": True, "skipped": "ya ejecutado hoy", "creadas": []}
+
+    lineas: list[str] = []
+    fuentes: dict[str, int] = {"chats": 0, "correos": 0}
+
+    # -- conversaciones: mensajes del usuario de las últimas 48 h --
+    try:
+        limite = (datetime.now(UTC) - timedelta(hours=48)).strftime("%Y-%m-%d %H:%M:%S")
+        for cid in (await db.get_all_chat_ids())[:8]:
+            for msg in await db.get_chat_history(cid, limit=40):
+                if msg.get("role") != "user":
+                    continue
+                if str(msg.get("created_at") or "") < limite:
+                    continue
+                texto = str(msg.get("content") or "").strip()[:400]
+                if texto:
+                    lineas.append("[chat] %s" % texto)
+                    fuentes["chats"] += 1
+            if len(lineas) >= 40:
+                break
+    except Exception as e:
+        logger.warning("Compromisos: historial de chat no disponible (%s)", str(e)[:80])
+
+    # -- correo de las últimas 48 h --
+    try:
+        from src.services.google_services_manager import google_services
+
+        if await google_services.initialize() and google_services.is_ready:
+            resp = await google_services.search_gmail("newer_than:2d", max_results=10)
+            for m in resp.get("messages", []) or []:
+                lineas.append(
+                    "[correo] De: %s | Asunto: %s | %s"
+                    % (
+                        str(m.get("from") or "")[:80],
+                        str(m.get("subject") or "")[:100],
+                        str(m.get("snippet") or "")[:200],
+                    )
+                )
+                fuentes["correos"] += 1
+    except Exception as e:
+        logger.warning("Compromisos: correo no disponible (%s)", str(e)[:80])
+
+    if not lineas:
+        await db.kv_set("commitments:last", hoy)
+        return {
+            "success": True,
+            "creadas": [],
+            "fuentes": fuentes,
+            "nota": "sin mensajes nuevos que analizar",
+        }
+
+    # -- análisis con el LLM (solo compromisos explícitos) --
+    try:
+        from src.ollama_client import llm
+
+        respuesta = await llm.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Detectas tareas y compromisos en mensajes personales. "
+                        "Respondes SOLO con JSON."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Analiza estos mensajes (chats y correo) y detecta solo "
+                        "COMPROMISOS EXPLICITOS del usuario o hacia el usuario:\n"
+                        "- tareas: cosas que el usuario debe hacer (con fecha si la menciona)\n"
+                        "- recordatorios: seguimientos a terceros (p. ej. «me lo envía el viernes»)\n"
+                        "Reglas de HONESTIDAD: confianza «alta» SOLO si el mensaje lo dice "
+                        "textualmente; no infieras ni deduzcas; máximo 5; si no hay nada "
+                        "claro, lista vacía.\n\n"
+                        "Responde SOLO con JSON:\n"
+                        '{"detecciones": [{"tipo": "tarea", "titulo": "...", '
+                        '"fecha": "YYYY-MM-DD o null", "fuente": "chat|correo", '
+                        '"confianza": "alta|baja", "evidencia": "cita breve"}]}\n\n'
+                        "Mensajes:\n%s" % "\n".join(lineas)[:8000]
+                    ),
+                },
+            ],
+            temperature=0.1,
+            max_tokens=600,
+        )
+    except Exception as e:
+        logger.warning("Compromisos: LLM no disponible (%s)", str(e)[:80])
+        return {"success": False, "error": "LLM no disponible: %s" % str(e)[:120], "creadas": []}
+
+    datos: dict[str, Any] = {}
+    match = re.search(r"\{.*\}", respuesta or "", re.DOTALL)
+    if match:
+        try:
+            cargado = json.loads(match.group())
+            if isinstance(cargado, dict):
+                datos = cargado
+        except (json.JSONDecodeError, ValueError):
+            datos = {}
+    detecciones = datos.get("detecciones") if isinstance(datos.get("detecciones"), list) else []
+
+    try:
+        vistas = json.loads(await db.kv_get("commitments:seen") or "[]")
+        if not isinstance(vistas, list):
+            vistas = []
+    except (json.JSONDecodeError, ValueError):
+        vistas = []
+    vistas = [str(v) for v in vistas]
+
+    try:
+        chat_ids = await db.get_all_chat_ids()
+        chat_objetivo = chat_ids[0] if chat_ids else int((settings.admin_ids or [0])[0])
+    except Exception:
+        chat_objetivo = 0
+
+    creadas: list[dict[str, Any]] = []
+    fallidas: list[dict[str, Any]] = []
+    omitidas = 0
+    for d in detecciones:
+        if not isinstance(d, dict) or str(d.get("confianza") or "").lower() != "alta":
+            if isinstance(d, dict) and d.get("titulo"):
+                omitidas += 1
+            continue
+        titulo = str(d.get("titulo") or "").strip()[:120]
+        if not titulo:
+            continue
+        fecha = str(d.get("fecha") or "").strip() or None
+        if fecha and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(fecha)):
+            fecha = None
+        clave = "%s|%s" % (titulo.lower(), fecha or "")
+        if clave in vistas:
+            continue
+        tipo = "recordatorio" if str(d.get("tipo") or "") == "recordatorio" else "tarea"
+        try:
+            if tipo == "recordatorio":
+                await db.add_alert(
+                    chat_id=chat_objetivo,
+                    message="Seguimiento: %s" % titulo,
+                    alert_type="warning",
+                    expires_at=fecha,
+                )
+            else:
+                guardada = False
+                try:
+                    from src.services.google_services_manager import google_services
+
+                    if google_services.is_ready:
+                        r = await google_services.create_task(titulo, due=fecha)
+                        guardada = bool(r.get("success"))
+                except Exception:
+                    guardada = False
+                if not guardada:
+                    await db.add_task(chat_objetivo, titulo, fecha)
+            vistas.append(clave)
+            creadas.append(
+                {
+                    "tipo": tipo,
+                    "titulo": titulo,
+                    "fecha": fecha,
+                    "fuente": str(d.get("fuente") or ""),
+                    "evidencia": str(d.get("evidencia") or "")[:120],
+                }
+            )
+        except Exception as e:
+            fallidas.append({"titulo": titulo, "error": str(e)[:80]})
+
+    try:
+        await db.kv_set("commitments:seen", json.dumps(vistas[-200:], ensure_ascii=False))
+        await db.kv_set("commitments:last", hoy)
+    except Exception as e:
+        logger.warning("Compromisos: no se pudo guardar el estado (%s)", str(e)[:80])
+
+    if creadas:
+        texto = "📝 *Detección automática de compromisos*\n" + "\n".join(
+            "- [%s] %s%s (fuente: %s)"
+            % (
+                c["tipo"],
+                c["titulo"],
+                " — vence %s" % c["fecha"] if c["fecha"] else "",
+                c["fuente"] or "chat",
+            )
+            for c in creadas
+        )
+        try:
+            from src.bot import bot
+
+            for cid in settings.admin_ids or []:
+                await bot.send_proactive_message(cid, texto)
+        except Exception as e:
+            logger.warning("Compromisos: aviso no enviado (%s)", str(e)[:80])
+
+    logger.info(
+        "Compromisos: %d creadas, %d omitidas por baja confianza, %d fallidas (fuentes: %s)",
+        len(creadas),
+        omitidas,
+        len(fallidas),
+        fuentes,
+    )
+    return {
+        "success": True,
+        "creadas": creadas,
+        "fallidas": fallidas,
+        "omitidas_baja_confianza": omitidas,
+        "fuentes": fuentes,
+    }

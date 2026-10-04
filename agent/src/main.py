@@ -44,6 +44,7 @@ class ProactiveWorker:
         self._gc_run_count: int = 0
         self._consecutive_failures: int = 0
         self._last_gc_date: date | None = None
+        self._last_commitment_date: date | None = None
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
         self._shutdown_event = shutdown_event
@@ -127,6 +128,18 @@ class ProactiveWorker:
             if self._last_gc_date != now.date():
                 self._last_gc_date = now.date()
                 await self._run_garbage_collection()
+            # Detección autónoma de tareas y compromisos (una vez al día;
+            # la llamada tiene además su propio guard en KV).
+            if self._last_commitment_date != now.date():
+                self._last_commitment_date = now.date()
+                try:
+                    from src.services.automation_service import detect_commitments
+
+                    res = await detect_commitments()
+                    if res.get("creadas"):
+                        logger.info("Compromisos detectados: %d", len(res["creadas"]))
+                except Exception as e:
+                    logger.warning("Detección de compromisos falló: %s", e)
             chat_ids = await db.get_all_chat_ids()
             for chat_id in chat_ids:
                 await self._notify_expiring_events(chat_id)
