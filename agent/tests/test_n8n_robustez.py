@@ -107,10 +107,6 @@ def test_radar_sin_texto_no_dispara_telegram():
     code = filtro["parameters"]["jsCode"]
     assert "r.success === false || !r.text" in code
     assert w["connections"]["Rafita radar"]["main"][0][0]["node"] == "Solo si hay radar"
-    assert (
-        w["connections"]["Solo si hay radar"]["main"][0][0]["node"] == "Enviar Telegram"
-    )
+    assert w["connections"]["Solo si hay radar"]["main"][0][0]["node"] == "Enviar Telegram"
     # el informe de ejecución sigue conectado en paralelo
-    assert any(
-        c["node"] == "Firmar informe" for c in w["connections"]["Rafita radar"]["main"][0]
-    )
+    assert any(c["node"] == "Firmar informe" for c in w["connections"]["Rafita radar"]["main"][0])
