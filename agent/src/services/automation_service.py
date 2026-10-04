@@ -1312,11 +1312,14 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
                         "COMPROMISOS EXPLICITOS del usuario o hacia el usuario:\n"
                         "- tareas: cosas que el usuario debe hacer (con fecha si la menciona)\n"
                         "- recordatorios: seguimientos a terceros (p. ej. «me lo envía el viernes»)\n"
+                        "- oportunidades: proyectos, presupuestos, necesidades, ampliaciones "
+                        "o problemas recurrentes que alguien plantea (nuevos, sin empezar)\n"
                         "Reglas de HONESTIDAD: confianza «alta» SOLO si el mensaje lo dice "
                         "textualmente; no infieras ni deduzcas; máximo 5; si no hay nada "
                         "claro, lista vacía.\n\n"
                         "Responde SOLO con JSON:\n"
-                        '{"detecciones": [{"tipo": "tarea", "titulo": "...", '
+                        '{"detecciones": [{"tipo": "tarea|recordatorio|oportunidad", '
+                        '"titulo": "...", "empresa": "nombre si se menciona o null", '
                         '"fecha": "YYYY-MM-DD o null", "fuente": "chat|correo", '
                         '"confianza": "alta|baja", "evidencia": "cita breve"}]}\n\n'
                         "Mensajes:\n%s" % "\n".join(lineas)[:8000]
@@ -1372,7 +1375,8 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
         clave = "%s|%s" % (titulo.lower(), fecha or "")
         if clave in vistas:
             continue
-        tipo = "recordatorio" if str(d.get("tipo") or "") == "recordatorio" else "tarea"
+        crudo = str(d.get("tipo") or "").strip().lower()
+        tipo = crudo if crudo in ("recordatorio", "oportunidad") else "tarea"
         try:
             if tipo == "recordatorio":
                 await db.add_alert(
@@ -1381,6 +1385,27 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
                     alert_type="warning",
                     expires_at=fecha,
                 )
+            elif tipo == "oportunidad":
+                # Idea 17: al CRM como lead con el siguiente paso a la vista.
+                from src.services import crm_service
+
+                nombre = str(d.get("empresa") or "").strip()[:60] or (
+                    "Oportunidad — %s" % titulo[:60]
+                )
+                guardada = await crm_service.crear_o_actualizar(
+                    nombre,
+                    estado="lead",
+                    proximo_paso=titulo[:160],
+                    nota="Oportunidad detectada (2026-10-04): %s%s"
+                    % (
+                        titulo,
+                        " — evidencia: %s" % str(d.get("evidencia") or "")[:120]
+                        if d.get("evidencia")
+                        else "",
+                    ),
+                )
+                if not guardada.get("success"):
+                    raise RuntimeError(str(guardada.get("message") or "CRM rechazo"))
             else:
                 guardada = False
                 try:

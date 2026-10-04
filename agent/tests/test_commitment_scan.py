@@ -270,3 +270,52 @@ async def test_analiza_correo_reciente(monkeypatch):
     assert "[correo]" in llm.contenidos[0]
     assert res["creadas"][0]["fuente"] == "correo"
     assert store["tareas"] == []
+
+
+async def test_oportunidad_crea_lead_en_crm(monkeypatch):
+    # idea 17: detecta oportunidades (proyectos/presupuestos) y las lleva al CRM.
+    store = _db_falso(monkeypatch, chats=[_chat_reciente("necesito presupuesto para la web")])
+    _google(monkeypatch, _GoogleFalso(ready=False))
+    enviados = _bot_falso(monkeypatch)
+    llamados: list[dict] = []
+
+    async def fake_crm(nombre, **campos):
+        llamados.append({"nombre": nombre, **campos})
+        return {"success": True}
+
+    from src.services import crm_service
+
+    monkeypatch.setattr(crm_service, "crear_o_actualizar", fake_crm)
+
+    det = json.dumps(
+        {
+            "detecciones": [
+                {
+                    "tipo": "oportunidad",
+                    "titulo": "Rediseño web para Panadería Lola",
+                    "empresa": "Panadería Lola",
+                    "fecha": None,
+                    "fuente": "correo",
+                    "confianza": "alta",
+                    "evidencia": "«necesito presupuesto para la web nueva»",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    llm = _LLMFalso(det)
+    monkeypatch.setattr("src.ollama_client.llm", llm)
+
+    res = await auto.detect_commitments(force=True)
+
+    assert res["creadas"][0]["tipo"] == "oportunidad"
+    assert len(llamados) == 1
+    assert llamados[0]["nombre"] == "Panadería Lola"
+    assert llamados[0]["estado"] == "lead"
+    assert llamados[0]["proximo_paso"] == "Rediseño web para Panadería Lola"
+    assert "Oportunidad detectada" in llamados[0]["nota"]
+    assert store["tareas"] == []  # no crea tarea además
+    assert store["alertas"] == []
+    assert enviados and "oportunidad" in enviados[0][1].lower()
+    # el prompt pide tipo oportunidad (idea 17)
+    assert "oportunidad" in llm.contenidos[0].lower()
