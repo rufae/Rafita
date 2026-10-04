@@ -1,0 +1,12 @@
+[Unit]
+Description=Rafita autoactualizacion (git + build + health check + rollback)
+Documentation=file:///home/server/proyectos/rafita/docs/runbook.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=server
+Group=docker
+ExecStart=/home/server/proyectos/rafita/scripts/auto_update.sh
+TimeoutStartSec=30min
