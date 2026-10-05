@@ -1325,7 +1325,7 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
         return {"success": True, "skipped": "ya ejecutado hoy", "creadas": []}
 
     lineas: list[str] = []
-    fuentes: dict[str, int] = {"chats": 0, "correos": 0}
+    fuentes: dict[str, int] = {"chats": 0, "correos": 0, "notas": 0}
 
     # -- conversaciones: mensajes del usuario de las últimas 48 h --
     try:
@@ -1364,6 +1364,27 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
     except Exception as e:
         logger.warning("Compromisos: correo no disponible (%s)", str(e)[:80])
 
+    # -- notas de la boveda modificadas en las ultimas 48 h (fila 6) --
+    try:
+        from pathlib import Path
+
+        limite_ts = time.time() - 48 * 3600
+        raiz = Path(settings.obsidian_vault_path)
+        candidatas = sorted(
+            (f for f in raiz.rglob("*.md") if f.stat().st_mtime > limite_ts),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        for f in candidatas[:8]:
+            texto_nota = f.read_text(encoding="utf-8", errors="replace").strip()[:500]
+            if not texto_nota:
+                continue
+            rel = f.relative_to(raiz)
+            lineas.append("[nota] %s: %s" % (str(rel), texto_nota.replace("\n", " ")))
+            fuentes["notas"] += 1
+    except Exception as e:
+        logger.warning("Compromisos: notas de la boveda no disponibles (%s)", str(e)[:80])
+
     if not lineas:
         try:
             await db.kv_set("commitments:last", hoy)
@@ -1394,7 +1415,7 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
                 {
                     "role": "user",
                     "content": (
-                        "Analiza estos mensajes (chats y correo) y detecta solo "
+                        "Analiza estos mensajes (chats, correo y notas de la boveda) y detecta solo "
                         "COMPROMISOS EXPLICITOS del usuario o hacia el usuario:\n"
                         "- tareas: cosas que el usuario debe hacer (con fecha si la menciona)\n"
                         "- recordatorios: seguimientos a terceros (p. ej. «me lo envía el viernes»)\n"
@@ -1406,7 +1427,7 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
                         "Responde SOLO con JSON:\n"
                         '{"detecciones": [{"tipo": "tarea|recordatorio|oportunidad", '
                         '"titulo": "...", "empresa": "nombre si se menciona o null", '
-                        '"fecha": "YYYY-MM-DD o null", "fuente": "chat|correo", '
+                        '"fecha": "YYYY-MM-DD o null", "fuente": "chat|correo|nota", '
                         '"confianza": "alta|baja", "evidencia": "cita breve"}]}\n\n'
                         "Mensajes:\n%s" % "\n".join(lineas)[:8000]
                     ),
