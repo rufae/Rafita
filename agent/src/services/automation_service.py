@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.logger import logger
+from src.utils import severity as sev
 
 # Capitales de provincia -> (codigo INE, zona CAP meteoalerta si conocida).
 # La zona CAP se puede cambiar en .env (AEMET_AREA; anexo 2 del Plan
@@ -487,9 +488,10 @@ def _parse_cap_alerts(blob: bytes, province: str = "") -> list[str]:
             if severity in severity_icons:
                 when = expires[11:16] if len(expires) > 15 else ""
                 alerts.append(
-                    "%s %s — %s — %s%s"
+                    "%s [%s] %s — %s — %s%s"
                     % (
                         severity_icons[severity],
+                        sev.tag(severity),
                         severity,
                         event or "aviso",
                         area or "tu zona",
@@ -1221,23 +1223,29 @@ async def infra_report() -> dict[str, Any]:
     if not text:
         text = "🖥 *Informe de infraestructura*\n\n" + raw
 
-    # Alertas criticas primero (sin depender del LLM)
-    alerts: list[str] = []
+    # Alertas primero (sin depender del LLM), con la taxonomia unica:
+    # cada linea lleva [NIVEL] y el titular el peor nivel del bloque.
+    alertas: list[tuple[str, str]] = []
     if not backup:
-        alerts.append("No hay datos de backup (¿ha corrido el backup alguna vez?)")
+        alertas.append((sev.WARNING, "No hay datos de backup (¿ha corrido el backup alguna vez?)"))
     if disk and disk.get("pct", 0) > 85:
-        alerts.append("Disco /data al %s%%" % disk.get("pct"))
+        nivel_disco = sev.CRITICAL if float(disk.get("pct", 0)) >= 90 else sev.WARNING
+        alertas.append((nivel_disco, "Disco /data al %s%%" % disk.get("pct")))
     if drill.get("integrity") not in (None, "", "ok"):
-        alerts.append("Restore-drill con integridad '%s'" % drill.get("integrity"))
+        alertas.append((sev.ERROR, "Restore-drill con integridad '%s'" % drill.get("integrity")))
     # Comprobaciones nuevas (las de backup/disco/drill ya tienen mensaje propio)
     for c in checks:
         if c.get("ok") or c.get("alertable") is False:
             continue
         if c.get("name") in ("backup", "disco", "restore-drill"):
             continue
-        alerts.append("%s: %s" % (c.get("name", "?"), c.get("detail", "")))
-    if alerts:
-        text = "🚨 *ALERTAS:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
+        alertas.append(
+            (sev.normalize(c.get("severity")), "%s: %s" % (c.get("name", "?"), c.get("detail", "")))
+        )
+    if alertas:
+        peor = sev.worst(*(nivel for nivel, _texto in alertas))
+        lineas = "\n".join("- [%s] %s" % (sev.tag(nivel), texto) for nivel, texto in alertas)
+        text = "%s *ALERTAS [%s]:*\n%s\n\n" % (sev.emoji(peor), sev.tag(peor), lineas) + text
 
     if notas:
         text = text.rstrip() + "\n\n" + _bloque_conocimiento(notas)

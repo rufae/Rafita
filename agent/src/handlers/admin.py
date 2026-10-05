@@ -11,6 +11,7 @@ from src.database import db
 from src.logger import logger
 from src.services.google_service import google_service
 from src.services.google_services_manager import google_services, service_account_email
+from src.utils import severity
 from src.utils.telegram_fmt import reply_md
 
 
@@ -114,7 +115,8 @@ async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not args:
         await message.reply_text(
             "Usa: /alerta <mensaje> [tipo] [expira:YYYY-MM-DD]\n\n"
-            "Tipos: info (default), warning, urgent\n"
+            "Tipos: info (default), warning, error, critical "
+            "(urgent se acepta como alias de critical)\n"
             "Ejemplo: `/alerta Revisar presupuesto mensual warning expira:2026-07-01`"
         )
         return
@@ -131,8 +133,8 @@ async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except ValueError:
                 await message.reply_text("Formato de expiración inválido. Usa: expira:YYYY-MM-DD")
                 return
-        elif arg in ("info", "warning", "urgent"):
-            alert_type = arg
+        elif arg.lower() in severity.LEVELS or arg.lower() == "urgent":
+            alert_type = severity.normalize(arg)
         else:
             alert_text_parts.append(arg)
 
@@ -149,8 +151,7 @@ async def alerta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         expires_at=expires_at,
     )
 
-    type_emoji = {"info": "ℹ️", "warning": "⚠️", "urgent": "🚨"}
-    emoji = type_emoji.get(alert_type, "ℹ️")
+    emoji = severity.emoji(alert_type)
 
     logger.info(
         "Alert created: user=%d type=%s id=%d",
@@ -180,13 +181,14 @@ async def alertas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await message.reply_text("No tienes alertas activas.")
         return
 
-    type_emoji = {"info": "ℹ️", "warning": "⚠️", "urgent": "🚨"}
-
     lines = ["🔔 *Alertas activas:*\n"]
     for alert in alerts:
-        emoji = type_emoji.get(alert["alert_type"], "ℹ️")
+        # urgent (legacy) se muestra como critical; tipos desconocidos
+        # conservan su etiqueta cruda para no inventarles nivel.
+        crudo = str(alert["alert_type"] or "info")
+        emoji = severity.emoji(crudo)
         lines.append(
-            f"{emoji} *[{alert['alert_type'].upper()}]* {alert['message']}"
+            f"{emoji} *[{severity.normalize(crudo, default=crudo).upper()}]* {alert['message']}"
             + f"\n   🆔 {alert['id']}"
             + (f"\n   📅 Creada: {alert['created_at']}" if alert["created_at"] else "")
         )

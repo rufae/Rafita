@@ -92,9 +92,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "alert_type": {
                         "type": "string",
-                        "enum": ["info", "warning", "urgent"],
-                        "description": "Tipo de alerta: info (informativa), "
-                        "warning (advertencia), urgent (urgente)",
+                        "enum": ["info", "warning", "error", "critical"],
+                        "description": "Nivel de la alerta (taxonomia unica): "
+                        "info, warning, error o critical",
                     },
                     "expires_at": {
                         "type": "string",

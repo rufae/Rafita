@@ -18,6 +18,7 @@ from typing import Any
 
 from src.config import settings
 from src.logger import logger
+from src.utils import severity
 from src.utils.automation_status import read_status_file
 from src.utils.telemetry import metrics
 
@@ -37,16 +38,16 @@ def check_disk() -> dict[str, Any]:
         return {
             "name": "disco",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.WARNING,
             "detail": "sin datos de disco (%s)" % str(e)[:80],
         }
     pct = usage.used * 100.0 / max(usage.total, 1)
     detail = "disco al %.1f%% (%.1f GB libres)" % (pct, usage.free / 1e9)
     if pct >= DISK_CRIT_PCT:
-        return {"name": "disco", "ok": False, "severity": "critical", "detail": detail}
+        return {"name": "disco", "ok": False, "severity": severity.CRITICAL, "detail": detail}
     if pct >= DISK_WARN_PCT:
-        return {"name": "disco", "ok": False, "severity": "warning", "detail": detail}
-    return {"name": "disco", "ok": True, "severity": "info", "detail": detail}
+        return {"name": "disco", "ok": False, "severity": severity.WARNING, "detail": detail}
+    return {"name": "disco", "ok": True, "severity": severity.INFO, "detail": detail}
 
 
 def check_backup() -> dict[str, Any]:
@@ -58,7 +59,7 @@ def check_backup() -> dict[str, Any]:
         return {
             "name": "backup",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.WARNING,
             "detail": "sin datos de backup (¿ha corrido alguna vez?)",
         }
     age_h: float | None = None
@@ -73,13 +74,13 @@ def check_backup() -> dict[str, Any]:
         return {
             "name": "backup",
             "ok": False,
-            "severity": "critical",
+            "severity": severity.CRITICAL,
             "detail": "último backup hace %.0f h (máximo %d h)" % (age_h, int(BACKUP_MAX_AGE_H)),
         }
     return {
         "name": "backup",
         "ok": True,
-        "severity": "info",
+        "severity": severity.INFO,
         "detail": "último backup %s" % stamp[:16],
     }
 
@@ -91,13 +92,13 @@ def check_restore_drill() -> dict[str, Any]:
         return {
             "name": "restore-drill",
             "ok": True,
-            "severity": "info",
+            "severity": severity.INFO,
             "detail": "integridad %s" % (integrity or "sin datos"),
         }
     return {
         "name": "restore-drill",
         "ok": False,
-        "severity": "critical",
+        "severity": severity.ERROR,
         "detail": "integridad '%s'" % integrity,
     }
 
@@ -111,7 +112,7 @@ async def check_llm() -> dict[str, Any]:
         return {
             "name": "ia",
             "ok": False,
-            "severity": "critical",
+            "severity": severity.CRITICAL,
             "detail": "IA inaccesible (%s)" % str(e)[:120],
         }
     status = str(health.get("status") or "unhealthy")
@@ -119,10 +120,10 @@ async def check_llm() -> dict[str, Any]:
         return {
             "name": "ia",
             "ok": False,
-            "severity": "critical",
+            "severity": severity.CRITICAL,
             "detail": str(health.get("detail") or "modelo no disponible"),
         }
-    return {"name": "ia", "ok": True, "severity": "info", "detail": "IA %s" % status}
+    return {"name": "ia", "ok": True, "severity": severity.INFO, "detail": "IA %s" % status}
 
 
 async def check_vector_db() -> dict[str, Any]:
@@ -134,20 +135,20 @@ async def check_vector_db() -> dict[str, Any]:
         return {
             "name": "rag",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.ERROR,
             "detail": "RAG inaccesible (%s)" % str(e)[:120],
         }
     if health.get("status") != "ok":
         return {
             "name": "rag",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.ERROR,
             "detail": str(health.get("detail") or "base vectorial en error"),
         }
     return {
         "name": "rag",
         "ok": True,
-        "severity": "info",
+        "severity": severity.INFO,
         "detail": "%s chunks" % health.get("chunks", 0),
     }
 
@@ -158,7 +159,7 @@ async def check_whisper_remote() -> dict[str, Any]:
         return {
             "name": "stt",
             "ok": True,
-            "severity": "info",
+            "severity": severity.INFO,
             "detail": "STT local (sin servicio remoto)",
         }
     try:
@@ -171,13 +172,13 @@ async def check_whisper_remote() -> dict[str, Any]:
         return {
             "name": "stt",
             "ok": False,
-            "severity": "info",
+            "severity": severity.INFO,
             # No es alertable: la torre puede estar dormida a propósito y el
             # fallback local (Whisper `small`) cubre el servicio.
             "alertable": False,
             "detail": "STT remoto no disponible (%s); se usa el local" % str(e)[:80],
         }
-    return {"name": "stt", "ok": True, "severity": "info", "detail": "STT remoto OK"}
+    return {"name": "stt", "ok": True, "severity": severity.INFO, "detail": "STT remoto OK"}
 
 
 def check_docker_services() -> dict[str, Any]:
@@ -196,7 +197,7 @@ def check_docker_services() -> dict[str, Any]:
         return {
             "name": "docker",
             "ok": True,
-            "severity": "info",
+            "severity": severity.INFO,
             "detail": "sin datos de contenedores (docker_status.sh sin ejecutar)",
         }
     age_h: float | None = None
@@ -220,11 +221,11 @@ def check_docker_services() -> dict[str, Any]:
         detail = "restart-loop: " + ", ".join(loops)[:140]
         if stale:
             detail += " [datos de hace %.0f h]" % (age_h or 0)
-        return {"name": "docker", "ok": False, "severity": "warning", "detail": detail}
+        return {"name": "docker", "ok": False, "severity": severity.ERROR, "detail": detail}
     detail = "%d contenedores, ninguno en restart-loop" % len(conts)
     if stale:
         detail += " (datos de hace %.0f h)" % (age_h or 0)
-    return {"name": "docker", "ok": True, "severity": "info", "detail": detail}
+    return {"name": "docker", "ok": True, "severity": severity.INFO, "detail": detail}
 
 
 async def check_connectivity() -> dict[str, Any]:
@@ -234,7 +235,7 @@ async def check_connectivity() -> dict[str, Any]:
         return {
             "name": "conectividad",
             "ok": True,
-            "severity": "info",
+            "severity": severity.INFO,
             "detail": "sin URLs configuradas (CONNECTIVITY_URLS)",
         }
     fallos: list[str] = []
@@ -254,20 +255,20 @@ async def check_connectivity() -> dict[str, Any]:
         return {
             "name": "conectividad",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.WARNING,
             "detail": "comprobación no disponible (%s)" % str(e)[:80],
         }
     if fallos:
         return {
             "name": "conectividad",
             "ok": False,
-            "severity": "warning",
+            "severity": severity.WARNING,
             "detail": "sin respuesta: " + ", ".join(fallos)[:150],
         }
     return {
         "name": "conectividad",
         "ok": True,
-        "severity": "info",
+        "severity": severity.INFO,
         "detail": "%d destinos accesibles" % len(urls),
     }
 
@@ -301,14 +302,14 @@ async def check_certificates() -> dict[str, Any]:
         return {
             "name": "certificados",
             "ok": True,
-            "severity": "info",
+            "severity": severity.INFO,
             "alertable": False,
             "detail": "sin certificados en %s (CERT_CHECK_DIR)" % (directory or "(sin configurar)"),
         }
     hoy = date.today()
     detalles: list[str] = []
     malos: list[str] = []
-    peor = "info"
+    peor = severity.INFO
     for f in files:
         try:
             cert = x509.load_pem_x509_certificate(f.read_bytes())
@@ -318,15 +319,15 @@ async def check_certificates() -> dict[str, Any]:
             dias = (fin.date() - hoy).days
         except Exception as e:
             malos.append("%s: ilegible (%s)" % (f.stem, str(e)[:40]))
-            peor = "warning"
+            peor = severity.worst(peor, severity.ERROR)
             continue
         detalles.append("%s: %d d" % (f.stem, dias))
         if dias < CERT_CRIT_DAYS:
             malos.append("%s: caduca en %d d" % (f.stem, dias))
-            peor = "critical"
-        elif dias < CERT_WARN_DAYS and peor != "critical":
+            peor = severity.worst(peor, severity.CRITICAL)
+        elif dias < CERT_WARN_DAYS and peor != severity.CRITICAL:
             malos.append("%s: caduca en %d d" % (f.stem, dias))
-            peor = "warning"
+            peor = severity.worst(peor, severity.WARNING)
     if malos:
         return {
             "name": "certificados",
@@ -337,7 +338,7 @@ async def check_certificates() -> dict[str, Any]:
     return {
         "name": "certificados",
         "ok": True,
-        "severity": "info",
+        "severity": severity.INFO,
         "detail": "; ".join(detalles)[:150],
     }
 
@@ -387,9 +388,10 @@ async def notify_issues(
             await db.kv_set(key, str(now))
         except Exception:
             pass
-        icon = "🚨" if check.get("severity") == "critical" else "⚠️"
-        text = "%s *Infraestructura: %s*\n%s" % (
-            icon,
+        nivel = severity.normalize(check.get("severity"))
+        text = "%s [%s] *Infraestructura: %s*\n%s" % (
+            severity.emoji(nivel),
+            severity.tag(nivel),
             check.get("name", "?"),
             check.get("detail", ""),
         )

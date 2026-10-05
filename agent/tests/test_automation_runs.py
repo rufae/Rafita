@@ -48,12 +48,18 @@ class _FakeDB:
         self.runs = []
 
     async def record_automation_run(
-        self, execution_id, workflow, status, error=None, finished_at=None
+        self, execution_id, workflow, status, error=None, finished_at=None, severity=""
     ):
         if any(r["execution_id"] == execution_id for r in self.runs):
             return False
         self.runs.append(
-            {"execution_id": execution_id, "workflow": workflow, "status": status, "error": error}
+            {
+                "execution_id": execution_id,
+                "workflow": workflow,
+                "status": status,
+                "severity": severity or ("info" if status == "ok" else "error"),
+                "error": error,
+            }
         )
         return True
 

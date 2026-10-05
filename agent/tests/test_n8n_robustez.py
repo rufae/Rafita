@@ -193,3 +193,21 @@ def test_ejecutable_responde_esquema_unico():
     assert "success: true" in codigos
     assert "ok: true" not in codigos
     assert "mensaje:" not in codigos
+
+
+def test_flujos_envian_severity_en_el_informe():
+    # D12: taxonomía única; cada nodo «Firmar informe» lleva el nivel en el
+    # body que postea a /api/n8n/run (el backend lo deriva si no viene).
+    import json as _json
+
+    flujos = sorted((RAIZ / "n8n" / "workflows").glob("*.json"))
+    con_informe = 0
+    for f in flujos:
+        w = _json.loads(f.read_text(encoding="utf-8"))
+        for n in w["nodes"]:
+            if n.get("name") != "Firmar informe":
+                continue
+            con_informe += 1
+            code = n["parameters"]["jsCode"]
+            assert "severity: error ? 'error' : 'info'" in code, f.name
+    assert con_informe == 9
