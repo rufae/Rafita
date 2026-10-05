@@ -724,8 +724,11 @@ async def automation_sequences_run(request: Request):
 async def _notify_automation_error(workflow: str, error: str | None) -> bool:
     """Aviso a admins SOLO tras 2 fallos seguidos del mismo workflow (sin spam)."""
     from src.config import settings
+    from src.utils import severity as _sev
 
-    text = "⚠️ *Automatización con 2 fallos seguidos*\nWorkflow: %s\nError: %s" % (
+    text = "%s [%s] *Automatización con 2 fallos seguidos*\nWorkflow: %s\nError: %s" % (
+        _sev.emoji(_sev.ERROR),
+        _sev.tag(_sev.ERROR),
         workflow,
         error or "sin detalle",
     )
@@ -780,8 +783,15 @@ async def n8n_run_report(request: Request):
         )
     error = str(payload.get("error") or "").strip()[:500] or None
     finished_at = str(payload.get("finished_at") or "").strip()[:40] or None
+    # Taxonomia unica (D12): nivel opcional del informe n8n; si no viene, se
+    # deriva de status (ok->info, error->error) y lo no reconocido tambien.
+    from src.utils import severity as _sev
+
+    nivel = _sev.normalize(payload.get("severity"), default="info" if status == "ok" else "error")
     previo = await db.last_automation_run(workflow)
-    stored = await db.record_automation_run(execution_id, workflow, status, error, finished_at)
+    stored = await db.record_automation_run(
+        execution_id, workflow, status, error, finished_at, severity=nivel
+    )
     alerted = False
     if status == "error" and stored and previo and previo.get("status") == "error":
         alerted = await _notify_automation_error(workflow, error)

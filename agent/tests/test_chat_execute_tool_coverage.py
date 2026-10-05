@@ -222,7 +222,8 @@ async def test_get_alerts_lista_pendientes_y_vacio(monkeypatch):
     )
     full = await chat_mod._execute_tool(1, "get_alerts", {})
     assert "| ID | Alerta | Tipo | Vence |" in full["message"]
-    assert "| 5 | pagar la luz | urgent | - |" in full["message"]
+    # alert_type legacy "urgent" se muestra con la taxonomia unica (D12)
+    assert "| 5 | pagar la luz | critical | - |" in full["message"]
     assert "| 6 | renovar dni | info | 2026-10-02 00:00:00 |" in full["message"]
 
 

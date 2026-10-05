@@ -187,7 +187,7 @@ def test_check_docker_restart_loop_alerta(data_dir):
     )
     check = infra_monitor.check_docker_services()
     assert check["ok"] is False
-    assert check["severity"] == "warning"
+    assert check["severity"] == "error"
     assert "n8n" in check["detail"] and "12" in check["detail"]
 
 

@@ -25,6 +25,7 @@ from src.ollama_client import OllamaClientError, llm
 from src.services.google_service import google_service
 from src.services.google_services_manager import google_services
 from src.utils import obsidian_manager as ob
+from src.utils import severity
 from src.utils import workspace_manager as wm
 from src.utils.citations import citations
 from src.utils.google_calendar_manager import gcal
@@ -1133,7 +1134,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
 
         elif func_name == "create_alert":
             alert_message = args.get("message", "")
-            alert_type = args.get("alert_type", "info")
+            alert_type = severity.normalize(args.get("alert_type", "info"))
             expires_at = args.get("expires_at")
             if expires_at:
                 try:
@@ -1201,7 +1202,9 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     % (
                         a.get("id", "?"),
                         str(a.get("message", "")).replace("|", "/")[:80],
-                        a.get("alert_type", "info"),
+                        severity.normalize(
+                            a.get("alert_type"), default=str(a.get("alert_type") or "info")
+                        ),
                         a.get("expires_at") or "-",
                     )
                 )
@@ -1602,10 +1605,15 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 # _tool_lista_ignorada detecte si la respuesta ignora los datos
                 # (2026-10-04: el modelo respondió un saludo con estas filas
                 # delante) y el nombre extraído es el que el usuario espera.
-                linea = "• %s · %s · %s" % (
+                estado = str(r.get("status", "?"))
+                nivel = severity.normalize(
+                    r.get("severity"), default="info" if estado == "ok" else "error"
+                )
+                linea = "• %s · %s · %s [%s]" % (
                     str(r.get("workflow", "?")),
                     str(r.get("created_at", ""))[:16],
-                    str(r.get("status", "?")),
+                    estado,
+                    severity.tag(nivel),
                 )
                 if r.get("error"):
                     linea += " · %s" % str(r["error"])[:120]

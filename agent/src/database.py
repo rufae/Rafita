@@ -293,6 +293,7 @@ class DatabaseManager:
                 execution_id TEXT NOT NULL UNIQUE,
                 workflow TEXT NOT NULL,
                 status TEXT NOT NULL CHECK(status IN ('ok','error')),
+                severity TEXT NOT NULL DEFAULT 'info',
                 error TEXT,
                 finished_at TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -322,6 +323,20 @@ class DatabaseManager:
             existing_cols.add(row[1])
         if "google_event_id" not in existing_cols:
             await self._conn.execute("ALTER TABLE events ADD COLUMN google_event_id TEXT")
+        existing_cols = set()
+        cursor = await self._conn.execute("PRAGMA table_info(automation_runs)")
+        for row in await cursor.fetchall():
+            existing_cols.add(row[1])
+        if "severity" not in existing_cols:
+            # Taxonomia unica de prioridades (tareas.md D12): las filas
+            # viejas se derivan de status (ok->info, error->error).
+            await self._conn.execute(
+                "ALTER TABLE automation_runs ADD COLUMN severity TEXT NOT NULL DEFAULT 'info'"
+            )
+            await self._conn.execute(
+                "UPDATE automation_runs SET severity = "
+                "CASE status WHEN 'ok' THEN 'info' ELSE 'error' END"
+            )
         existing_cols = set()
         cursor = await self._conn.execute("PRAGMA table_info(alerts)")
         for row in await cursor.fetchall():
@@ -1086,17 +1101,22 @@ class DatabaseManager:
         status: str,
         error: str | None = None,
         finished_at: str | None = None,
+        severity: str = "",
     ) -> bool:
         """Registra una ejecucion de automatizacion.
 
         Idempotente por `execution_id` (UNIQUE): si n8n reintenta el
         informe, no se duplica la fila. Devuelve False si ya existia.
+        `severity` usa la taxonomia unica (info/warning/error/critical);
+        vacio se deriva de status (ok->info, error->error).
         """
+        if not severity:
+            severity = "info" if status == "ok" else "error"
         cursor = await self.execute(
             "INSERT OR IGNORE INTO automation_runs "
-            "(execution_id, workflow, status, error, finished_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (execution_id, workflow, status, error, finished_at),
+            "(execution_id, workflow, status, severity, error, finished_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (execution_id, workflow, status, severity, error, finished_at),
         )
         # execute() no commitea: sin esto la fila queda en la transaccion
         # abierta y otros procesos (otras tools) no la ven (visto en vivo
@@ -1109,7 +1129,7 @@ class DatabaseManager:
     ) -> list[dict[str, Any]]:
         """Ejecuciones de los ultimos N dias (errores primero no: por fecha)."""
         sql = (
-            "SELECT execution_id, workflow, status, error, finished_at, created_at "
+            "SELECT execution_id, workflow, status, severity, error, finished_at, created_at "
             "FROM automation_runs WHERE created_at >= datetime('now', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, int(days))]
@@ -1122,7 +1142,7 @@ class DatabaseManager:
     async def last_automation_run(self, workflow: str) -> dict[str, Any] | None:
         """Ultima ejecucion registrada de un workflow (para alerta 2 fallos)."""
         rows = await self.fetchall(
-            "SELECT status, created_at FROM automation_runs "
+            "SELECT status, severity, created_at FROM automation_runs "
             "WHERE workflow = ? ORDER BY id DESC LIMIT 1",
             (workflow,),
         )
