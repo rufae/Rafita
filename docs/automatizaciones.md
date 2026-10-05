@@ -2,11 +2,11 @@
 
 > **Estado (2026-09-28):** el **punto 1 está implementado y verificado en
 > real** con n8n + Rafita:
-> - **1A Briefing contextual** (`deploy/hp/n8n-flows/3-briefing-contextual.json`):
+> - **1A Briefing contextual** (`n8n/workflows/01-briefing-contextual.json`):
 >   cada día a las 08:00, Rafita compone el briefing (agenda, tareas, correo,
 >   **tiempo AEMET**, estado del servidor) y n8n lo entrega en Telegram con
 >   botones URL. Verificado: mensaje real entregado.
-> - **1B Inbox Zero** (`4-inbox-zero.json`): cada 30 min clasifica el correo no
+> - **1B Inbox Zero** (`n8n/workflows/02-inbox-zero.json`): cada 30 min clasifica el correo no
 >   leído (urgente/factura/cliente/informativo) y avisa solo si hay urgentes o
 >   de clientes, **con borrador**; deduplicado por correo (no repite avisos).
 >   Verificado contra el Gmail real.
