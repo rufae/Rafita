@@ -58,3 +58,19 @@ def test_placeholders_presentes():
     assert "PEGA_AQUI_TU_WEBHOOK_SECRET" in briefing
     assert "PEGA_AQUI_TU_BOT_TOKEN" in briefing
     assert "PEGA_AQUI_TU_CHAT_ID" in briefing
+
+
+def test_flujos_solo_en_n8n_workflows():
+    # D9 (2026-10-05): deploy/hp/n8n-flows/ era una copia desincronizada de
+    # n8n/workflows/ (8/8 distintos, faltaban 09 y 10) y deploy/ nunca se
+    # trackea. Se elimino la copia: fuente unica = n8n/workflows/. Si este
+    # test falla, alguien ha vuelto a duplicar un flujo fuera de esa ruta.
+    nombres = {f.name for f in FLUJOS}
+    duplicados = [
+        str(f.relative_to(RAIZ))
+        for f in RAIZ.rglob("*.json")
+        if f.name in nombres
+        and f.parent != RAIZ / "n8n" / "workflows"
+        and ".git" not in f.parts
+    ]
+    assert duplicados == [], "flujos duplicados fuera de n8n/workflows: %s" % duplicados
