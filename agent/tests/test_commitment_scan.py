@@ -214,9 +214,15 @@ async def test_recordatorio_crea_alerta_de_seguimiento(monkeypatch):
     assert store["tareas"] == []
 
 
-async def test_sin_fuentes_devuelve_honesto(monkeypatch):
+async def test_sin_fuentes_devuelve_honesto(monkeypatch, tmp_path):
+    from src.config import settings
+
     store = _db_falso(monkeypatch, chats=[])
     _google(monkeypatch, _GoogleFalso(ready=False))
+    # boveda vacia: sin notas recientes tampoco hay fuente
+    monkeypatch.setattr(
+        type(settings), "obsidian_vault_path", property(lambda self: tmp_path / "vacia")
+    )
     llm = _LLMFalso("{}")
     monkeypatch.setattr("src.ollama_client.llm", llm)
 
@@ -444,3 +450,27 @@ async def test_excluye_destinatarios_con_secuencia_activa(monkeypatch):
     assert res["avisos"] == []
     assert res["excluidos_secuencias"] == 1
     assert store["alertas"] == []
+
+
+async def test_incluye_notas_de_la_boveda_como_fuente(monkeypatch, tmp_path):
+    # fila 6: las notas de la boveda son fuente de compromisos.
+    from src.config import settings
+
+    _db_falso(monkeypatch, chats=[])  # sin chats: solo la nota
+    _google(monkeypatch, _GoogleFalso(ready=False))
+    _bot_falso(monkeypatch)
+    vault = tmp_path / "vault"
+    (vault / "Reuniones").mkdir(parents=True)
+    (vault / "Reuniones" / "Lola.md").write_text(
+        "Lola pide presupuesto el viernes.", encoding="utf-8"
+    )
+    monkeypatch.setattr(type(settings), "obsidian_vault_path", property(lambda self: vault))
+    llm = _LLMFalso(_deteccion("Presupuesto para Lola", None, fuente="nota"))
+    monkeypatch.setattr("src.ollama_client.llm", llm)
+
+    res = await auto.detect_commitments(force=True)
+
+    assert res["success"] is True
+    assert res["fuentes"]["notas"] == 1
+    assert "[nota] Reuniones/Lola.md" in llm.contenidos[0]
+    assert res["creadas"][0]["fuente"] == "nota"
