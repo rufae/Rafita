@@ -202,7 +202,10 @@ def main() -> int:
             "settings": flujo.get("settings", {}),
         }
         # subs ya creados en esta vuelta -> resolvemos contra ids reales
-        payload = json.loads(resolver_marcadores(json.dumps(payload), ids))
+        # (ensure_ascii=False: los nombres llevan «·» y se escaparian)
+        payload = json.loads(
+            resolver_marcadores(json.dumps(payload, ensure_ascii=False), ids)
+        )
         info = existentes.get(flujo["name"])
         if info:
             flujo_id = info["id"]
