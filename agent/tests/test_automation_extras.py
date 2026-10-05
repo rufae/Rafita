@@ -322,6 +322,60 @@ async def test_infra_report_alerts_without_backup(tmp_path, monkeypatch):
     assert "certificados" in result["text"].lower()
 
 
+def test_notas_nueva_semana_helper(tmp_path, monkeypatch):
+    # idea 21: notas modificadas en 7 dias, con resumen (sin frontmatter).
+    monkeypatch.setattr(type(settings), "obsidian_vault_path", property(lambda self: tmp_path))
+    area = tmp_path / "Area"
+    area.mkdir()
+    (area / "Nueva.md").write_text("# Título\n\nContenido de prueba util.")
+    vieja = tmp_path / "Vieja.md"
+    vieja.write_text("nada nuevo")
+    import os
+    import time
+
+    viejo = time.time() - 30 * 86400
+    os.utime(vieja, (viejo, viejo))
+
+    notas = auto._notas_nueva_semana()
+    assert [n["titulo"] for n in notas] == ["Nueva"]
+    assert notas[0]["carpeta"] == "Area"
+    assert notas[0]["resumen"] == "Contenido de prueba util."
+
+
+async def test_infra_report_incluye_conocimiento_nuevo(tmp_path, monkeypatch):
+    # idea 21: el informe semanal añade «Conocimiento nuevo» con enlaces.
+    (tmp_path / "backup-status.json").write_text(
+        '{"timestamp": "2026-10-04T03:30:00", "rclone": "OK"}', encoding="utf-8"
+    )
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "pwa_base_url", "http://10.0.0.1:8010")
+    vault = tmp_path / "vault" / "Briefings"
+    vault.mkdir(parents=True)
+    (vault / "Digest prueba.md").write_text(
+        "---\ntitle: x\n---\n\n# Título\nResumen de la nota nueva.", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        type(settings), "obsidian_vault_path", property(lambda self: tmp_path / "vault")
+    )
+
+    async def fake_server():
+        return {"ia": "ok"}
+
+    async def fake_checks():
+        return []
+
+    monkeypatch.setattr(auto, "_server_status", fake_server)
+    monkeypatch.setattr("src.ollama_client.llm", _FakeLLM("Informe semanal OK"))
+    monkeypatch.setattr("src.utils.infra_monitor.run_infra_checks", fake_checks)
+
+    result = await auto.infra_report()
+    assert result["success"]
+    assert result["notas_semana"] == 1
+    assert "Conocimiento nuevo esta semana" in result["text"]
+    assert "[Digest prueba](http://10.0.0.1:8010/app/#vault=Digest%20prueba)" in result["text"]
+    assert "Resumen de la nota nueva" in result["text"]
+
+
 # ---------------- endpoint send-voice ----------------
 
 

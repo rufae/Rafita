@@ -1055,6 +1055,79 @@ def _read_status_file(name: str) -> dict[str, Any]:
         return {}
 
 
+def _notas_nueva_semana(limite_dias: int = 7, max_n: int = 15) -> list[dict[str, Any]]:
+    """Notas de la boveda modificadas en los ultimos N dias (idea 21).
+
+    Devuelve titulo, ruta, carpeta, fecha y primer resumen util (sin
+    frontmatter ni titulos). Best-effort: cualquier fallo -> lista vacia.
+    """
+    from pathlib import Path
+
+    out: list[dict[str, Any]] = []
+    try:
+        raiz = Path(settings.obsidian_vault_path)
+        limite = time.time() - limite_dias * 86400
+        candidatos = [f for f in raiz.rglob("*.md") if f.stat().st_mtime > limite]
+        candidatos.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in candidatos[:max_n]:
+            try:
+                texto = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                texto = ""
+            resumen = ""
+            lineas = texto.splitlines()
+            if lineas and lineas[0].strip() == "---":
+                cierre = next(
+                    (i for i, ln in enumerate(lineas[1:], 1) if ln.strip() == "---"), None
+                )
+                lineas = lineas[cierre + 1 :] if cierre else []
+            for linea in lineas:
+                s = linea.strip()
+                if not s or s.startswith("#") or s.startswith("[") or s.startswith("!"):
+                    continue
+                resumen = s[:120]
+                break
+            rel = f.relative_to(raiz)
+            out.append(
+                {
+                    "titulo": f.stem,
+                    "ruta": str(rel),
+                    "carpeta": str(rel.parent) if str(rel.parent) != "." else "",
+                    "fecha": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m"),
+                    "resumen": resumen,
+                }
+            )
+    except Exception as e:
+        logger.debug("Digest: boveda no disponible (%s)", str(e)[:80])
+    return out
+
+
+def _bloque_conocimiento(notas: list[dict[str, Any]]) -> str:
+    """Bloque con enlaces para Telegram (deep link a la PWA si esta configurada)."""
+    from urllib.parse import quote
+
+    base = (settings.pwa_base_url or "").rstrip("/")
+    lineas: list[str] = []
+    for n in notas:
+        if base:
+            enlace = "[%s](%s/app/#vault=%s)" % (n["titulo"], base, quote(n["titulo"]))
+        else:
+            enlace = "*%s*" % n["titulo"]
+        parte = "- %s" % enlace
+        if n.get("carpeta") or n.get("fecha"):
+            parte += " _(%s%s)_" % (
+                n.get("carpeta") or "sin carpeta",
+                " · " + n["fecha"] if n.get("fecha") else "",
+            )
+        if n.get("resumen"):
+            parte += ": %s" % n["resumen"]
+        lineas.append(parte)
+    return "📚 *Conocimiento nuevo esta semana (%d notas):*\n%s" % (
+        len(notas),
+        "\n".join(lineas),
+    )
+
+
 async def infra_report() -> dict[str, Any]:
     """Informe de infraestructura: backups, disco, BD, RAG, IA (domingos)."""
     import shutil
@@ -1107,6 +1180,12 @@ async def infra_report() -> dict[str, Any]:
             checks_txt,
         )
     )
+    notas = _notas_nueva_semana()
+    if notas:
+        raw += "\n\nCONOCIMIENTO NUEVO (ultimos 7 dias, %d notas):\n%s" % (
+            len(notas),
+            "\n".join("- %s (%s)" % (n["titulo"], n["carpeta"] or "raiz") for n in notas),
+        )
     text = ""
     try:
         from src.ollama_client import llm
@@ -1122,7 +1201,10 @@ async def infra_report() -> dict[str, Any]:
                             "con negritas de Telegram (*texto*). Incluye: estado de "
                             "los backups (fecha del ultimo snapshot y resultado de "
                             "la copia a Drive), resultado del restore-drill, disco "
-                            "libre y servicios (IA/RAG/Google). Si algo falta o "
+                            "libre y servicios (IA/RAG/Google). Si aparece "
+                            "CONOCIMIENTO NUEVO, cierra con 1-2 lineas mencionando "
+                            "cuantas notas se añadieron y de que tratan (usa los "
+                            "titulos tal cual). Si algo falta o "
                             "fallo, destacalo como ALERTA al principio. HONESTIDAD: "
                             "si un dato no aparece o pone '(sin datos)', di "
                             "claramente que no hay datos; NUNCA inventes resultados "
@@ -1131,7 +1213,7 @@ async def infra_report() -> dict[str, Any]:
                     },
                     {"role": "user", "content": raw},
                 ],
-                max_tokens=350,
+                max_tokens=400,
             )
         ).strip()
     except Exception as e:
@@ -1157,6 +1239,9 @@ async def infra_report() -> dict[str, Any]:
     if alerts:
         text = "🚨 *ALERTAS:*\n" + "\n".join("- " + a for a in alerts) + "\n\n" + text
 
+    if notas:
+        text = text.rstrip() + "\n\n" + _bloque_conocimiento(notas)
+
     return {
         "success": True,
         "text": text,
@@ -1164,6 +1249,7 @@ async def infra_report() -> dict[str, Any]:
         "drill": drill,
         "disk": disk,
         "checks": checks,
+        "notas_semana": len(notas),
     }
 
 

@@ -57,7 +57,10 @@ async def test_crea_varias_con_responsable_y_fecha(monkeypatch):
     assert result["creadas"][0]["titulo"] == "[Ana] Enviar presupuesto"
     assert result["creadas"][0]["due"] == "2026-10-10"
     assert result["creadas"][1]["titulo"] == "Llamar al proveedor"
-    assert result["creadas"][1]["due"] == "2026-10-05"  # 'manana'
+    from datetime import datetime, timedelta
+
+    manana = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    assert result["creadas"][1]["due"] == manana  # 'manana'
     assert result["creadas"][2]["due"] == "sin fecha"
     assert fake.creadas[0]["title"] == "[Ana] Enviar presupuesto"
     assert fake.creadas[0]["due"] == "2026-10-10"

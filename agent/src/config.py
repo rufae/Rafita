@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     # de las claims (mailto de contacto). Sin clave -> push desactivado.
     vapid_key_file: str = Field("/data/vapid_private.pem", alias="VAPID_KEY_FILE")
     vapid_subject: str = Field("mailto:admin@example.com", alias="VAPID_SUBJECT")
+    # URL publica de la PWA (deep links en Telegram, p. ej. digest de
+    # conocimiento -> /app/#vault=<nota>). Vacia: sin enlaces en los avisos.
+    pwa_base_url: str = Field("", alias="PWA_BASE_URL")
 
     # Briefing matutino y recordatorios proactivos (mejoras 2 y 6, 2026-09-28).
     briefing_enabled: bool = Field(True, alias="BRIEFING_ENABLED")
