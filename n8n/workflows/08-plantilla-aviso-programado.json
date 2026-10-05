@@ -26,7 +26,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Firma HMAC del cuerpo, exactamente como lo espera el gateway de Rafita.\n// 1) Cambia 'PEGA_AQUI_TU_WEBHOOK_SECRET' por el valor de WEBHOOK_SECRET\n//    del .env del HP.\n// 2) Cambia chat_id por tu id de Telegram (ADMIN_IDS del .env).\nconst crypto = require('crypto');\nconst secret = 'PEGA_AQUI_TU_WEBHOOK_SECRET';\nconst payload = {\n  chat_id: PEGA_AQUI_TU_CHAT_ID,\n  message: '⏰ Aviso de n8n: esto es un ejemplo de notificacion proactiva.',\n};\nconst body = JSON.stringify(payload);\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Firma HMAC del cuerpo, exactamente como lo espera el gateway de Rafita.\n// Config por entorno (D13): WEBHOOK_SECRET y RAFITA_CHAT_ID los inyecta\n// docker-compose.n8n.yml en el contenedor n8n; nada que horneear aqui.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst payload = {\n  chat_id: Number(process.env.RAFITA_CHAT_ID || '0'),\n  message: '⏰ Aviso de n8n: esto es un ejemplo de notificacion proactiva.',\n};\nconst body = JSON.stringify(payload);\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "a1000001-0000-4000-8000-000000000002",
       "name": "Firmar HMAC",
@@ -40,7 +40,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://rafita-agent-core:8000/webhook/n8n",
+        "url": "={{ ($env.RAFITA_URL || 'http://rafita-agent-core:8000') + '/webhook/n8n' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -74,7 +74,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = 'PEGA_AQUI_TU_WEBHOOK_SECRET';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "a1000001-0000-4000-8000-0000000000E1",
       "name": "Firmar informe",
@@ -88,7 +88,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://rafita-agent-core:8000/api/n8n/run",
+        "url": "={{ ($env.RAFITA_URL || 'http://rafita-agent-core:8000') + '/api/n8n/run' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

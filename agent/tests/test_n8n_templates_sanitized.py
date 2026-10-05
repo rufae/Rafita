@@ -25,7 +25,7 @@ CLAVE_RE = re.compile(
     r'["\']?(?:secret|token|password|api_?key)["\']?\s*[:=]\s*["\']([^"\']{20,})["\']',
     re.IGNORECASE,
 )
-PERMITIDOS = ("PEGA_AQUI", "{{", "$env", "process.env")
+PERMITIDOS = ("{{", "$env", "process.env")
 
 
 def _textos() -> list[tuple[str, str]]:
@@ -51,13 +51,19 @@ def test_sin_secretos_ni_datos_personales():
     assert problemas == [], "Posibles secretos/datos en plantillas: %s" % problemas
 
 
-def test_placeholders_presentes():
+def test_config_por_entorno_sin_placeholders():
+    # D13 (2026-10-05): los 33 placeholders PEGA_AQUI_* horneados se
+    # sustituyeron por $env (HTTP) y process.env (Code); el importador deja
+    # de horneear y valida. Nada de secretos horneables en las plantillas.
+    for nombre, texto in _textos():
+        assert "PEGA_AQUI" not in texto, "%s todavia lleva placeholders" % nombre
     briefing = (RAIZ / "n8n" / "workflows" / "01-briefing-contextual.json").read_text(
         encoding="utf-8"
     )
-    assert "PEGA_AQUI_TU_WEBHOOK_SECRET" in briefing
-    assert "PEGA_AQUI_TU_BOT_TOKEN" in briefing
-    assert "PEGA_AQUI_TU_CHAT_ID" in briefing
+    assert "$env.TELEGRAM_TOKEN" in briefing
+    assert "process.env.WEBHOOK_SECRET" in briefing
+    assert "process.env.RAFITA_CHAT_ID" in briefing
+    assert "$env.RAFITA_URL" in briefing
 
 
 def test_flujos_solo_en_n8n_workflows():
@@ -69,8 +75,6 @@ def test_flujos_solo_en_n8n_workflows():
     duplicados = [
         str(f.relative_to(RAIZ))
         for f in RAIZ.rglob("*.json")
-        if f.name in nombres
-        and f.parent != RAIZ / "n8n" / "workflows"
-        and ".git" not in f.parts
+        if f.name in nombres and f.parent != RAIZ / "n8n" / "workflows" and ".git" not in f.parts
     ]
     assert duplicados == [], "flujos duplicados fuera de n8n/workflows: %s" % duplicados

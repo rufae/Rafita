@@ -149,8 +149,10 @@ en el gate):
   posteriores no avisan con basura, y el nodo «Mensaje Telegram» no manda
   `undefined`) en vez de tumbarse ni spamear.
 - **Informe de cada ejecución**: una rama paralela con «Firmar informe» +
-  «Reportar a Rafita» envía `{execution_id, workflow, status, error,
-  finished_at}` firmado con HMAC a `POST /api/n8n/run`. Rafita lo guarda en
+  «Reportar a Rafita» envía `{execution_id, workflow, status, severity, error,
+  finished_at}` firmado con HMAC a `POST /api/n8n/run` (nivel de la taxonomía
+  única `info/warning/error/critical`; si no viene, el backend lo deriva de
+  `status`). Rafita lo guarda en
   la tabla `automation_runs` (**idempotente por `execution_id`**: los
   reintentos no duplican filas).
 - **Alertas sin spam**: solo se avisa a los admins si la **misma**
@@ -172,6 +174,13 @@ en el gate):
 | `ADMIN_IDS` | Chat de destino (el primer id). |
 | `N8N_WEBHOOKS` | Mapa nombre→URL para lanzar flujos desde el chat (`{"ejemplo": "http://n8n:5678/webhook/..."}`). |
 
+Los flujos **no hornean secretos** (D13): leen `$env` (nodos HTTP) y
+`process.env` (nodos Code) dentro de n8n. `deploy/hp/docker-compose.n8n.yml`
+inyecta `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`, `RAFITA_CHAT_ID` (primer
+`ADMIN_IDS`) y `RAFITA_URL` (por defecto `http://rafita-agent-core:8000`)
+desde el `.env` del repo; si cambias esos valores, recrea el contenedor
+n8n (`docker compose -f deploy/hp/docker-compose.n8n.yml up -d`).
+
 ## Importar
 
 ```bash
@@ -181,9 +190,8 @@ python scripts/n8n_import_flows.py --activate      # además activa por CLI (en 
 ```
 
 También puedes importarlos a mano: en n8n → *Workflows* → *Import from File*.
-Si lo haces a mano, sustituye antes los placeholders
-`PEGA_AQUI_TU_WEBHOOK_SECRET`, `PEGA_AQUI_TU_BOT_TOKEN` y
-`PEGA_AQUI_TU_CHAT_ID` por tus valores.
+No hay placeholders que sustituir: las plantillas usan `$env` /
+`process.env` y el contenedor n8n aporta los valores (ver *Requisitos*).
 
 La **activación** no está en la API pública:
 

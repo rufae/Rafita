@@ -2,8 +2,12 @@
 """Importa los flujos de `n8n/workflows/` en una instancia de n8n (API v1).
 
 Idempotente: crea los flujos que no existen y actualiza los que ya estan
-(emparejados por nombre). Sustituye los placeholders de las plantillas por los
-valores del `.env` del proyecto y asigna la etiqueta de su categoria.
+(emparejados por nombre) y asigna la etiqueta de su categoria.
+
+D13: los flujos ya NO hornean secretos; usan $env (expresiones HTTP) y
+process.env (nodos Code) con TELEGRAM_TOKEN, WEBHOOK_SECRET, RAFITA_CHAT_ID
+y RAFITA_URL, que inyecta deploy/hp/docker-compose.n8n.yml en el contenedor
+n8n. Este script solo valida que el .env local tenga esas claves.
 
 La activacion no esta disponible en la API publica; usa `--activate` para que
 el script la aplique por CLI (requiere ejecutarse en la maquina del contenedor
@@ -58,26 +62,6 @@ def cargar_env(ruta: Path) -> dict[str, str]:
     return env
 
 
-def primer_admin(env: dict[str, str]) -> str:
-    bruto = env.get("ADMIN_IDS", "").strip().strip("[]")
-    for trozo in bruto.replace(" ", "").split(","):
-        if trozo.strip():
-            return trozo.strip()
-    return ""
-
-
-def sustituir(plantilla: str, env: dict[str, str]) -> str:
-    chat_id = primer_admin(env)
-    reemplazos = {
-        "PEGA_AQUI_TU_WEBHOOK_SECRET": env.get("WEBHOOK_SECRET", ""),
-        "PEGA_AQUI_TU_BOT_TOKEN": env.get("TELEGRAM_TOKEN", ""),
-        "PEGA_AQUI_TU_CHAT_ID": chat_id,
-    }
-    for clave, valor in reemplazos.items():
-        plantilla = plantilla.replace(clave, valor)
-    return plantilla
-
-
 class Api:
     def __init__(self, url: str, api_key: str):
         self.url = url.rstrip("/")
@@ -116,10 +100,13 @@ def main() -> int:
     if not api_key:
         print("ERROR: falta N8N_API_KEY (en el .env o con --api-key)")
         return 1
-    if not env.get("WEBHOOK_SECRET") or not env.get("TELEGRAM_TOKEN"):
+    faltan = [
+        clave for clave in ("WEBHOOK_SECRET", "TELEGRAM_TOKEN", "ADMIN_IDS") if not env.get(clave)
+    ]
+    if faltan:
         print(
-            "AVISO: WEBHOOK_SECRET o TELEGRAM_TOKEN vacios en el .env; "
-            "los flujos quedaran con placeholders sin sustituir"
+            "AVISO: faltan en el .env: %s (el contenedor n8n los necesita como "
+            "WEBHOOK_SECRET, TELEGRAM_TOKEN y RAFITA_CHAT_ID)" % ", ".join(faltan)
         )
 
     api = Api(args.url, api_key)
@@ -132,7 +119,11 @@ def main() -> int:
     importados: list[tuple[str, str]] = []
     activables: list[tuple[str, str]] = []
     for ruta in sorted(FLUJOS_DIR.glob("*.json")):
-        flujo = json.loads(sustituir(ruta.read_text(encoding="utf-8"), env))
+        texto = ruta.read_text(encoding="utf-8")
+        if "PEGA_AQUI" in texto:
+            print("ERROR: %s todavia lleva placeholders PEGA_AQUI_* (D13)" % ruta.name)
+            return 1
+        flujo = json.loads(texto)
         payload = {
             "name": flujo["name"],
             "nodes": flujo["nodes"],
