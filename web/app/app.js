@@ -125,6 +125,16 @@ async function enterApp() {
     setView('chat');
     loadChatHistory();
     initPush();
+    // Deep link desde Telegram (#vault=nota): abre el Baúl ya buscado.
+    const pendiente = /^#vault(?:=([^&]*))?$/.exec(location.hash);
+    if (pendiente) {
+      setView('vault');
+      if (pendiente[1]) {
+        $('#vault-search').value = decodeURIComponent(pendiente[1]);
+        loadNotes();
+      }
+      history.replaceState(null, '', '/app/');
+    }
   } catch (_e) {
     logout();
   }
