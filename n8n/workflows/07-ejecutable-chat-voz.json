@@ -45,6 +45,68 @@
         -400,
         -200
       ]
+    },
+    {
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "value": "__SUB__:Rafita · Sub · Validación"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "d1400007-0000-4000-8000-0000000000a1",
+      "name": "Validación",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        110,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "value": "__SUB__:Rafita · Sub · IA"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "d1400007-0000-4000-8000-0000000000a2",
+      "name": "Sub · IA",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Respuesta final (esquema unico) con lo de Procesar + la IA (D14).\nconst ia = $input.first().json;\nconst base = $('Procesar').first().json;\nreturn [{ json: { ...base, ia } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "d1400007-0000-4000-8000-0000000000a3",
+      "name": "Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     }
   ],
   "connections": {
@@ -52,7 +114,7 @@
       "main": [
         [
           {
-            "node": "Procesar",
+            "node": "Validación",
             "type": "main",
             "index": 0
           }
@@ -69,9 +131,43 @@
           }
         ]
       ]
+    },
+    "Validación": {
+      "main": [
+        [
+          {
+            "node": "Procesar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar": {
+      "main": [
+        [
+          {
+            "node": "Sub · IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sub · IA": {
+      "main": [
+        [
+          {
+            "node": "Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "__SUB__:Rafita · Sub · Errores"
   }
 }

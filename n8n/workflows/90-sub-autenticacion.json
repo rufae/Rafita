@@ -1,0 +1,46 @@
+{
+  "name": "Rafita · Sub · Autenticación",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9000000c-0000-4000-8000-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Firma HMAC del payload de peticion (unica fuente de createHmac).\n// Entrada: {payload: objeto} opcional; sin payload firma {}.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst payload = (j && j.payload !== undefined) ? j.payload : {};\nconst body = JSON.stringify(payload);\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000c-0000-4000-8000-000000000002",
+      "name": "Firmar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Firmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

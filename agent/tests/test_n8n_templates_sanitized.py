@@ -52,18 +52,21 @@ def test_sin_secretos_ni_datos_personales():
 
 
 def test_config_por_entorno_sin_placeholders():
-    # D13 (2026-10-05): los 33 placeholders PEGA_AQUI_* horneados se
-    # sustituyeron por $env (HTTP) y process.env (Code); el importador deja
-    # de horneear y valida. Nada de secretos horneables en las plantillas.
+    # D13/D14 (2026-10-05): 0 placeholders PEGA_AQUI_*; todo via $env, con la
+    # firma HMAC centralizada en los sub-workflows (createHmac solo ahi).
     for nombre, texto in _textos():
         assert "PEGA_AQUI" not in texto, "%s todavia lleva placeholders" % nombre
     briefing = (RAIZ / "n8n" / "workflows" / "01-briefing-contextual.json").read_text(
         encoding="utf-8"
     )
-    assert "$env.TELEGRAM_TOKEN" in briefing
-    assert "$env.WEBHOOK_SECRET" in briefing
     assert "$env.RAFITA_CHAT_ID" in briefing
     assert "$env.RAFITA_URL" in briefing
+    telegram = (RAIZ / "n8n" / "workflows" / "90-sub-telegram.json").read_text(encoding="utf-8")
+    assert "$env.TELEGRAM_TOKEN" in telegram
+    auth = (RAIZ / "n8n" / "workflows" / "90-sub-autenticacion.json").read_text(encoding="utf-8")
+    assert "$env.WEBHOOK_SECRET" in auth
+    logs = (RAIZ / "n8n" / "workflows" / "90-sub-logs.json").read_text(encoding="utf-8")
+    assert "$env.WEBHOOK_SECRET" in logs and "$env.RAFITA_URL" in logs
 
 
 def test_flujos_solo_en_n8n_workflows():

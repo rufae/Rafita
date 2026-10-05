@@ -1,0 +1,46 @@
+{
+  "name": "Rafita · Sub · Validación",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9000000e-0000-4000-8000-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida la entrada del webhook (D14): sin texto valido no\n// devuelve items y el flujo se detiene ahi (sin IFs).\nconst j = $input.first().json || {};\nconst data = j.body || j;\nconst texto = String((data && (data.text || data.message)) || '').trim();\nif (!texto || texto.length > 4000) {\n  return [];\n}\nreturn [{ json: {\n  ok: true,\n  text: texto,\n  title: (data && data.title) || '',\n  tags: Array.isArray(data && data.tags) ? data.tags : [],\n  source: (data && data.source) || 'n8n',\n} }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000e-0000-4000-8000-000000000002",
+      "name": "Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -63,6 +63,8 @@ def test_fallo_controlado_en_llamadas_a_rafita_y_telegram():
 
 def test_flujos_con_rafita_reportan_sus_ejecuciones():
     for f in FLUJOS:
+        if f.name.startswith("90-"):
+            continue  # subs: no son flujos con informe propio
         w = json.loads(f.read_text(encoding="utf-8"))
         llamadas = _rafita(w)
         if not llamadas:
@@ -77,22 +79,34 @@ def test_flujos_con_rafita_reportan_sus_ejecuciones():
             "%s: informe no conectado a %s" % (f.name, criticos)
         )
         reporte = next(n for n in w["nodes"] if n["name"] == "Reportar a Rafita")
-        # D13: la URL vive en una expresion con $env.RAFITA_URL + path fijo.
-        assert reporte["parameters"]["url"].endswith("'/api/n8n/run' }}")
-        assert "$env.RAFITA_URL" in reporte["parameters"]["url"]
-        headers = reporte["parameters"]["headerParameters"]["parameters"]
-        assert any(h["name"] == "X-Webhook-Signature" for h in headers)
+        # D14: el POST/HMAC vive en Sub · Logs; el padre solo lo invoca.
+        assert reporte["type"] == "n8n-nodes-base.executeWorkflow", f.name
+        assert reporte["parameters"]["workflowId"]["value"] == "__SUB__:Rafita · Sub · Logs"
         assert reporte.get("onError") == "continueRegularOutput"
+    # y el sub es el que postea a /api/n8n/run firmado
+    logs = _cargar("90-sub-logs.json")
+    http = next(n for n in logs["nodes"] if n["type"].endswith("httpRequest"))
+    assert http["parameters"]["url"].endswith("'/api/n8n/run' }}")
+    assert "$env.RAFITA_URL" in http["parameters"]["url"]
+    headers = http["parameters"]["headerParameters"]["parameters"]
+    assert any(h["name"] == "X-Webhook-Signature" for h in headers)
+    assert http.get("onError") == "continueRegularOutput"
 
 
 def test_informe_firma_hmac_y_usa_execution_id():
     w = _cargar("01-briefing-contextual.json")
     firmar = next(n for n in w["nodes"] if n["name"] == "Firmar informe")
     code = firmar["parameters"]["jsCode"]
-    assert "$env.WEBHOOK_SECRET" in code
+    # D14: el padre solo monta el report con SU contexto de ejecucion...
     assert "$execution.id" in code
     assert "$workflow.name" in code
     assert "'error'" in code and "'ok'" in code
+    assert "require('crypto')" not in code
+    # ...y la firma HMAC (createHmac) vive en Sub · Logs.
+    logs = _cargar("90-sub-logs.json")
+    firmador = next(n for n in logs["nodes"] if n["type"].endswith("code"))
+    assert "$env.WEBHOOK_SECRET" in firmador["parameters"]["jsCode"]
+    assert "createHmac" in firmador["parameters"]["jsCode"]
 
 
 def test_mensaje_telegram_sin_texto_no_dispara():
@@ -132,37 +146,45 @@ def test_readme_n8n_refleja_la_realidad():
 
 
 def test_nodos_telegram_payload_canonico_unificado():
-    # D11 (2026-10-05): los 7 nodos «Enviar Telegram» usan stringify($json);
-    # el payload {chat_id, text, parse_mode, disable_web_page_preview,
-    # reply_markup?} lo construye siempre un nodo code aguas arriba.
+    # D11/D14 (2026-10-05): el HTTP de sendMessage vive UNA vez, dentro de
+    # Sub · Telegram; los padres lo invocan con executeWorkflow y siguen
+    # construyendo el payload {chat_id, text, parse_mode,
+    # disable_web_page_preview, reply_markup?} en un nodo code aguas arriba.
     import json as _json
 
-    flujos = sorted((RAIZ / "n8n" / "workflows").glob("*.json"))
-    vistos = 0
-    for f in flujos:
+    sub = _cargar("90-sub-telegram.json")
+    http = [n for n in sub["nodes"] if n["type"].endswith("httpRequest")]
+    assert len(http) == 1, "Sub · Telegram debe tener un unico HTTP"
+    assert "sendMessage" in http[0]["parameters"]["url"]
+    assert "$env.TELEGRAM_TOKEN" in http[0]["parameters"]["url"]
+    assert http[0]["parameters"]["jsonBody"] == "={{ JSON.stringify($json) }}"
+
+    padres = 0
+    for f in sorted((RAIZ / "n8n" / "workflows").glob("*.json")):
+        if f.name.startswith("90-"):
+            continue
         w = _json.loads(f.read_text(encoding="utf-8"))
+        invocaciones = [
+            n
+            for n in w["nodes"]
+            if n.get("type") == "n8n-nodes-base.executeWorkflow"
+            and n["parameters"]["workflowId"]["value"] == "__SUB__:Rafita · Sub · Telegram"
+        ]
+        if not invocaciones:
+            continue
+        padres += 1
         codigos = [
             (n.get("parameters") or {}).get("jsCode", "")
             for n in w["nodes"]
             if n.get("type") == "n8n-nodes-base.code"
         ]
-        for n in w["nodes"]:
-            params = n.get("parameters") or {}
-            if n.get("type") != "n8n-nodes-base.httpRequest":
-                continue
-            if "sendMessage" not in str(params.get("url", "")):
-                continue
-            vistos += 1
-            assert params.get("jsonBody") == "={{ JSON.stringify($json) }}", (
-                "%s / %s sin payload unificado" % (f.name, n["name"])
-            )
-            assert any("chat_id:" in c for c in codigos), (
-                "%s: sin nodo code que construya chat_id" % f.name
-            )
-            assert any("disable_web_page_preview: true" in c for c in codigos), (
-                "%s: payload sin disable_web_page_preview" % f.name
-            )
-    assert vistos >= 7
+        assert any("chat_id:" in c for c in codigos), (
+            "%s: sin nodo code que construya chat_id" % f.name
+        )
+        assert any("disable_web_page_preview: true" in c for c in codigos), (
+            "%s: payload sin disable_web_page_preview" % f.name
+        )
+    assert padres >= 7, "solo %d padres usan Sub · Telegram" % padres
 
 
 def test_briefing_no_usa_r_antes_de_declararla():
@@ -205,6 +227,8 @@ def test_flujos_envian_severity_en_el_informe():
     flujos = sorted((RAIZ / "n8n" / "workflows").glob("*.json"))
     con_informe = 0
     for f in flujos:
+        if f.name.startswith("90-"):
+            continue  # en Sub · Logs «Firmar informe» es la firma, no el contexto
         w = _json.loads(f.read_text(encoding="utf-8"))
         for n in w["nodes"]:
             if n.get("name") != "Firmar informe":

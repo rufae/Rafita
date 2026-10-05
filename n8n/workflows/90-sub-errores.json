@@ -1,0 +1,81 @@
+{
+  "name": "Rafita · Sub · Errores",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9000000d-0000-4000-8000-000000000001",
+      "name": "Fallo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Contexto de la ejecucion fallida (input del Error Trigger).\nconst j = $input.first().json || {};\nconst e = (j.execution && j.execution.error) || {};\nreturn [{ json: { report: {\n  execution_id: j.execution && j.execution.id,\n  workflow: (j.workflow && j.workflow.name) || 'desconocido',\n  status: 'error',\n  severity: 'error',\n  error: String(e.message || e.description || JSON.stringify(e)).slice(0, 400),\n  finished_at: new Date().toISOString(),\n} } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000d-0000-4000-8000-000000000002",
+      "name": "Contexto error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "value": "__SUB__:Rafita · Sub · Logs"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "9000000d-0000-4000-8000-000000000003",
+      "name": "Sub · Logs",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Fallo": {
+      "main": [
+        [
+          {
+            "node": "Contexto error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexto error": {
+      "main": [
+        [
+          {
+            "node": "Sub · Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
