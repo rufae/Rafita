@@ -84,7 +84,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Solo avisa si hubo envios o secuencias detenidas por respuesta.\nconst r = $input.first().json;\nif (!r.changes) { return []; }\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text: r.message, parse_mode: 'Markdown', disable_web_page_preview: true } }];"
+        "jsCode": "// Solo avisa si hubo envios o secuencias detenidas por respuesta.\nconst r = $input.first().json;\nif (!r || r.notify !== true) { return []; }\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text: r.message, parse_mode: 'Markdown', disable_web_page_preview: true } }];"
       },
       "id": "d4000010-0000-4000-8000-000000000004",
       "name": "Solo si cambios",

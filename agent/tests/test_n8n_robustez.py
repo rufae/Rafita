@@ -110,10 +110,11 @@ def test_informe_firma_hmac_y_usa_execution_id():
 
 
 def test_mensaje_telegram_sin_texto_no_dispara():
-    # Fallo controlado: si Rafita devuelve error, no se manda 'undefined'.
+    # Fallo controlado + flag generico de silencio: sin notify del backend
+    # (que solo se enciende con texto real) no se manda 'undefined'.
     w = _cargar("01-briefing-contextual.json")
     nodo = next(n for n in w["nodes"] if n["name"] == "Mensaje Telegram")
-    assert "if (!r || !r.text)" in nodo["parameters"]["jsCode"]
+    assert "if (!r || r.notify !== true)" in nodo["parameters"]["jsCode"]
 
 
 def test_radar_sin_texto_no_dispara_telegram():
@@ -121,7 +122,7 @@ def test_radar_sin_texto_no_dispara_telegram():
     w = _cargar("06-radar-ia.json")
     filtro = next(n for n in w["nodes"] if n["name"] == "Solo si hay radar")
     code = filtro["parameters"]["jsCode"]
-    assert "r.success === false || !r.text" in code
+    assert "r.notify !== true" in code
     assert w["connections"]["Rafita radar"]["main"][0][0]["node"] == "Solo si hay radar"
     assert w["connections"]["Solo si hay radar"]["main"][0][0]["node"] == "Enviar Telegram"
     # el informe de ejecución sigue conectado en paralelo
@@ -136,7 +137,7 @@ def _destinos(w: dict, origen: str) -> list[str]:
 def test_02_guarda_solo_si_urgente():
     w = _cargar("02-inbox-zero.json")
     guard = next(n for n in w["nodes"] if n["name"] == "Solo si urgente")
-    assert "if (!r.urgent_count) { return []; }" in guard["parameters"]["jsCode"]
+    assert "if (!r || r.notify !== true) { return []; }" in guard["parameters"]["jsCode"]
     assert "Solo si urgente" in _destinos(w, "Rafita inbox-scan")
     assert "Firmar informe" in _destinos(w, "Rafita inbox-scan")
     assert _destinos(w, "Solo si urgente") == ["Enviar Telegram"]
@@ -145,7 +146,7 @@ def test_02_guarda_solo_si_urgente():
 def test_04_guarda_solo_si_cambios_sync():
     w = _cargar("04-sync-google-vault.json")
     guard = next(n for n in w["nodes"] if n["name"] == "Solo si cambios")
-    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "if (!r || r.notify !== true) { return []; }" in guard["parameters"]["jsCode"]
     assert "Solo si cambios" in _destinos(w, "Rafita sync")
     assert _destinos(w, "Solo si cambios") == ["Enviar Telegram"]
 
@@ -155,10 +156,7 @@ def test_05_guarda_solo_si_hay_informe():
     # enviaba Telegram pese a reportar success.
     w = _cargar("05-informe-semanal.json")
     guard = next(n for n in w["nodes"] if n["name"] == "Solo si hay informe")
-    assert (
-        "if (!r || r.success === false || !r.text) { return []; }"
-        in (guard["parameters"]["jsCode"])
-    )
+    assert "if (!r || r.notify !== true) { return []; }" in guard["parameters"]["jsCode"]
     assert "Solo si hay informe" in _destinos(w, "Rafita informe")
     assert "Firmar informe" in _destinos(w, "Rafita informe")
     assert _destinos(w, "Solo si hay informe") == ["Enviar Telegram"]
@@ -167,7 +165,7 @@ def test_05_guarda_solo_si_hay_informe():
 def test_09_guarda_solo_si_pendientes():
     w = _cargar("09-crm-seguimiento.json")
     guard = next(n for n in w["nodes"] if n["name"] == "Solo si pendientes")
-    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "if (!r || r.notify !== true) { return []; }" in guard["parameters"]["jsCode"]
     assert "Solo si pendientes" in _destinos(w, "Rafita crm-remind")
     assert "Firmar informe" in _destinos(w, "Rafita crm-remind")
     assert _destinos(w, "Solo si pendientes") == ["Enviar Telegram"]
@@ -176,7 +174,7 @@ def test_09_guarda_solo_si_pendientes():
 def test_10_guarda_solo_si_cambios():
     w = _cargar("10-secuencias-email.json")
     guard = next(n for n in w["nodes"] if n["name"] == "Solo si cambios")
-    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "if (!r || r.notify !== true) { return []; }" in guard["parameters"]["jsCode"]
     assert "Solo si cambios" in _destinos(w, "Rafita secuencias")
     assert "Firmar informe" in _destinos(w, "Rafita secuencias")
     assert _destinos(w, "Solo si cambios") == ["Enviar Telegram"]
@@ -202,6 +200,24 @@ def test_08_plantilla_aviso_sin_telegram():
     assert _destinos(w, "Cada dia 09:00") == ["Payload aviso"]
     assert _destinos(w, "Manual (chat)") == ["Payload aviso"]
     assert "Firmar informe" in _destinos(w, "Enviar a Rafita")
+
+
+def test_guardas_de_todos_los_flujos_leen_flag_notify():
+    # Línea 68: `notify` del backend es el único interruptor de silencio;
+    # toda guarda de texto («Solo si…» o «Mensaje Telegram») lo exige
+    # (fail-closed: sin la clave o en false, jamás se avisa).
+    vistas = 0
+    for f in FLUJOS:
+        w = json.loads(f.read_text(encoding="utf-8"))
+        for n in w["nodes"]:
+            if not (n["name"].startswith("Solo si") or n["name"] == "Mensaje Telegram"):
+                continue
+            code = n.get("parameters", {}).get("jsCode", "")
+            if not code:
+                continue
+            assert "r.notify !== true" in code, "%s/%s sin flag notify" % (f.name, n["name"])
+            vistas += 1
+    assert vistas >= 7
 
 
 def test_readme_n8n_refleja_la_realidad():

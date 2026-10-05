@@ -135,8 +135,14 @@ def _fallo(mensaje: str) -> dict:
 
     El nodo 'Firmar informe' de n8n detecta el fallo por la clave `error`;
     `message` es la version legible para humanos/herramientas.
+    `notify: False` es el flag generico de silencio: un error jamas avisa.
     """
-    return {"success": False, "error": mensaje[:200], "message": mensaje[:200]}
+    return {
+        "success": False,
+        "error": mensaje[:200],
+        "message": mensaje[:200],
+        "notify": False,
+    }
 
 
 def _resultado(result):
@@ -144,11 +150,28 @@ def _resultado(result):
 
     Exito: {success: true, ...}. Fallo de servicio (HTTP 200): se anade la
     clave `error` para que n8n marque la ejecucion como error en vez de ok.
+    Todo dict lleva ademas `notify: False` por defecto (flag generico de
+    silencio); los endpoints lo encienden con `_notificar()` cuando hay
+    informacion relevante que merece aviso por Telegram.
     """
-    if isinstance(result, dict) and result.get("success") is False and "error" not in result:
-        mensaje = str(result.get("message") or "fallo en el backend")
-        result = dict(result)
-        result["error"] = mensaje[:200]
+    if isinstance(result, dict):
+        if result.get("success") is False and "error" not in result:
+            mensaje = str(result.get("message") or "fallo en el backend")
+            result = dict(result)
+            result["error"] = mensaje[:200]
+        result.setdefault("notify", False)
+    return result
+
+
+def _notificar(result, clave: str):
+    """Flag generico de silencio (calidad linea 68): `notify` solo se enciende
+    si el campo `clave` de la respuesta trae contenido relevante para el
+    aviso de Telegram. Las guardas de n8n exigen `r.notify === true`
+    (fail-closed): una respuesta de error o sin la clave nunca spamea.
+    """
+    result = _resultado(result)
+    if isinstance(result, dict):
+        result["notify"] = bool(result.get(clave))
     return result
 
 
@@ -555,7 +578,7 @@ async def automation_briefing(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import build_briefing
 
-    return _resultado(await build_briefing())
+    return _notificar(await build_briefing(), "text")
 
 
 @app.post("/automation/inbox-scan")
@@ -569,11 +592,12 @@ async def automation_inbox_scan(request: Request):
         payload = {}
     from src.services.automation_service import scan_inbox
 
-    return _resultado(
+    return _notificar(
         await scan_inbox(
             hours=int(payload.get("hours", 2) or 2),
             max_results=int(payload.get("max_results", 8) or 8),
-        )
+        ),
+        "urgent_count",
     )
 
 
@@ -605,7 +629,7 @@ async def automation_radar(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import radar
 
-    return _resultado(await radar())
+    return _notificar(await radar(), "text")
 
 
 @app.post("/automation/infra-report")
@@ -615,7 +639,7 @@ async def automation_infra_report(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import infra_report
 
-    return _resultado(await infra_report())
+    return _notificar(await infra_report(), "text")
 
 
 @app.post("/automation/send-voice")
@@ -652,7 +676,8 @@ async def automation_send_voice(request: Request):
     try:
         await _bot_ref.send_voice(int(target), str(ogg))
         logger.info("Automation: nota de voz enviada a %s", target)
-        return {"success": True, "sent_to": target}
+        # La nota de voz ya se entrego: n8n no anade ningun texto mas.
+        return _resultado({"success": True, "sent_to": target})
     except Exception as e:
         logger.error("Automation send-voice fallo: %s", e)
         return JSONResponse(status_code=500, content=_fallo(str(e)))
@@ -668,7 +693,7 @@ async def automation_sync(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.sync_service import sync_google_vault
 
-    return _resultado(await sync_google_vault())
+    return _notificar(await sync_google_vault(), "changes")
 
 
 @app.post("/automation/crm-remind")
@@ -686,19 +711,22 @@ async def automation_crm_remind(request: Request):
     dias = int(payload.get("dias", 7) or 7)
     pendientes = await seguimientos_pendientes(dias=dias)
     if not pendientes:
-        return {"success": True, "changes": 0, "clients": [], "message": ""}
+        return _notificar({"success": True, "changes": 0, "clients": [], "message": ""}, "changes")
     lineas = ["🔔 *Seguimiento de clientes*"]
     for cliente in pendientes[:10]:
         paso = (" → %s" % cliente["proximo_paso"]) if cliente.get("proximo_paso") else ""
         lineas.append(
             "  • *%s* (%s): %s%s" % (cliente["nombre"], cliente["estado"], cliente["motivo"], paso)
         )
-    return {
-        "success": True,
-        "changes": len(pendientes),
-        "clients": pendientes,
-        "message": "\n".join(lineas),
-    }
+    return _notificar(
+        {
+            "success": True,
+            "changes": len(pendientes),
+            "clients": pendientes,
+            "message": "\n".join(lineas),
+        },
+        "changes",
+    )
 
 
 @app.post("/automation/sequences-run")
@@ -713,11 +741,12 @@ async def automation_sequences_run(request: Request):
         raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     from src.services.sequence_service import ejecutar_secuencias
 
-    return _resultado(
+    return _notificar(
         await ejecutar_secuencias(
             dry_run=bool(payload.get("dry_run", False)),
             max_envios=int(payload.get("max_envios", 3) or 3),
-        )
+        ),
+        "changes",
     )
 
 
