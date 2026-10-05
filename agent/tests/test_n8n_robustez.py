@@ -128,6 +128,82 @@ def test_radar_sin_texto_no_dispara_telegram():
     assert any(c["node"] == "Firmar informe" for c in w["connections"]["Rafita radar"]["main"][0])
 
 
+def _destinos(w: dict, origen: str) -> list[str]:
+    salida = w["connections"].get(origen, {}).get("main", [[]])[0]
+    return [c["node"] for c in salida]
+
+
+def test_02_guarda_solo_si_urgente():
+    w = _cargar("02-inbox-zero.json")
+    guard = next(n for n in w["nodes"] if n["name"] == "Solo si urgente")
+    assert "if (!r.urgent_count) { return []; }" in guard["parameters"]["jsCode"]
+    assert "Solo si urgente" in _destinos(w, "Rafita inbox-scan")
+    assert "Firmar informe" in _destinos(w, "Rafita inbox-scan")
+    assert _destinos(w, "Solo si urgente") == ["Enviar Telegram"]
+
+
+def test_04_guarda_solo_si_cambios_sync():
+    w = _cargar("04-sync-google-vault.json")
+    guard = next(n for n in w["nodes"] if n["name"] == "Solo si cambios")
+    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "Solo si cambios" in _destinos(w, "Rafita sync")
+    assert _destinos(w, "Solo si cambios") == ["Enviar Telegram"]
+
+
+def test_05_guarda_solo_si_hay_informe():
+    # Regresión D13: esta guarda quedó desconectada y el informe semanal no
+    # enviaba Telegram pese a reportar success.
+    w = _cargar("05-informe-semanal.json")
+    guard = next(n for n in w["nodes"] if n["name"] == "Solo si hay informe")
+    assert (
+        "if (!r || r.success === false || !r.text) { return []; }"
+        in (guard["parameters"]["jsCode"])
+    )
+    assert "Solo si hay informe" in _destinos(w, "Rafita informe")
+    assert "Firmar informe" in _destinos(w, "Rafita informe")
+    assert _destinos(w, "Solo si hay informe") == ["Enviar Telegram"]
+
+
+def test_09_guarda_solo_si_pendientes():
+    w = _cargar("09-crm-seguimiento.json")
+    guard = next(n for n in w["nodes"] if n["name"] == "Solo si pendientes")
+    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "Solo si pendientes" in _destinos(w, "Rafita crm-remind")
+    assert "Firmar informe" in _destinos(w, "Rafita crm-remind")
+    assert _destinos(w, "Solo si pendientes") == ["Enviar Telegram"]
+
+
+def test_10_guarda_solo_si_cambios():
+    w = _cargar("10-secuencias-email.json")
+    guard = next(n for n in w["nodes"] if n["name"] == "Solo si cambios")
+    assert "if (!r.changes) { return []; }" in guard["parameters"]["jsCode"]
+    assert "Solo si cambios" in _destinos(w, "Rafita secuencias")
+    assert "Firmar informe" in _destinos(w, "Rafita secuencias")
+    assert _destinos(w, "Solo si cambios") == ["Enviar Telegram"]
+
+
+def test_03_captura_sin_telegram_y_siempre_reporta():
+    # La captura nunca spamea Telegram (la notificación la decide el agente);
+    # sus dos triggers comparten payload y siempre se reporta la ejecución.
+    w = _cargar("03-captura-vault.json")
+    nombres = {n["name"] for n in w["nodes"]}
+    assert not any("Telegram" in n for n in nombres)
+    assert _destinos(w, "Webhook") == ["Payload captura"]
+    assert _destinos(w, "Manual (chat)") == ["Payload captura"]
+    assert "Firmar informe" in _destinos(w, "Rafita captura")
+
+
+def test_08_plantilla_aviso_sin_telegram():
+    # Plantilla de ejemplo (pausada): entrega vía /webhook/n8n del agente,
+    # sin Telegram directo, con doble trigger y reporte siempre conectado.
+    w = _cargar("08-plantilla-aviso-programado.json")
+    nombres = {n["name"] for n in w["nodes"]}
+    assert not any("Telegram" in n for n in nombres)
+    assert _destinos(w, "Cada dia 09:00") == ["Payload aviso"]
+    assert _destinos(w, "Manual (chat)") == ["Payload aviso"]
+    assert "Firmar informe" in _destinos(w, "Enviar a Rafita")
+
+
 def test_readme_n8n_refleja_la_realidad():
     # D10 (2026-10-05): el README decia /automation/brief (el real es
     # /automation/briefing), un payload de captura con "message" (el real es
