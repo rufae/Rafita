@@ -174,8 +174,9 @@ en el gate):
 | `ADMIN_IDS` | Chat de destino (el primer id). |
 | `N8N_WEBHOOKS` | Mapa nombre→URL para lanzar flujos desde el chat (`{"ejemplo": "http://n8n:5678/webhook/..."}`). |
 
-Los flujos **no hornean secretos** (D13): leen `$env` (nodos HTTP) y
-`process.env` (nodos Code) dentro de n8n. `deploy/hp/docker-compose.n8n.yml`
+Los flujos **no hornean secretos** (D13): usan `$env` tanto en las
+expresiones HTTP como dentro de los nodos Code (el sandbox de n8n no
+da `process`, pero sí `$env`). `deploy/hp/docker-compose.n8n.yml`
 inyecta `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`, `RAFITA_CHAT_ID` (primer
 `ADMIN_IDS`) y `RAFITA_URL` (por defecto `http://rafita-agent-core:8000`)
 desde el `.env` del repo; si cambias esos valores, recrea el contenedor
@@ -190,8 +191,8 @@ python scripts/n8n_import_flows.py --activate      # además activa por CLI (en 
 ```
 
 También puedes importarlos a mano: en n8n → *Workflows* → *Import from File*.
-No hay placeholders que sustituir: las plantillas usan `$env` /
-`process.env` y el contenedor n8n aporta los valores (ver *Requisitos*).
+No hay placeholders que sustituir: las plantillas usan `$env` y el
+contenedor n8n aporta los valores (ver *Requisitos*).
 
 La **activación** no está en la API pública:
 

@@ -61,8 +61,8 @@ def test_config_por_entorno_sin_placeholders():
         encoding="utf-8"
     )
     assert "$env.TELEGRAM_TOKEN" in briefing
-    assert "process.env.WEBHOOK_SECRET" in briefing
-    assert "process.env.RAFITA_CHAT_ID" in briefing
+    assert "$env.WEBHOOK_SECRET" in briefing
+    assert "$env.RAFITA_CHAT_ID" in briefing
     assert "$env.RAFITA_URL" in briefing
 
 
