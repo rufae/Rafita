@@ -11,8 +11,10 @@
 #   git reset --hard → restaurar solo-HP → up -d --build con
 #   measure-readiness → health gate de /ready → si no vuelve en 3 min:
 #   ROLLBACK completo (código + árbol previo + recreate).
-# Proyectos genéricos: fetch → si hay commits y el árbol está limpio →
-# reset --hard + hook opcional; si el árbol está sucio se salta y avisa.
+# Proyectos genéricos: fetch → si hay commits nuevos → si hay cambios
+# locales tracked: stash → reset --hard → reaplicar stash (pop) → hook
+# opcional. Si el pop choca, árbol limpio en el nuevo commit y el stash se
+# conserva (aviso por Telegram). Los untracked no se tocan.
 #
 # Uso:  bash scripts/auto_update.sh [--force]
 #   --force  actualiza Rafita aunque HEAD ya esté en el remoto (pruebas)
@@ -134,13 +136,18 @@ actualizar_rafita() {
 }
 
 # ------------------------------------------------------- otros proyectos ---
-# Un proyecto genérico: fetch → commits nuevos → árbol limpio → reset +
-# hook opcional (p. ej. "docker compose up -d --build"). Nunca toca árboles
-# con cambios locales (se avisa y se salta). Los fallos notifican; lo
-# normal (sin cambios) solo se registra en el log.
+# Un proyecto genérico: fetch → commits nuevos → (si hay cambios locales
+# tracked: stash) → reset --hard → reaplicar el stash → hook opcional
+# (p. ej. "docker compose up -d --build"). Los cambios locales tracked no
+# se pierden nunca: se guardan en stash y se reaplican tras el pull; si
+# reaplicar choca, se deja el árbol limpio en el nuevo commit y el stash
+# se conserva para resolverlo a mano (aviso por Telegram). Los archivos
+# untracked no se tocan (reset --hard solo falla si el commit entrante
+# añade un nombre que ya existe sin trackear; eso se trata como error).
+# Los fallos notifican; lo normal (sin cambios) solo se registra en el log.
 actualizar_generico() {
     local nom="$1" dir="$2" branch="$3" remote="$4" hook="$5"
-    local OLD_SHA NEW_SHA
+    local OLD_SHA NEW_SHA STASHED=0
     if [ ! -d "$dir/.git" ]; then
         log "$nom: no es un repo git ($dir); se omite"
         return 0
@@ -156,15 +163,35 @@ actualizar_generico() {
         log "$nom: sin cambios: ya en $OLD_SHA"
         return 0
     fi
-    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
-        log "$nom: hay cambios locales en $dir; se salta $OLD_SHA..$NEW_SHA"
-        notify "⚠️ Auto-update $nom: cambios locales en $dir; no se actualiza a $(echo "$NEW_SHA" | cut -c1-8) (commitea o descarta antes)."
-        return 0
+    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null | grep -v '^??')" ]; then
+        # Hay cambios tracked: stash previo (los untracked quedan donde están).
+        if ! git -C "$dir" stash push -m "auto-update $nom $(date +%Y%m%d-%H%M%S)" >>"$LOG" 2>&1; then
+            log "$nom: hay cambios locales y el stash falló en $dir; se salta $OLD_SHA..$NEW_SHA"
+            notify "⚠️ Auto-update $nom: cambios locales en $dir y el stash falló; no se actualiza a $(echo "$NEW_SHA" | cut -c1-8)."
+            return 0
+        fi
+        STASHED=1
+        log "$nom: cambios locales en stash (previo a $OLD_SHA..$NEW_SHA)"
     fi
     if ! git -C "$dir" reset --hard "$NEW_SHA" >>"$LOG" 2>&1; then
+        # Devolver los cambios stashados y volver al estado previo.
+        if [ "$STASHED" = 1 ]; then
+            git -C "$dir" stash pop >>"$LOG" 2>&1 || true
+        fi
         log "$nom: ERROR reset a $NEW_SHA falló; se mantiene $OLD_SHA"
         notify "🔴 Auto-update $nom: git reset falló; se mantiene $(echo "$OLD_SHA" | cut -c1-8)."
         return 1
+    fi
+    if [ "$STASHED" = 1 ]; then
+        if git -C "$dir" stash pop >>"$LOG" 2>&1; then
+            log "$nom: cambios locales reaplicados tras el pull"
+        else
+            # Conflicto al reaplicar: árbol limpio en NEW, stash intacto.
+            git -C "$dir" reset --hard "$NEW_SHA" >>"$LOG" 2>&1 || true
+            log "$nom: AVISO: cambios locales no reaplicables (conflicto); se conservan en stash de $dir (git stash list)"
+            notify "⚠️ Auto-update $nom: actualizado a $(echo "$NEW_SHA" | cut -c1-8), pero los cambios locales chocaron al reaplicarse; están en 'git stash list' de $dir — resuelve y haz pop a mano."
+            return 1
+        fi
     fi
     if [ -n "$hook" ]; then
         if ! (cd "$dir" && eval "$hook") >>"$LOG" 2>&1; then
