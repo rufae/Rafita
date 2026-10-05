@@ -1556,3 +1556,139 @@ async def detect_commitments(force: bool = False) -> dict[str, Any]:
         "omitidas_baja_confianza": omitidas,
         "fuentes": fuentes,
     }
+
+
+# --------------- Seguimiento generico de correo enviado sin respuesta -----
+
+
+def _primer_email(cabecera: str) -> str:
+    """Extrae el primer email de una cabecera To: 'Nombre <a@b>' o lista."""
+    import re
+
+    encontrado = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", cabecera or "")
+    return encontrado.group(0).lower() if encontrado else ""
+
+
+async def check_unanswered_sent(
+    dias: int = 3, max_scan: int = 8, force: bool = False
+) -> dict[str, Any]:
+    """Idea 15: avisa de correos enviados hace >= `dias` sin respuesta.
+
+    Rastreador generico (no hay que crear una secuencia a mano): busca en
+    `in:sent`, comprueba si el destinatario ha respondido (`from:`), excluye
+    los destinatarios que ya tienen secuencia activa (esos ya tienen su
+    propio flujo) y deduplica por id en KV. Un aviso por correo, una vez.
+    Honestidad: sin Google o si algo falla, se devuelve el motivo en claro.
+    """
+    import email.utils
+    from datetime import UTC
+
+    from src.database import db
+
+    hoy = datetime.now(UTC).strftime("%Y-%m-%d")
+    if not force and (await db.kv_get("unanswered:last")) == hoy:
+        return {"success": True, "skipped": "ya ejecutado hoy", "avisos": []}
+
+    try:
+        from src.services.google_services_manager import google_services
+
+        if not (await google_services.initialize()) or not google_services.is_ready:
+            try:
+                await db.kv_set("unanswered:last", hoy)
+            except Exception:
+                pass
+            return {"success": False, "message": "Google no conectado", "avisos": []}
+
+        # Destinatarios con secuencia propia: no se duplica el aviso.
+        excluidos: set[str] = set()
+        try:
+            for seq in await db.list_sequences():
+                if str(seq.get("status") or "") == "active":
+                    correo = str(seq.get("contact_email") or "").strip().lower()
+                    if correo:
+                        excluidos.add(correo)
+        except Exception:
+            pass
+
+        enviados = (
+            await google_services.search_gmail(
+                "in:sent newer_than:%dd" % (dias + 4), max_results=max_scan
+            )
+        ).get("messages", [])
+
+        avisos: list[dict[str, Any]] = []
+        for m in enviados:
+            subject = str(m.get("subject") or "(sin asunto)")
+            if subject.lower().startswith("re:"):
+                continue  # es un hilo de una conversacion existente
+            destinatario = _primer_email(str(m.get("to") or ""))
+            if not destinatario or destinatario in excluidos:
+                continue
+            try:
+                enviado = email.utils.parsedate_to_datetime(str(m.get("date") or ""))
+                if enviado.tzinfo is None:
+                    enviado = enviado.replace(tzinfo=UTC)
+                antiguedad = (datetime.now(UTC) - enviado).days
+            except Exception:
+                continue
+            if antiguedad < max(1, int(dias)):
+                continue
+            # ¿Ha respondido el destinatario desde que se envio?
+            respuestas = (
+                await google_services.search_gmail(
+                    "from:%s newer_than:%dd" % (destinatario, antiguedad + 1),
+                    max_results=1,
+                )
+            ).get("messages", [])
+            if respuestas:
+                continue
+            clave = "unanswered:seen:%s" % (m.get("id") or subject)
+            if await db.kv_get(clave):
+                continue
+            try:
+                await db.add_alert(
+                    chat_id=int((settings.admin_ids or [0])[0]),
+                    message="✉️ Sin respuesta (%d d): «%s» → %s"
+                    % (antiguedad, subject[:80], destinatario),
+                    alert_type="warning",
+                    expires_at=hoy,
+                )
+            except Exception as e:
+                logger.warning("Sin respuesta: alerta no creada (%s)", str(e)[:80])
+            await db.kv_set(clave, "1")
+            avisos.append(
+                {
+                    "asunto": subject,
+                    "destinatario": destinatario,
+                    "dias": antiguedad,
+                }
+            )
+
+        try:
+            await db.kv_set("unanswered:last", hoy)
+        except Exception as e:
+            logger.warning("Sin respuesta: no se pudo guardar el gate (%s)", str(e)[:80])
+
+        if avisos:
+            texto = "📮 *Correos enviados sin respuesta:*\n" + "\n".join(
+                "- «%s» → %s (hace %d d)" % (a["asunto"][:60], a["destinatario"], a["dias"])
+                for a in avisos
+            )
+            try:
+                from src.bot import bot
+
+                for cid in settings.admin_ids or []:
+                    await bot.send_proactive_message(cid, texto)
+            except Exception as e:
+                logger.warning("Sin respuesta: aviso no enviado (%s)", str(e)[:80])
+
+        logger.info("Sin respuesta: %d avisos de %d enviados", len(avisos), len(enviados))
+        return {
+            "success": True,
+            "avisos": avisos,
+            "escaneados": len(enviados),
+            "excluidos_secuencias": len(excluidos),
+        }
+    except Exception as e:
+        logger.warning("Sin respuesta: fallo (%s)", str(e)[:120])
+        return {"success": False, "error": str(e)[:150], "avisos": []}
