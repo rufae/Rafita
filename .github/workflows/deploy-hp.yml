@@ -1,0 +1,16 @@
+name: deploy-hp
+
+# Despliega en el nodo HP al hacer push (runner auto-hospedado en el propio
+# HP; sin puertos abiertos). El timer diario de las 05:30 se mantiene como
+# red de seguridad. El lock dentro de auto_update.sh evita solapes.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: auto_update (Rafita + projects.conf)
+        run: bash "$HOME/proyectos/rafita/scripts/auto_update.sh"

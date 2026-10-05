@@ -33,6 +33,15 @@ mkdir -p "$STATE"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >>"$LOG"; }
 
+# Un solo proceso a la vez (timer diario + runner de GitHub Actions +
+# ejecuciones manuales): si otro está corriendo, esta instancia sale.
+LOCK="$STATE/auto-update.lock"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] otra ejecución en curso (lock); se omite" >>"$LOG"
+    exit 0
+fi
+
 wait_ready() {
     local i
     for i in $(seq 1 "$READY_TIMEOUT"); do
