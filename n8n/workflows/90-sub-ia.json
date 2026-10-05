@@ -1,0 +1,107 @@
+{
+  "name": "Rafita · Sub · IA",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9000000f-0000-4000-8000-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Construye el prompt para el LLM local (D14 · Sub · IA).\nconst j = $input.first().json || {};\nconst origen = j.text || (j.recibido && j.recibido.text) || j.message || JSON.stringify(j);\nconst texto = String(origen).slice(0, 4000);\nreturn [{ json: { prompt:\n  'Resume en maximo 3 frases, en espanol y sin rodeos, el siguiente texto:\\n\\n' + texto\n} }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000f-0000-4000-8000-000000000002",
+      "name": "Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.OLLAMA_URL || 'http://127.0.0.1:11434') + '/api/generate' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: $env.OLLAMA_MODEL || 'qwen2.5:7b',\n  prompt: $json.prompt,\n  stream: false,\n  options: { temperature: 0.2 }\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "9000000f-0000-4000-8000-000000000003",
+      "name": "Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza la respuesta del LLM (o el fallo) al esquema del sub.\nconst j = $input.first().json || {};\nif (j.response) {\n  return [{ json: { ok: true, resumen: String(j.response).slice(0, 3000), model: j.model || '' } }];\n}\nreturn [{ json: {\n  ok: false,\n  error: String((j.error && j.error.message) || j.error || 'LLM no disponible').slice(0, 400),\n} }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000f-0000-4000-8000-000000000004",
+      "name": "Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt": {
+      "main": [
+        [
+          {
+            "node": "Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama": {
+      "main": [
+        [
+          {
+            "node": "Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

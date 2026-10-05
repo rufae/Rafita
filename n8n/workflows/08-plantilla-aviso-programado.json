@@ -25,17 +25,27 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "// Firma HMAC del cuerpo, exactamente como lo espera el gateway de Rafita.\n// Config por entorno (D13): WEBHOOK_SECRET y RAFITA_CHAT_ID los inyecta\n// docker-compose.n8n.yml en el contenedor n8n; nada que horneear aqui.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst payload = {\n  chat_id: Number($env.RAFITA_CHAT_ID || '0'),\n  message: '⏰ Aviso de n8n: esto es un ejemplo de notificacion proactiva.',\n};\nconst body = JSON.stringify(payload);\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "value": "__SUB__:Rafita · Sub · Autenticación"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
       },
       "id": "a1000001-0000-4000-8000-000000000002",
       "name": "Firmar HMAC",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
       "position": [
         220,
         0
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -74,7 +84,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Contexto del informe de ejecucion (D14): la firma y el POST\n// viven en Rafita · Sub · Logs; aqui solo se monta el report.\nconst j = $input.first().json;\nconst error = j && j.error;\nreturn [{ json: { report: {\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status: error ? 'error' : 'ok',\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n} } }];"
       },
       "id": "a1000001-0000-4000-8000-0000000000E1",
       "name": "Firmar informe",
@@ -87,29 +97,20 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ ($env.RAFITA_URL || 'http://rafita-agent-core:8000') + '/api/n8n/run' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-Webhook-Signature",
-              "value": "={{ $json.signature }}"
-            }
-          ]
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "value": "__SUB__:Rafita · Sub · Logs"
         },
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ $json.body }}",
+        "mode": "once",
         "options": {
-          "timeout": 10000
+          "waitForSubWorkflow": true
         }
       },
       "id": "a1000001-0000-4000-8000-0000000000E2",
       "name": "Reportar a Rafita",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
       "position": [
         660,
         240
@@ -134,6 +135,20 @@
         -400,
         -200
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Payload del aviso (chat_id de $env); la firma vive en Sub · Autenticación.\n// Config por entorno (D13): WEBHOOK_SECRET y RAFITA_CHAT_ID los inyecta\n// docker-compose.n8n.yml en el contenedor n8n; nada que horneear aqui.\nconst payload = {\n  chat_id: Number($env.RAFITA_CHAT_ID || '0'),\n  message: '⏰ Aviso de n8n: esto es un ejemplo de notificacion proactiva.',\n};\nreturn [{ json: { payload: payload } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "d14-3932812d6c03da17",
+      "name": "Payload aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ]
     }
   ],
   "connections": {
@@ -141,7 +156,7 @@
       "main": [
         [
           {
-            "node": "Firmar HMAC",
+            "node": "Payload aviso",
             "type": "main",
             "index": 0
           }
@@ -185,6 +200,17 @@
       "main": [
         [
           {
+            "node": "Payload aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload aviso": {
+      "main": [
+        [
+          {
             "node": "Firmar HMAC",
             "type": "main",
             "index": 0
@@ -194,6 +220,7 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "__SUB__:Rafita · Sub · Errores"
   }
 }

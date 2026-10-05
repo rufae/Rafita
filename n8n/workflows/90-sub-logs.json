@@ -1,0 +1,91 @@
+{
+  "name": "Rafita · Sub · Logs",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9000000a-0000-4000-8000-000000000001",
+      "name": "Entrada",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Firma HMAC del informe (unica fuente de createHmac de reports).\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst j = $input.first().json || {};\nconst body = JSON.stringify(j.report || {});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "id": "9000000a-0000-4000-8000-000000000002",
+      "name": "Firmar informe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.RAFITA_URL || 'http://rafita-agent-core:8000') + '/api/n8n/run' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "9000000a-0000-4000-8000-000000000003",
+      "name": "Reportar a Rafita",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Entrada": {
+      "main": [
+        [
+          {
+            "node": "Firmar informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firmar informe": {
+      "main": [
+        [
+          {
+            "node": "Reportar a Rafita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
