@@ -47,7 +47,8 @@ degrada (lo reporta en `automation_runs`) en vez de tumbarse.
   con vencimientos, correos importantes, tiempo (AEMET) y estado del servidor.
 - **Resultado**: mensaje en Telegram con botones de acción y **nota de voz**
   con el resumen (`/automation/send-voice`). El filtro «Mensaje Telegram»
-  no envía nada si Rafita falla o no devuelve texto (sin `undefined`).
+  exige el flag `notify: true` del backend: sin él no envía nada (sin
+  `undefined`).
 - **Dependencias**: Google conectado (agenda/tareas/correo; con la BD local
   degrada a lo disponible), AEMET (tiempo/avisos), Ollama (redacción),
   `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`.
@@ -85,7 +86,8 @@ degrada (lo reporta en `automation_runs`) en vez de tumbarse.
 - **Cómo se ejecuta**: pide a Rafita el sync (`/automation/sync`): contactos,
   eventos, tareas, Drive y correo se vuelcan/actualizan en notas locales y se
   marcan cambios; degrada por fuente (si una sección cae, las demás siguen).
-- **Resultado**: aviso por Telegram **solo si hay cambios**; si no, silencio.
+- **Resultado**: aviso por Telegram **solo si hay cambios** (el backend
+  responde `notify: true`); si no, `notify: false` y silencio.
 - **Dependencias**: Google conectado (permisos Calendar/Drive/Tasks/Gmail/
   People), bóveda, `TELEGRAM_TOKEN`.
 
@@ -105,7 +107,8 @@ degrada (lo reporta en `automation_runs`) en vez de tumbarse.
 - **Cómo se ejecuta**: recorre fuentes (GitHub/RSS), filtra las novedades con
   IA según tus intereses y selecciona las mejores.
 - **Resultado**: nota en la bóveda con lo más relevante del día + aviso en
-  Telegram solo si hay radar real (filtro «Solo si hay radar»).
+  Telegram solo si hay radar real (filtro «Solo si hay radar», exige
+  `notify: true`).
 - **Dependencias**: salida a internet (GitHub/RSS), Ollama, bóveda,
   `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`.
 
@@ -215,6 +218,13 @@ en el gate):
   Rafita y a Telegram. Si un servicio cae, el flujo **degrada** (los filtros
   posteriores no avisan con basura, y el nodo «Mensaje Telegram» no manda
   `undefined`) en vez de tumbarse ni spamear.
+- **Flag genérico de silencio (`notify`)**: toda respuesta de
+  `POST /automation/*` lleva la clave `notify` (calidad línea 68); el
+  backend solo la enciende cuando el campo relevante trae contenido
+  (`text`, `urgent_count`, `changes`) y **todas** las guardas «Solo si…»
+  exigen `r.notify === true` — fail-closed: sin la clave o en `false`,
+  jamás se avisa. Cubierto por `test_endpoints_automation_encienden_notify_
+  solo_con_info` y `test_guardas_de_todos_los_flujos_leen_flag_notify`.
 - **Informe de cada ejecución**: una rama paralela con «Firmar informe» +
   «Reportar a Rafita» envía `{execution_id, workflow, status, severity, error,
   finished_at}` firmado con HMAC a `POST /api/n8n/run` (nivel de la taxonomía

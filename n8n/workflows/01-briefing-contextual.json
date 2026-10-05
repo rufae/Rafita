@@ -84,7 +84,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Fallo controlado: sin texto no se avisa (evita spam con 'undefined').\nconst r = $input.first().json;\nif (!r || !r.text) { return []; }\n// Construye el mensaje de Telegram: botones URL o de accion (callback).\nconst fila = (r.buttons || []).map(b => b.callback\n  ? { text: b.text, callback_data: b.callback }\n  : { text: b.text, url: b.url });\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text: r.text,\n  parse_mode: 'Markdown', disable_web_page_preview: true,\n  reply_markup: fila.length ? { inline_keyboard: [fila] } : undefined } }];"
+        "jsCode": "// Flag generico de silencio (calidad linea 68): solo avisa si el\n// backend enciende notify en la respuesta (fail-closed).\nconst r = $input.first().json;\nif (!r || r.notify !== true) { return []; }\n// Construye el mensaje de Telegram: botones URL o de accion (callback).\nconst fila = (r.buttons || []).map(b => b.callback\n  ? { text: b.text, callback_data: b.callback }\n  : { text: b.text, url: b.url });\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text: r.text,\n  parse_mode: 'Markdown', disable_web_page_preview: true,\n  reply_markup: fila.length ? { inline_keyboard: [fila] } : undefined } }];"
       },
       "id": "b2000001-0000-4000-8000-000000000004",
       "name": "Mensaje Telegram",
