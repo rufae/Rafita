@@ -19,7 +19,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Aqui va tu logica: facturas, informes, lo que quieras.\n// En modo 'todos los items' se usa $input (no $json).\nconst primero = $input.first().json;\nconst datos = primero.body || primero;\nreturn [{ json: { ok: true, mensaje: 'Flujo de ejemplo ejecutado', recibido: datos } }];"
+        "jsCode": "// Aqui va tu logica: facturas, informes, lo que quieras.\n// En modo 'todos los items' se usa $input (no $json).\nconst primero = $input.first().json;\nconst datos = primero.body || primero;\nreturn [{ json: { success: true, message: 'Flujo de ejemplo ejecutado', recibido: datos } }];"
       },
       "id": "a1000002-0000-4000-8000-000000000002",
       "name": "Procesar",
