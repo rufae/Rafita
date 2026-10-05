@@ -24,7 +24,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Firma HMAC de la peticion al gateway de Rafita.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst body = JSON.stringify({ hours: 2, max_results: 8 });\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Firma HMAC de la peticion al gateway de Rafita.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst body = JSON.stringify({ hours: 2, max_results: 8 });\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "b2000002-0000-4000-8000-000000000002",
       "name": "Firmar HMAC",
@@ -72,7 +72,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Solo avisa si hay correos urgentes o de clientes, con boton de respuesta.\nconst r = $input.first().json;\nif (!r.urgent_count) { return []; }\nconst items = (r.items || []).filter(i => i.categoria === 'urgente' || i.categoria === 'cliente');\nconst lineas = items.map(i => `*${i.categoria.toUpperCase()}* — ${i.subject} (de ${i.from})` + (i.borrador ? `\\n_borrador:_ ${i.borrador}` : '')).join('\\n\\n');\nconst text = `📥 *Inbox:* ${items.length} correo(s) que requieren atencion\\n\\n${lineas}`;\nconst botones = items.filter(i => i.token).slice(0, 4).map(i => [{ text: '✉️ Responder: ' + (i.from.split('<')[0].trim().slice(0, 18) || 'remitente'), callback_data: 'inbox_send:' + i.token }]);\nreturn [{ json: { chat_id: Number(process.env.RAFITA_CHAT_ID || '0'), text, parse_mode: 'Markdown', disable_web_page_preview: true, reply_markup: botones.length ? { inline_keyboard: botones } : undefined } }];"
+        "jsCode": "// Solo avisa si hay correos urgentes o de clientes, con boton de respuesta.\nconst r = $input.first().json;\nif (!r.urgent_count) { return []; }\nconst items = (r.items || []).filter(i => i.categoria === 'urgente' || i.categoria === 'cliente');\nconst lineas = items.map(i => `*${i.categoria.toUpperCase()}* — ${i.subject} (de ${i.from})` + (i.borrador ? `\\n_borrador:_ ${i.borrador}` : '')).join('\\n\\n');\nconst text = `📥 *Inbox:* ${items.length} correo(s) que requieren atencion\\n\\n${lineas}`;\nconst botones = items.filter(i => i.token).slice(0, 4).map(i => [{ text: '✉️ Responder: ' + (i.from.split('<')[0].trim().slice(0, 18) || 'remitente'), callback_data: 'inbox_send:' + i.token }]);\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text, parse_mode: 'Markdown', disable_web_page_preview: true, reply_markup: botones.length ? { inline_keyboard: botones } : undefined } }];"
       },
       "id": "b2000002-0000-4000-8000-000000000004",
       "name": "Solo si urgente",
@@ -110,7 +110,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "b2000002-0000-4000-8000-0000000000E1",
       "name": "Firmar informe",

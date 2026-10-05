@@ -26,7 +26,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Firma HMAC del cuerpo para el gateway de Rafita.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst body = JSON.stringify({});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Firma HMAC del cuerpo para el gateway de Rafita.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst body = JSON.stringify({});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "b2000001-0000-4000-8000-000000000002",
       "name": "Firmar HMAC",
@@ -74,7 +74,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Fallo controlado: sin texto no se avisa (evita spam con 'undefined').\nconst r = $input.first().json;\nif (!r || !r.text) { return []; }\n// Construye el mensaje de Telegram: botones URL o de accion (callback).\nconst fila = (r.buttons || []).map(b => b.callback\n  ? { text: b.text, callback_data: b.callback }\n  : { text: b.text, url: b.url });\nreturn [{ json: { chat_id: Number(process.env.RAFITA_CHAT_ID || '0'), text: r.text,\n  parse_mode: 'Markdown', disable_web_page_preview: true,\n  reply_markup: fila.length ? { inline_keyboard: [fila] } : undefined } }];"
+        "jsCode": "// Fallo controlado: sin texto no se avisa (evita spam con 'undefined').\nconst r = $input.first().json;\nif (!r || !r.text) { return []; }\n// Construye el mensaje de Telegram: botones URL o de accion (callback).\nconst fila = (r.buttons || []).map(b => b.callback\n  ? { text: b.text, callback_data: b.callback }\n  : { text: b.text, url: b.url });\nreturn [{ json: { chat_id: Number($env.RAFITA_CHAT_ID || '0'), text: r.text,\n  parse_mode: 'Markdown', disable_web_page_preview: true,\n  reply_markup: fila.length ? { inline_keyboard: [fila] } : undefined } }];"
       },
       "id": "b2000001-0000-4000-8000-000000000004",
       "name": "Mensaje Telegram",
@@ -112,7 +112,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Firma la peticion de nota de voz (mismo texto del briefing).\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst briefing = $('Mensaje Telegram').first().json;\nconst body = JSON.stringify({ text: briefing.text, chat_id: briefing.chat_id });\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Firma la peticion de nota de voz (mismo texto del briefing).\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst briefing = $('Mensaje Telegram').first().json;\nconst body = JSON.stringify({ text: briefing.text, chat_id: briefing.chat_id });\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "b2000001-0000-4000-8000-000000000006",
       "name": "Firmar voz",
@@ -160,7 +160,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = process.env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
+        "jsCode": "// Informe de ejecucion a Rafita (tareas.md Fase 1): firma HMAC.\nconst crypto = require('crypto');\nconst secret = $env.WEBHOOK_SECRET || '';\nconst j = $input.first().json;\nconst error = j && j.error;\nconst status = error ? 'error' : 'ok';\nconst body = JSON.stringify({\n  execution_id: $execution.id,\n  workflow: $workflow.name,\n  status,\n  severity: error ? 'error' : 'info',\n  error: error ? String(error.message || error.description || JSON.stringify(error)).slice(0, 400) : undefined,\n  finished_at: new Date().toISOString(),\n});\nconst signature = crypto.createHmac('sha256', secret).update(body).digest('hex');\nreturn [{ json: { body, signature } }];"
       },
       "id": "b2000001-0000-4000-8000-0000000000E1",
       "name": "Firmar informe",

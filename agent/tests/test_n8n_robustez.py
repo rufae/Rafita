@@ -89,7 +89,7 @@ def test_informe_firma_hmac_y_usa_execution_id():
     w = _cargar("01-briefing-contextual.json")
     firmar = next(n for n in w["nodes"] if n["name"] == "Firmar informe")
     code = firmar["parameters"]["jsCode"]
-    assert "process.env.WEBHOOK_SECRET" in code
+    assert "$env.WEBHOOK_SECRET" in code
     assert "$execution.id" in code
     assert "$workflow.name" in code
     assert "'error'" in code and "'ok'" in code
