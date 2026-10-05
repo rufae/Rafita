@@ -77,7 +77,9 @@ def test_flujos_con_rafita_reportan_sus_ejecuciones():
             "%s: informe no conectado a %s" % (f.name, criticos)
         )
         reporte = next(n for n in w["nodes"] if n["name"] == "Reportar a Rafita")
-        assert reporte["parameters"]["url"].endswith("/api/n8n/run")
+        # D13: la URL vive en una expresion con $env.RAFITA_URL + path fijo.
+        assert reporte["parameters"]["url"].endswith("'/api/n8n/run' }}")
+        assert "$env.RAFITA_URL" in reporte["parameters"]["url"]
         headers = reporte["parameters"]["headerParameters"]["parameters"]
         assert any(h["name"] == "X-Webhook-Signature" for h in headers)
         assert reporte.get("onError") == "continueRegularOutput"
@@ -87,7 +89,7 @@ def test_informe_firma_hmac_y_usa_execution_id():
     w = _cargar("01-briefing-contextual.json")
     firmar = next(n for n in w["nodes"] if n["name"] == "Firmar informe")
     code = firmar["parameters"]["jsCode"]
-    assert "PEGA_AQUI_TU_WEBHOOK_SECRET" in code
+    assert "process.env.WEBHOOK_SECRET" in code
     assert "$execution.id" in code
     assert "$workflow.name" in code
     assert "'error'" in code and "'ok'" in code
@@ -211,3 +213,35 @@ def test_flujos_envian_severity_en_el_informe():
             code = n["parameters"]["jsCode"]
             assert "severity: error ? 'error' : 'info'" in code, f.name
     assert con_informe == 9
+
+
+def test_telegram_alcanzable_desde_las_fuentes():
+    # Regresion real (D13, 2026-10-05): en el flujo 05 el nodo guard
+    # «Solo si hay informe» quedo sin conectar (Rafita informe apuntaba solo
+    # a Firmar informe) y el informe semanal no enviaba Telegram pese a
+    # reportar success. Este test exige que Enviar Telegram sea alcanzable.
+    import json as _json
+
+    for f in sorted((RAIZ / "n8n" / "workflows").glob("*.json")):
+        w = _json.loads(f.read_text(encoding="utf-8"))
+        nombres = {n["name"] for n in w["nodes"]}
+        if "Enviar Telegram" not in nombres:
+            continue
+        destinos = set()
+        for origen in w["connections"].values():
+            for arr in origen.get("main", []):
+                for c in arr:
+                    destinos.add(c["node"])
+        fuentes = nombres - destinos
+        alcanzables = set(fuentes)
+        cola = list(fuentes)
+        while cola:
+            actual = cola.pop()
+            for arr in w["connections"].get(actual, {}).get("main", []):
+                for c in arr:
+                    if c["node"] not in alcanzables:
+                        alcanzables.add(c["node"])
+                        cola.append(c["node"])
+        assert "Enviar Telegram" in alcanzables, (
+            "%s: Enviar Telegram no alcanzable (nodo huerfano)" % f.name
+        )
