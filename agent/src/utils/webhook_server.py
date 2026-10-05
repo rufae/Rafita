@@ -28,6 +28,19 @@ from src.utils.web_api import router as _web_router  # noqa: E402
 app.include_router(_web_router)
 
 
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    """Detalle dict en nivel raiz del cuerpo (esquema unico {success, error}).
+
+    FastAPI envuelve `detail` en {"detail": ...} y el nodo 'Firmar informe'
+    de n8n lee $json.error en la raiz; los detail-string se mantienen como
+    {"detail": ...} por compatibilidad.
+    """
+    if isinstance(exc.detail, dict):
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 def _mount_web_app() -> None:
     """Sirve la SPA en /app: build de produccion (web/app-dist) si existe y,
     si no, los sources (web/app) para desarrollo."""
@@ -117,12 +130,34 @@ def _verify_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def _fallo(mensaje: str) -> dict:
+    """Esquema unico de error de los endpoints /automation/*.
+
+    El nodo 'Firmar informe' de n8n detecta el fallo por la clave `error`;
+    `message` es la version legible para humanos/herramientas.
+    """
+    return {"success": False, "error": mensaje[:200], "message": mensaje[:200]}
+
+
+def _resultado(result):
+    """Normaliza la respuesta de un servicio al esquema unico.
+
+    Exito: {success: true, ...}. Fallo de servicio (HTTP 200): se anade la
+    clave `error` para que n8n marque la ejecucion como error en vez de ok.
+    """
+    if isinstance(result, dict) and result.get("success") is False and "error" not in result:
+        mensaje = str(result.get("message") or "fallo en el backend")
+        result = dict(result)
+        result["error"] = mensaje[:200]
+    return result
+
+
 def _check_webhook_auth(body: bytes, signature: str) -> None:
     """Fail-closed webhook auth: reject when unconfigured or signature invalid."""
     if not _webhook_secret:
-        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+        raise HTTPException(status_code=503, detail=_fallo("Webhook secret not configured"))
     if not _verify_signature(body, signature):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+        raise HTTPException(status_code=401, detail=_fallo("Invalid signature"))
 
 
 def _check_webhook_token(request: Request) -> None:
@@ -134,10 +169,10 @@ def _check_webhook_token(request: Request) -> None:
     import hmac
 
     if not _webhook_secret:
-        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+        raise HTTPException(status_code=503, detail=_fallo("Webhook secret not configured"))
     token = request.headers.get("X-Webhook-Token", "")
     if not token or not hmac.compare_digest(_webhook_secret, token):
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail=_fallo("Invalid token"))
 
 
 @app.get("/health")
@@ -302,7 +337,7 @@ async def register_connector_endpoint(name: str, request: Request):
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
 
     from src.utils.app_connector import connector
 
@@ -457,7 +492,7 @@ async def call_answering_machine(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
 
     call_id = str(payload.get("call_id", "")).strip()
     caller = str(payload.get("caller", "")).strip()
@@ -520,7 +555,7 @@ async def automation_briefing(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import build_briefing
 
-    return await build_briefing()
+    return _resultado(await build_briefing())
 
 
 @app.post("/automation/inbox-scan")
@@ -534,9 +569,11 @@ async def automation_inbox_scan(request: Request):
         payload = {}
     from src.services.automation_service import scan_inbox
 
-    return await scan_inbox(
-        hours=int(payload.get("hours", 2) or 2),
-        max_results=int(payload.get("max_results", 8) or 8),
+    return _resultado(
+        await scan_inbox(
+            hours=int(payload.get("hours", 2) or 2),
+            max_results=int(payload.get("max_results", 8) or 8),
+        )
     )
 
 
@@ -548,14 +585,16 @@ async def automation_capture(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     from src.services.automation_service import capture_to_vault
 
-    return await capture_to_vault(
-        text=str(payload.get("text", "")),
-        title=str(payload.get("title", "")),
-        tags=payload.get("tags") or [],
-        source=str(payload.get("source", "n8n")),
+    return _resultado(
+        await capture_to_vault(
+            text=str(payload.get("text", "")),
+            title=str(payload.get("title", "")),
+            tags=payload.get("tags") or [],
+            source=str(payload.get("source", "n8n")),
+        )
     )
 
 
@@ -566,7 +605,7 @@ async def automation_radar(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import radar
 
-    return await radar()
+    return _resultado(await radar())
 
 
 @app.post("/automation/infra-report")
@@ -576,7 +615,7 @@ async def automation_infra_report(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.automation_service import infra_report
 
-    return await infra_report()
+    return _resultado(await infra_report())
 
 
 @app.post("/automation/send-voice")
@@ -588,10 +627,10 @@ async def automation_send_voice(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     text = str(payload.get("text", "")).strip()
     if not text:
-        raise HTTPException(status_code=400, detail="text required")
+        raise HTTPException(status_code=400, detail=_fallo("text required"))
     from src.config import settings
 
     target = payload.get("chat_id")
@@ -599,24 +638,24 @@ async def automation_send_voice(request: Request):
         admins = settings.admin_ids or []
         target = admins[0] if admins else None
     if not target or _bot_ref is None:
-        return JSONResponse(status_code=503, content={"error": "bot o chat_id no disponible"})
+        return JSONResponse(status_code=503, content=_fallo("bot o chat_id no disponible"))
 
     from src.utils.tts_manager import cleanup_tts_dir, convert_to_ogg, text_to_speech
 
     wav = await text_to_speech(text[:1500])
     if wav is None:
-        return JSONResponse(status_code=500, content={"error": "TTS no disponible"})
+        return JSONResponse(status_code=500, content=_fallo("TTS no disponible"))
     ogg = await convert_to_ogg(wav)
     if not ogg or not ogg.exists():
         cleanup_tts_dir(wav)
-        return JSONResponse(status_code=500, content={"error": "no se pudo convertir a ogg"})
+        return JSONResponse(status_code=500, content=_fallo("no se pudo convertir a ogg"))
     try:
         await _bot_ref.send_voice(int(target), str(ogg))
         logger.info("Automation: nota de voz enviada a %s", target)
         return {"success": True, "sent_to": target}
     except Exception as e:
         logger.error("Automation send-voice fallo: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)[:200]})
+        return JSONResponse(status_code=500, content=_fallo(str(e)))
     finally:
         cleanup_tts_dir(wav)
 
@@ -629,7 +668,7 @@ async def automation_sync(request: Request):
     _check_webhook_auth(body, signature)
     from src.services.sync_service import sync_google_vault
 
-    return await sync_google_vault()
+    return _resultado(await sync_google_vault())
 
 
 @app.post("/automation/crm-remind")
@@ -641,7 +680,7 @@ async def automation_crm_remind(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     from src.services.crm_service import seguimientos_pendientes
 
     dias = int(payload.get("dias", 7) or 7)
@@ -671,12 +710,14 @@ async def automation_sequences_run(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     from src.services.sequence_service import ejecutar_secuencias
 
-    return await ejecutar_secuencias(
-        dry_run=bool(payload.get("dry_run", False)),
-        max_envios=int(payload.get("max_envios", 3) or 3),
+    return _resultado(
+        await ejecutar_secuencias(
+            dry_run=bool(payload.get("dry_run", False)),
+            max_envios=int(payload.get("max_envios", 3) or 3),
+        )
     )
 
 
@@ -728,7 +769,7 @@ async def n8n_run_report(request: Request):
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
     workflow = str(payload.get("workflow") or "").strip()[:120]
     execution_id = str(payload.get("execution_id") or "").strip()[:80]
     status = str(payload.get("status") or "").strip()

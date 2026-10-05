@@ -127,3 +127,69 @@ def test_readme_n8n_refleja_la_realidad():
     for f in flujos:
         assert f.name in readme, "falta en README: %s" % f.name
     assert readme.count("**Dependencias**") == len(flujos)
+
+
+def test_nodos_telegram_payload_canonico_unificado():
+    # D11 (2026-10-05): los 7 nodos «Enviar Telegram» usan stringify($json);
+    # el payload {chat_id, text, parse_mode, disable_web_page_preview,
+    # reply_markup?} lo construye siempre un nodo code aguas arriba.
+    import json as _json
+
+    flujos = sorted((RAIZ / "n8n" / "workflows").glob("*.json"))
+    vistos = 0
+    for f in flujos:
+        w = _json.loads(f.read_text(encoding="utf-8"))
+        codigos = [
+            (n.get("parameters") or {}).get("jsCode", "")
+            for n in w["nodes"]
+            if n.get("type") == "n8n-nodes-base.code"
+        ]
+        for n in w["nodes"]:
+            params = n.get("parameters") or {}
+            if n.get("type") != "n8n-nodes-base.httpRequest":
+                continue
+            if "sendMessage" not in str(params.get("url", "")):
+                continue
+            vistos += 1
+            assert params.get("jsonBody") == "={{ JSON.stringify($json) }}", (
+                "%s / %s sin payload unificado" % (f.name, n["name"])
+            )
+            assert any("chat_id:" in c for c in codigos), (
+                "%s: sin nodo code que construya chat_id" % f.name
+            )
+            assert any("disable_web_page_preview: true" in c for c in codigos), (
+                "%s: payload sin disable_web_page_preview" % f.name
+            )
+    assert vistos >= 7
+
+
+def test_briefing_no_usa_r_antes_de_declararla():
+    # Regresion real: TDZ «Cannot access 'r' before initialization» rompio el
+    # flujo 01 cada dia (ejecucion 503, 2026-10-05); nadie lo veia porque el
+    # ProactiveWorker mandaba el briefing por otro camino.
+    import json as _json
+
+    w = _json.loads(
+        (RAIZ / "n8n" / "workflows" / "01-briefing-contextual.json").read_text(encoding="utf-8")
+    )
+    nodo = next(n for n in w["nodes"] if n["name"] == "Mensaje Telegram")
+    code = nodo["parameters"]["jsCode"]
+    assert code.index("const r =") < code.index("if (!r")
+
+
+def test_ejecutable_responde_esquema_unico():
+    # D11: el flujo 07 respondia {ok, mensaje}; el esquema unico es
+    # {success, message} (igual que el resto de endpoints del gateway).
+    import json as _json
+
+    w = _json.loads(
+        (RAIZ / "n8n" / "workflows" / "07-ejecutable-chat-voz.json").read_text(encoding="utf-8")
+    )
+    codigos = "\n".join(
+        (n.get("parameters") or {}).get("jsCode", "")
+        for n in w["nodes"]
+        if n.get("type") == "n8n-nodes-base.code"
+    )
+    assert "success: true" in codigos
+    assert "ok: true" not in codigos
+    assert "mensaje:" not in codigos
