@@ -27,80 +27,111 @@ se usa **etiqueta + prefijo de categoría en el nombre**.
 
 ## Detalle de cada automatización
 
+Todos los flujos firman con HMAC (`WEBHOOK_SECRET`) las llamadas que van al
+gateway de Rafita (`/automation/*`, `/api/n8n/run`) y traen un webhook
+«Manual (chat)» (`manual-<nombre>`) para lanzarlos desde el orquestador.
+Cada sección indica sus **dependencias**: sin ellas el flujo degrada (lo
+reporta en `automation_runs`) en vez de tumbarse.
+
 ### 01 · Briefing contextual — cada día a las 08:00
 - **Disparador**: cron diario `08:00`.
-- **Cómo se ejecuta**: n8n llama al endpoint `/automation/brief` de Rafita
+- **Cómo se ejecuta**: n8n llama a `POST /automation/briefing` de Rafita
   (firma HMAC). Rafita compone el briefing real: próximos eventos, tareas
-  pendientes, correos importantes, tiempo (AEMET) y estado del servidor.
-- **Resultado**: mensaje en Telegram con botones de acción (reagendar, enviar
-  borrador) y **nota de voz** con el resumen. Si no hay novedades, no molesta.
-- **Probarlo**: `curl -X POST http://n8n:5678/webhook/<url-del-flujo> -H
-  "X-Webhook-Signature: <hmac>"` o espera a las 08:00.
+  con vencimientos, correos importantes, tiempo (AEMET) y estado del servidor.
+- **Resultado**: mensaje en Telegram con botones de acción y **nota de voz**
+  con el resumen (`/automation/send-voice`). El filtro «Mensaje Telegram»
+  no envía nada si Rafita falla o no devuelve texto (sin `undefined`).
+- **Dependencias**: Google conectado (agenda/tareas/correo; con la BD local
+  degrada a lo disponible), AEMET (tiempo/avisos), Ollama (redacción),
+  `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`.
+- **Probarlo**: *Execute Workflow* en n8n, o `POST /automation/briefing` con
+  cabecera `X-Webhook-Signature` (HMAC-SHA256 del cuerpo).
 
 ### 02 · Inbox Zero (correo) — cada 30 minutos
 - **Disparador**: cron cada 30 min.
 - **Cómo se ejecuta**: consulta Gmail no leído, clasifica cada mensaje con IA
-  (urgente / factura / cliente / informativo) y **deduplica** por id de correo.
+  (urgente / cliente / factura / personal / informativo / sin_accion),
+  los ordena por prioridad y **deduplica** por id de correo.
 - **Resultado**: aviso en Telegram solo de urgentes y clientes, con un
-  borrador de respuesta sugerido. El resto no interrumpe.
-- **Dependencias**: cuenta de Google conectada (`/setup_google`).
+  borrador de respuesta sugerido (con botón «✉️ Responder»). El resto no
+  interrumpe.
+- **Dependencias**: cuenta de Google conectada (`/setup_google`), Ollama,
+  `TELEGRAM_TOKEN`, dedup en la BD (KV).
 
 ### 03 · Captura a bóveda — vía webhook
-- **Disparador**: `POST /webhook/captura-vault` con `{"message": "...",
-  "tags": [...]}` (firma HMAC).
-- **Cómo se ejecuta**: genera frontmatter (fecha, etiquetas) y guarda la nota
-  en `00-Inbox/` de la bóveda; el watchdog de Rafita la indexa al instante.
+- **Disparador**: `POST http://n8n:5678/webhook/captura-vault` con
+  `{"text": "...", "title": "...", "tags": [...]}`.
+- **Cómo se ejecuta**: el nodo «Firmar HMAC» normaliza el cuerpo y lo manda a
+  `POST /automation/capture` de Rafita; genera frontmatter (fecha, etiquetas)
+  y guarda la nota en `00-Inbox/`; el watchdog la indexa al instante.
 - **Resultado**: nota `.md` nueva y disponible para búsquedas con citas.
-- **Probarlo**: `curl -X POST http://rafita-agent-core:8000/webhook/captura-vault
-  -H "X-Webhook-Signature: ..." -d '{"message":"idea para el proyecto X"}'`.
+- **Dependencias**: bóveda escribible, `WEBHOOK_SECRET`.
+- **Probarlo**: `curl -X POST http://127.0.0.1:5678/webhook/captura-vault
+  -H 'Content-Type: application/json'
+  -d '{"text":"idea para el proyecto X","tags":["idea"]}'`
+  (o contra el gateway con HMAC:
+  `POST rafita-agent-core:8000/automation/capture` + `X-Webhook-Signature`).
 
 ### 04 · Sync Google ↔ bóveda — cada hora
 - **Disparador**: cron cada hora.
-- **Cómo se ejecuta**: pide a Rafita el sync (`/automation/sync`): tareas y
-  eventos de Google se vuelcan/actualizan en notas locales (agenda semanal,
-  contactos) y se marcan cambios.
+- **Cómo se ejecuta**: pide a Rafita el sync (`/automation/sync`): contactos,
+  eventos, tareas, Drive y correo se vuelcan/actualizan en notas locales y se
+  marcan cambios; degrada por fuente (si una sección cae, las demás siguen).
 - **Resultado**: aviso por Telegram **solo si hay cambios**; si no, silencio.
+- **Dependencias**: Google conectado (permisos Calendar/Drive/Tasks/Gmail/
+  People), bóveda, `TELEGRAM_TOKEN`.
 
 ### 05 · Informe semanal de infraestructura — domingos 23:00
 - **Disparador**: cron semanal (domingo 23:00).
 - **Cómo se ejecuta**: lee los ficheros de estado reales de los scripts
-  (`backup-status.json`, `restore-drill-status.json`), disco, tamaño de BD y
-  servicios, y los pasa por IA para redactar el informe.
-- **Resultado**: informe en Telegram con alertas destacadas al principio si
-  algo falló (backup caducado, disco lleno, restore-drill con errores).
+  (`backup-status.json`, `restore-drill-status.json`), disco, tamaño de BD,
+  servicios y **notas nuevas de la bóveda (7 días)**, y los pasa por IA para
+  redactar el informe.
+- **Resultado**: informe en Telegram con alertas destacadas al principio y
+  bloque «📚 Conocimiento nuevo» con enlaces a la PWA (`PWA_BASE_URL`).
+- **Dependencias**: ficheros de estado (backup/restore-drill), Ollama,
+  `TELEGRAM_TOKEN`; `PWA_BASE_URL` opcional (enlaces).
 
 ### 06 · Radar de IA — cada día 09:00
 - **Disparador**: cron diario `09:00`.
 - **Cómo se ejecuta**: recorre fuentes (GitHub/RSS), filtra las novedades con
   IA según tus intereses y selecciona las mejores.
-- **Resultado**: nota en la bóveda con lo más relevante del día.
+- **Resultado**: nota en la bóveda con lo más relevante del día + aviso en
+  Telegram solo si hay radar real (filtro «Solo si hay radar»).
+- **Dependencias**: salida a internet (GitHub/RSS), Ollama, bóveda,
+  `TELEGRAM_TOKEN`, `WEBHOOK_SECRET`.
 
 ### 07 · Ejecutable desde chat/voz — vía webhook
-- **Disparador**: `POST /webhook/ejemplo-rafita` (firma HMAC).
+- **Disparador**: `POST http://n8n:5678/webhook/ejemplo-rafita` (webhook
+  abierto en la red interna; el webhook de n8n no verifica HMAC — la firma
+  HMAC la hacen los flujos al llamar al gateway de Rafita).
 - **Cómo se ejecuta**: es el destino de la herramienta `trigger_n8n`; puedes
   decirle a Rafita «ejecuta la automatización de X» por chat o en la llamada
   y este flujo se dispara.
 - **Resultado**: lo que defina el flujo (aviso, informe, correo…).
-- **Configuración**: registra el nombre→URL en `N8N_WEBHOOKS` del `.env`.
+- **Dependencias**: `N8N_WEBHOOKS` (mapa nombre→URL en el `.env`).
 
 ### 08 · Plantilla de aviso programado — cada día 09:00 (inactivo)
-- **Disparador**: cron diario `09:00` (deja el flujo desactivado salvo que lo
-  quieras).
+- **Disparador**: cron diario `09:00` (importado **pausado** a propósito:
+  `NO_ACTIVAR` en `n8n_import_flows.py`; actívalo solo si lo quieres).
 - **Cómo se ejecuta**: ejemplo mínimo para copiar: manda un aviso fijo a
   Telegram. Útil como base para tus propios recordatorios.
+- **Dependencias**: `TELEGRAM_TOKEN`.
 
 ### 09 · Seguimiento de clientes (CRM) — lunes 09:00
 - **Disparador**: cron semanal (lunes 09:00).
 - **Cómo se ejecuta**: revisa el CRM de Rafita (`/clientes`) y detecta
   clientes sin contacto reciente o con seguimiento vencido.
 - **Resultado**: lista de pendientes en Telegram para empezar la semana.
+- **Dependencias**: CRM con clientes, `TELEGRAM_TOKEN`.
 
 ### 10 · Secuencias de email — cada día 09:30
 - **Disparador**: cron diario `09:30`.
 - **Cómo se ejecuta**: revisa las secuencias de email (plantillas de
-  seguimiento con días de espera) y envía las que tocan.
-- **Resultado**: emails enviados + aviso si algún contacto respondió (la
-  secuencia se detiene para que respondas tú).
+  seguimiento con días de espera) y envía las que tocan; se detienen solas
+  si el contacto responde.
+- **Resultado**: emails enviados + aviso si algún contacto respondió.
+- **Dependencias**: Gmail conectado, secuencias creadas (BD), `TELEGRAM_TOKEN`.
 
 ---
 

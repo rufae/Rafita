@@ -110,3 +110,20 @@ def test_radar_sin_texto_no_dispara_telegram():
     assert w["connections"]["Solo si hay radar"]["main"][0][0]["node"] == "Enviar Telegram"
     # el informe de ejecución sigue conectado en paralelo
     assert any(c["node"] == "Firmar informe" for c in w["connections"]["Rafita radar"]["main"][0])
+
+
+def test_readme_n8n_refleja_la_realidad():
+    # D10 (2026-10-05): el README decia /automation/brief (el real es
+    # /automation/briefing), un payload de captura con "message" (el real es
+    # text/title/tags) y firmaba HMAC el webhook de 07 (n8n no verifica).
+    readme = (RAIZ / "n8n" / "README.md").read_text(encoding="utf-8")
+    assert "/automation/briefing" in readme
+    assert "/automation/brief " not in readme and "automation/brief`" not in readme
+    assert '"text": "..."' in readme
+    assert "rafita-agent-core:8000/webhook/captura-vault" not in readme
+    # cada flujo documentado y con su bloque Dependencias
+    flujos = sorted((RAIZ / "n8n" / "workflows").glob("*.json"))
+    assert len(flujos) >= 10
+    for f in flujos:
+        assert f.name in readme, "falta en README: %s" % f.name
+    assert readme.count("**Dependencias**") == len(flujos)
