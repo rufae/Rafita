@@ -319,3 +319,128 @@ async def test_oportunidad_crea_lead_en_crm(monkeypatch):
     assert enviados and "oportunidad" in enviados[0][1].lower()
     # el prompt pide tipo oportunidad (idea 17)
     assert "oportunidad" in llm.contenidos[0].lower()
+
+
+class _GoogleEnviados(_GoogleFalso):
+    """Fake de Gmail con bandeja de enviados y respuestas simuladas."""
+
+    def __init__(self, enviados=None, con_respuesta=(), ready=True):
+        super().__init__(ready=ready)
+        self.enviados = enviados or []
+        self.con_respuesta = set(con_respuesta)
+        self.queries = []
+
+    async def search_gmail(self, query, max_results=5):
+        self.queries.append(query)
+        if query.startswith("in:sent"):
+            return {"messages": self.enviados}
+        if query.startswith("from:"):
+            email = query[5:].split(" newer")[0].strip().lower()
+            if email in self.con_respuesta:
+                return {"messages": [{"id": "r1"}]}
+            return {"messages": []}
+        return {"messages": []}
+
+
+def _fecha_enviada(dias):
+    import email.utils
+
+    return email.utils.format_datetime(datetime.now(UTC) - timedelta(days=dias))
+
+
+def _enviado(id_="m1", dias=5, to="ana@cliente.com", subject="Presupuesto"):
+    return {
+        "id": id_,
+        "subject": subject,
+        "from": "yo <yo@ejemplo.com>",
+        "to": to,
+        "date": _fecha_enviada(dias),
+        "snippet": "te lo dejo adjunto",
+    }
+
+
+async def _sin_secuencias(monkeypatch):
+    async def ninguna():
+        return []
+
+    monkeypatch.setattr("src.database.db.list_sequences", ninguna)
+
+
+async def test_avisa_correo_enviado_sin_respuesta(monkeypatch):
+    # idea 15: rastreador generico (sin secuencia creada a mano).
+    store = _db_falso(monkeypatch, chats=[])
+    await _sin_secuencias(monkeypatch)
+    google = _GoogleEnviados(enviados=[_enviado()])
+    _google(monkeypatch, google)
+    enviados_msg = _bot_falso(monkeypatch)
+
+    res = await auto.check_unanswered_sent(force=True)
+
+    assert res["success"] is True
+    assert len(res["avisos"]) == 1
+    assert res["avisos"][0]["destinatario"] == "ana@cliente.com"
+    assert res["avisos"][0]["dias"] == 5
+    assert any("Sin respuesta" in a[0] for a in store["alertas"])
+    assert enviados_msg and "Presupuesto" in enviados_msg[0][1]
+    # se comprobo respuesta con from: del destinatario
+    assert any(q.startswith("from:ana@cliente.com") for q in google.queries)
+    # dedup: segunda pasada no repite
+    res2 = await auto.check_unanswered_sent(force=True)
+    assert res2["avisos"] == []
+
+
+async def test_no_avisa_si_el_destinatario_respondio(monkeypatch):
+    _db_falso(monkeypatch, chats=[])
+    await _sin_secuencias(monkeypatch)
+    google = _GoogleEnviados(enviados=[_enviado()], con_respuesta={"ana@cliente.com"})
+    _google(monkeypatch, google)
+    _bot_falso(monkeypatch)
+
+    res = await auto.check_unanswered_sent(force=True)
+
+    assert res["success"] is True
+    assert res["avisos"] == []
+
+
+async def test_no_avisa_correos_recientes_ni_replies(monkeypatch):
+    store = _db_falso(monkeypatch, chats=[])
+    await _sin_secuencias(monkeypatch)
+    google = _GoogleEnviados(
+        enviados=[
+            _enviado(id_="nuevo", dias=1),  # demasiado reciente
+            _enviado(id_="reply", dias=5, subject="Re: Presupuesto"),  # hilo
+        ]
+    )
+    _google(monkeypatch, google)
+    _bot_falso(monkeypatch)
+
+    res = await auto.check_unanswered_sent(force=True)
+
+    assert res["success"] is True
+    assert res["avisos"] == []
+    assert store["alertas"] == []
+
+
+async def test_excluye_destinatarios_con_secuencia_activa(monkeypatch):
+    store = _db_falso(monkeypatch, chats=[])
+
+    async def secuencias(status=None):
+        return [
+            {
+                "status": "active",
+                "contact_email": "ana@cliente.com",
+                "contact_name": "Ana",
+            }
+        ]
+
+    monkeypatch.setattr("src.database.db.list_sequences", secuencias)
+    google = _GoogleEnviados(enviados=[_enviado()])
+    _google(monkeypatch, google)
+    _bot_falso(monkeypatch)
+
+    res = await auto.check_unanswered_sent(force=True)
+
+    assert res["success"] is True
+    assert res["avisos"] == []
+    assert res["excluidos_secuencias"] == 1
+    assert store["alertas"] == []

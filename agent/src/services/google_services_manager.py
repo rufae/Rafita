@@ -811,7 +811,7 @@ class GoogleServicesManager:
                         userId="me",
                         id=mid,
                         format="metadata",
-                        metadataHeaders=["Subject", "From", "Date"],
+                        metadataHeaders=["Subject", "From", "To", "Date"],
                     )
                 ),
                 "leer correo",
@@ -825,6 +825,7 @@ class GoogleServicesManager:
                     "id": ref["id"],
                     "subject": headers.get("subject", "(sin asunto)"),
                     "from": headers.get("from", ""),
+                    "to": headers.get("to", ""),
                     "date": headers.get("date", ""),
                     "snippet": (meta.get("snippet") or "")[:200],
                 }

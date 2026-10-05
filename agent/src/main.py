@@ -45,6 +45,7 @@ class ProactiveWorker:
         self._consecutive_failures: int = 0
         self._last_gc_date: date | None = None
         self._last_commitment_date: date | None = None
+        self._last_unanswered_date: date | None = None
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
         self._shutdown_event = shutdown_event
@@ -140,6 +141,18 @@ class ProactiveWorker:
                         logger.info("Compromisos detectados: %d", len(res["creadas"]))
                 except Exception as e:
                     logger.warning("Detección de compromisos falló: %s", e)
+            # Correo enviado sin respuesta (tareas.md idea 15): rastreador
+            # generico, una vez al día; la función tiene su propio guard.
+            if self._last_unanswered_date != now.date():
+                self._last_unanswered_date = now.date()
+                try:
+                    from src.services.automation_service import check_unanswered_sent
+
+                    res = await check_unanswered_sent()
+                    if res.get("avisos"):
+                        logger.info("Correos sin respuesta: %d", len(res["avisos"]))
+                except Exception as e:
+                    logger.warning("Rastreo de correo sin respuesta falló: %s", e)
             chat_ids = await db.get_all_chat_ids()
             for chat_id in chat_ids:
                 await self._notify_expiring_events(chat_id)
