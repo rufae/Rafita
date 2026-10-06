@@ -1099,6 +1099,69 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "create_condition_rule",
+            "description": "Crea, lista o elimina reglas proactivas condicionales: el "
+            "usuario pide un aviso SOLO si se cumple algo ('avisame si mañana "
+            "llueve antes de las 9', 'si la RAM supera el 90%'). Acciones: "
+            "create (type=weather con keywords del pronostico, o type=metric "
+            "con umbral del servidor), list y delete (por rule_id). NO lo uses "
+            "para avisos con fecha fija (create_alert), tareas "
+            "(manage_google_tasks) ni citas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create", "list", "delete"],
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["weather", "metric"],
+                        "description": "weather: clima (lluvia, tormenta, calor...); "
+                        "metric: recursos del servidor.",
+                    },
+                    "city": {
+                        "type": "string",
+                        "description": "Ciudad para weather (vacio = la del usuario).",
+                    },
+                    "day": {
+                        "type": "string",
+                        "description": "'hoy' o 'mañana' (solo weather).",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Palabras que deben aparecer en el pronostico "
+                        "(weather): 'lluvia', 'tormenta', 'nieve'...",
+                    },
+                    "hour": {
+                        "type": "string",
+                        "description": "Solo avisar ANTES de esta hora ('HH:MM'), opcional.",
+                    },
+                    "metric": {
+                        "type": "string",
+                        "enum": ["ram_pct", "disk_pct", "swap_pct"],
+                    },
+                    "op": {"type": "string", "enum": [">", "<", ">=", "<="]},
+                    "value": {
+                        "type": "number",
+                        "description": "Umbral para metric (p. ej. 90 = 90%).",
+                    },
+                    "message": {"type": "string", "description": "Texto del aviso."},
+                    "repeats": {
+                        "type": "boolean",
+                        "description": "true = se re-arma cada dia (max 1 aviso/dia); "
+                        "false = una sola vez.",
+                    },
+                    "rule_id": {"type": "integer", "description": "Solo para delete."},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_week_plan",
             "description": "Prepara el plan de la semana en UNA sola llamada: "
             "junta la agenda de los proximos dias (Google Calendar o "

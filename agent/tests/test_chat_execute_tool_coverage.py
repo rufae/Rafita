@@ -1544,3 +1544,57 @@ async def test_manage_google_tasks_local_no_afirma_si_no_hay_fila(monkeypatch):
         1, "manage_google_tasks", {"action": "complete", "task_id": "42"}
     )
     assert res["success"] is True
+
+
+# ---------- create_condition_rule (2026-10-06) ----------
+
+
+async def test_create_condition_rule_crud(monkeypatch):
+    guardados = []
+
+    async def add_rule(chat_id, rule_json, message, repeats=False):
+        guardados.append((chat_id, rule_json, message, repeats))
+        return 5
+
+    async def list_rules(chat_id):
+        return [{"id": 5, "message": "aviso", "is_active": 1}]
+
+    async def del_rule(chat_id, rule_id):
+        return 1 if rule_id == 5 else 0
+
+    monkeypatch.setattr(chat_mod.db, "add_conditional_rule", add_rule)
+    monkeypatch.setattr(chat_mod.db, "list_conditional_rules", list_rules)
+    monkeypatch.setattr(chat_mod.db, "delete_conditional_rule", del_rule)
+
+    res = await chat_mod._execute_tool(
+        1,
+        "create_condition_rule",
+        {
+            "action": "create",
+            "type": "metric",
+            "metric": "ram_pct",
+            "op": ">",
+            "value": 90,
+            "message": "RAM alta",
+            "repeats": True,
+        },
+    )
+    assert res["success"] and guardados and guardados[0][3] is True
+    res = await chat_mod._execute_tool(
+        1, "create_condition_rule", {"action": "create", "type": "weather", "keywords": ["lluvia"]}
+    )
+    assert res["success"] and len(guardados) == 2
+    res = await chat_mod._execute_tool(
+        1, "create_condition_rule", {"action": "create", "type": "metric"}
+    )
+    assert res["success"] is False
+    res = await chat_mod._execute_tool(1, "create_condition_rule", {"action": "list"})
+    assert res["success"] and "Reglas" in res["message"]
+    res = await chat_mod._execute_tool(
+        1, "create_condition_rule", {"action": "delete", "rule_id": 5}
+    )
+    assert res["success"]
+    res = await chat_mod._execute_tool(
+        1, "create_condition_rule", {"action": "delete", "rule_id": 99}
+    )
+    assert res["success"] is False
