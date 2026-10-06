@@ -14,6 +14,26 @@ from zoneinfo import ZoneInfo
 from src.config import settings
 from src.database import db
 from src.logger import logger
+from src.utils.holidays import proximo_festivo
+
+# Nombres de dia y mes en espanol fijos en el codigo: `strftime("%A"/"%B")`
+# depende del locale del contenedor (en CI sale "Tuesday"), y el briefing
+# debe leerse igual en todas las maquinas.
+_DIAS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_MESES_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
 
 
 async def _weather_summary() -> str:
@@ -84,6 +104,26 @@ async def _mail_lines() -> list[str]:
         return []
 
 
+async def _holiday_line() -> str | None:
+    """Linea «Próximo festivo: lunes 12 de octubre (Fiesta Nacional ...)».
+
+    Usa `utils.holidays.proximo_festivo` (Nager.Date). Devuelve None si no
+    queda ningun festivo en el ano o si la API falla: el briefing se envia
+    igual, sin la linea.
+    """
+    try:
+        proximo = await proximo_festivo()
+    except Exception as e:
+        logger.debug("Briefing: festivos no disponibles: %s", e)
+        return None
+    if not proximo:
+        return None
+    fecha, nombre = proximo
+    dia = _DIAS_ES[fecha.weekday()]
+    mes = _MESES_ES[fecha.month - 1]
+    return "Próximo festivo: %s %d de %s (%s)" % (dia, fecha.day, mes, nombre)
+
+
 async def send_briefing(bot: Any) -> int:
     """Envia el briefing del dia a los administradores. Devuelve cuantos envios."""
     if not settings.briefing_enabled:
@@ -91,10 +131,20 @@ async def send_briefing(bot: Any) -> int:
     agenda = await _agenda_lines(days=1)
     mail = await _mail_lines()
     weather = await _weather_summary()
+    try:
+        festivo = await _holiday_line()
+    except Exception as e:
+        # Defensa extra: el briefing nunca debe caerse por la linea de festivos.
+        logger.debug("Briefing: linea de festivo omitida: %s", e)
+        festivo = None
 
     lines = ["☀️ *Buenos días — briefing de hoy*", ""]
     if weather:
         lines.append("*Tiempo:* %s" % weather)
+    if festivo:
+        # _holiday_line ya trae «Próximo festivo: ...»; se compone igual que
+        # el resto de etiquetas: *🎉 Próximo festivo:* lunes 12 de octubre (...)
+        lines.append("*🎉 Próximo festivo:* %s" % festivo.removeprefix("Próximo festivo: "))
     lines.append("*📅 Agenda de hoy:*")
     lines.extend(agenda or ["  • Nada previsto"])
     if mail:
