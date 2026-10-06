@@ -90,7 +90,8 @@ jobs:
             --ignore-vuln PYSEC-2026-3814 \
             --ignore-vuln PYSEC-2026-3815
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        # v3: migracion a Node 24 (v2 quedo obsoleto tras el 16-sep-2026).
+        uses: gitleaks/gitleaks-action@v3
         env:
           # gitleaks-action exige el token explicito desde su breaking update
           # (sin el, todo run de pull_request falla: "GITHUB_TOKEN is now
