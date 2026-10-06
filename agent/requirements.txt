@@ -1,6 +1,6 @@
 python-telegram-bot==21.7
 openai==1.55.0
-pandas==2.2.3
+pandas==3.0.6
 openpyxl==3.1.5
 python-dotenv==1.2.2
 aiosqlite==0.20.0
