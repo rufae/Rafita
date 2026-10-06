@@ -74,6 +74,11 @@ async def test_send_briefing_composes_and_sends(monkeypatch):
     monkeypatch.setattr(proactive_briefing, "_agenda_lines", fake_agenda)
     monkeypatch.setattr(proactive_briefing, "_mail_lines", fake_mail)
 
+    async def fake_holiday():
+        return None
+
+    monkeypatch.setattr(proactive_briefing, "_holiday_line", fake_holiday)
+
     bot = _FakeBot()
     sent = await proactive_briefing.send_briefing(bot)
     assert sent == 1

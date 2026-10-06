@@ -176,6 +176,7 @@ async def test_send_briefing_counts_only_delivered(monkeypatch):
     monkeypatch.setattr(proactive_briefing, "_weather_summary", lambda: _afn(""))
     monkeypatch.setattr(proactive_briefing, "_agenda_lines", lambda days: _afn([]))
     monkeypatch.setattr(proactive_briefing, "_mail_lines", lambda: _afn([]))
+    monkeypatch.setattr(proactive_briefing, "_holiday_line", lambda: _afn(None))
 
     class _PartialBot(_FakeBot):
         async def send_proactive_message(self, chat_id, text):
