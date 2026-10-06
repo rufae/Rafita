@@ -2,6 +2,8 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![CI](https://github.com/rufae/Rafita/actions/workflows/ci.yml/badge.svg)](https://github.com/rufae/Rafita/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-90.5%25-brightgreen.svg)](https://github.com/rufae/Rafita/actions/workflows/ci.yml)
+[![Eval suite](https://img.shields.io/badge/evals-20%20casos-blue.svg)](#calidad)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 Tu propio asistente de IA personal que convierte tu vault de Obsidian en un
@@ -212,12 +214,37 @@ pip install -r dev-requirements.txt
 ruff check agent/src --config pyproject.toml
 mypy agent/src --config-file pyproject.toml
 
-# Tests (≈1591, sin paralelo)
+# Tests (≈1746, sin paralelo)
 pytest agent/tests -v
+
+# Eval suite (offline ya corre con los tests; live necesita Ollama)
+EVAL_LIVE=1 pytest -m eval agent/tests/test_eval_live.py -v
 
 # Todos los checks (pre-commit)
 pre-commit run --all-files
 ```
+
+## Calidad
+
+Informe de resultados (lo que respalda cada badge):
+
+- **Tests y gate**: ≈1746 tests, ruff + mypy y cobertura ≥90% ejecutados en
+  CI (`ci.yml`) en cada push/PR; el despliegue (`deploy-hp.yml`) solo se
+  dispara si el CI concluye `success`.
+- **Eval suite** (`evals/cases/pipeline.yaml`, 20 casos): 14 offline
+  deterministas (guardias anti-alucinación, reintento honesto, argumentos de
+  herramienta, permisos de automatizaciones) que corren en cada CI, y 6 live
+  de selección de herramientas con el LLM real (`EVAL_LIVE=1`, informe en
+  `daily-work/eval_report.json`).
+- **Evaluación RAG**: gold set de 36 preguntas con Recall@k y MRR
+  (`agent/scripts/rag_eval.py`) + eval de tool-calling con LLM real
+  (`agent/scripts/tool_calling_eval.py`).
+- **Observabilidad**: `GET /metrics` (JSON) y `GET /metrics.prom`
+  (exposition de Prometheus) con latencias por herramienta, tokens y salud
+  del backend de IA.
+- **Carga y benchmark**: k6 (`deploy/k6/chat.js`), benchmark de modelos
+  re-ejecutable (`agent/scripts/bench_models.py`) y suite de inyección de
+  fallos (`agent/tests/test_failure_injection.py`).
 
 ## Seguridad
 
@@ -230,6 +257,9 @@ credenciales. Los secretos también pueden servirse desde ficheros
 
 | Documento | Contenido |
 |---|---|
+| [docs/architecture.md](docs/architecture.md) | Arquitectura (C4, ER, secuencia de una petición) |
+| [docs/threat-model.md](docs/threat-model.md) | Modelo de amenazas STRIDE |
+| [docs/adr/](docs/adr/) | Decisiones de arquitectura (ADR 001–006) |
 | [docs/INSTALL.md](docs/INSTALL.md) | Instalación detallada |
 | [docs/web.md](docs/web.md) | Web, llamada, proxy y HTTPS |
 | [docs/secrets.md](docs/secrets.md) | Secretos file-based (Docker secrets) |
