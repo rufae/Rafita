@@ -16,10 +16,10 @@ updates:
     ignore:
       # 1.2.0 -> 1.8.0 cambia la firma de PiperConfig (rompe mypy: noise_w).
       - dependency-name: "piper-tts"
-      # 1.55 -> 3.x salto de mayor incompatible con el código actual.
+      # 1.55 -> 1.109 (y 3.x) cambian tipos que ya no casan en
+      # openai_compat.py (mypy union-attr) → se ignora hasta que haga
+      # falta tocar el código para el nuevo SDK.
       - dependency-name: "openai"
-        update-types:
-          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
