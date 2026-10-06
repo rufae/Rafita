@@ -390,3 +390,50 @@ async def test_worker_tick_skips_briefing_outside_window(monkeypatch):
     monkeypatch.setattr("src.bot.bot", _FakeBot())
     await proactive_briefing.BriefingWorker()._tick()
     assert not briefings
+
+
+# ---------- eval RAG semanal (2026-10-06) ----------
+
+
+async def test_rag_eval_weekly_avisa_si_recall_cae(monkeypatch):
+    async def fake_eval():
+        return {"top_k": 5, "positives": {"recall@5": 0.2, "mrr@5": 0.1}}
+
+    monkeypatch.setattr(proactive_briefing, "_run_rag_eval", fake_eval)
+    monkeypatch.setattr(settings, "admin_ids", [5])
+    bot = _FakeBot()
+    state = {}
+    domingo = datetime(2026, 10, 4, 9, 0, tzinfo=UTC)
+    assert await proactive_briefing.rag_eval_weekly(bot, state, domingo)
+    assert "recall@5" in bot.messages[0][1]
+    # una sola vez por semana
+    assert not await proactive_briefing.rag_eval_weekly(bot, state, domingo)
+    # otro dia no se lanza
+    assert not await proactive_briefing.rag_eval_weekly(
+        bot, {}, datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
+    )
+
+
+async def test_rag_eval_weekly_silencio_si_recall_ok(monkeypatch):
+    async def fake_eval():
+        return {"top_k": 5, "positives": {"recall@5": 0.9, "mrr@5": 0.8}}
+
+    monkeypatch.setattr(proactive_briefing, "_run_rag_eval", fake_eval)
+    monkeypatch.setattr(settings, "admin_ids", [5])
+    bot = _FakeBot()
+    assert await proactive_briefing.rag_eval_weekly(
+        bot, {}, datetime(2026, 10, 4, 9, 0, tzinfo=UTC)
+    )
+    assert bot.messages == []
+
+
+async def test_rag_eval_weekly_si_el_script_falla_no_revienta(monkeypatch):
+    async def fake_eval():
+        raise RuntimeError("sin ollama")
+
+    monkeypatch.setattr(proactive_briefing, "_run_rag_eval", fake_eval)
+    bot = _FakeBot()
+    assert not await proactive_briefing.rag_eval_weekly(
+        bot, {}, datetime(2026, 10, 4, 9, 0, tzinfo=UTC)
+    )
+    assert bot.messages == []

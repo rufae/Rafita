@@ -2713,6 +2713,77 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 "complete o delete (no inventes otros nombres).",
             }
 
+        elif func_name == "create_condition_rule":
+            import json as _json
+
+            from src.utils import conditional_rules as _rules
+
+            action = str(args.get("action") or "").strip().lower()
+            if action == "list":
+                filas = await db.list_conditional_rules(chat_id)
+                if not filas:
+                    return {"success": True, "message": "No tienes reglas guardadas."}
+                lines = ["📏 Reglas:"]
+                for f in filas:
+                    estado = "activa" if f.get("is_active") else "ya disparada"
+                    lines.append(
+                        "  • [%s] %s (%s)"
+                        % (f["id"], f.get("message") or f.get("rule_json"), estado)
+                    )
+                return {"success": True, "message": "\n".join(lines)}
+            if action == "delete":
+                try:
+                    rule_id = int(args.get("rule_id") or 0)
+                except (TypeError, ValueError):
+                    return {"success": False, "message": "Indica el rule_id de la regla."}
+                borradas = await db.delete_conditional_rule(chat_id, rule_id)
+                if not borradas:
+                    return {"success": False, "message": "No encontré la regla %s." % rule_id}
+                return {"success": True, "message": "Regla %s eliminada." % rule_id}
+            if action == "create":
+                kind = str(args.get("type") or "").strip().lower()
+                if kind not in _rules.TYPES:
+                    return {"success": False, "message": "type debe ser weather o metric."}
+                rule: dict[str, Any] = {"type": kind}
+                if kind == "weather":
+                    keywords = [
+                        str(k).strip() for k in (args.get("keywords") or []) if str(k).strip()
+                    ]
+                    if not keywords:
+                        return {
+                            "success": False,
+                            "message": "Indica las palabras del pronóstico "
+                            "(p. ej. lluvia, tormenta).",
+                        }
+                    rule["keywords"] = keywords
+                    rule["city"] = str(args.get("city") or "").strip()
+                    rule["day"] = str(args.get("day") or "hoy").strip().lower() or "hoy"
+                else:
+                    metric = str(args.get("metric") or "").strip()
+                    op = str(args.get("op") or ">").strip()
+                    if metric not in _rules.METRICS or op not in _rules.OPS:
+                        return {"success": False, "message": "metric u op no válidos."}
+                    try:
+                        value = float(args.get("value"))
+                    except (TypeError, ValueError):
+                        return {"success": False, "message": "Indica el umbral (value)."}
+                    rule.update({"metric": metric, "op": op, "value": value})
+                hour = str(args.get("hour") or "").strip()
+                if hour:
+                    rule["hour"] = hour
+                message = str(args.get("message") or "").strip() or (
+                    "Se ha cumplido tu regla: %s" % _json.dumps(rule, ensure_ascii=False)
+                )
+                repeats = bool(args.get("repeats"))
+                rule_id = await db.add_conditional_rule(
+                    chat_id, _json.dumps(rule, ensure_ascii=False), message, repeats=repeats
+                )
+                return {
+                    "success": True,
+                    "message": "Regla guardada (id %s): %s" % (rule_id, message),
+                }
+            return {"success": False, "message": "Acción no válida: create, list o delete."}
+
         elif func_name == "find_contact":
             from src.utils.voice_text import normalize_dictated_email
 

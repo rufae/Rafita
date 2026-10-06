@@ -573,3 +573,18 @@ async def test_delete_stale_chat_history_solo_podalo_viejo(db):
     assert borrados == 1
     history = await db.get_chat_history(0, 10)
     assert [h["content"] for h in history] == ["reciente"]
+
+
+async def test_conditional_rules_crud(db):
+    rid = await db.add_conditional_rule(7, '{"type": "metric"}', "aviso", repeats=False)
+    activas = await db.list_active_conditional_rules()
+    assert any(r["id"] == rid for r in activas)
+    assert len(await db.list_conditional_rules(7)) == 1
+    await db.fire_conditional_rule(rid, repeats=False)
+    assert not any(r["id"] == rid for r in await db.list_active_conditional_rules())
+    assert await db.delete_conditional_rule(7, rid) == 1
+    assert await db.delete_conditional_rule(7, rid) == 0
+
+    rid2 = await db.add_conditional_rule(7, '{"type": "metric"}', "otra", repeats=True)
+    await db.fire_conditional_rule(rid2, repeats=True)
+    assert any(r["id"] == rid2 for r in await db.list_active_conditional_rules())

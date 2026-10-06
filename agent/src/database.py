@@ -313,6 +313,18 @@ class DatabaseManager:
             CREATE INDEX IF NOT EXISTS idx_automation_runs_workflow
             ON automation_runs(workflow, id DESC)
             """,
+            """
+            CREATE TABLE IF NOT EXISTS conditional_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                rule_json TEXT NOT NULL,
+                message TEXT NOT NULL,
+                repeats INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                fired_at TEXT
+            )
+            """,
         ]
         for stmt in schema:
             await self._conn.execute(stmt)
@@ -528,6 +540,54 @@ class DatabaseManager:
         cursor = await self.execute(
             "DELETE FROM chat_history WHERE chat_id = ? AND created_at < datetime('now', ?)",
             (chat_id, "-%d hours" % hours),
+        )
+        await self._conn.commit()
+        return cursor.rowcount or 0
+
+    # ---------- reglas condicionales (2026-10-06) ----------
+
+    async def add_conditional_rule(
+        self, chat_id: int, rule_json: str, message: str, repeats: bool = False
+    ) -> int:
+        sql = """
+            INSERT INTO conditional_rules
+                (chat_id, rule_json, message, repeats, is_active, created_at)
+            VALUES (?, ?, ?, ?, 1, datetime('now'))
+        """
+        return await self.insert(sql, (chat_id, rule_json, message, 1 if repeats else 0))
+
+    async def list_active_conditional_rules(self) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, chat_id, rule_json, message, repeats, fired_at, created_at
+            FROM conditional_rules WHERE is_active = 1 ORDER BY id ASC
+        """
+        return await self.fetchall(sql)
+
+    async def list_conditional_rules(self, chat_id: int) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, rule_json, message, repeats, is_active, fired_at, created_at
+            FROM conditional_rules WHERE chat_id = ? ORDER BY id ASC
+        """
+        return await self.fetchall(sql, (chat_id,))
+
+    async def fire_conditional_rule(self, rule_id: int, repeats: bool = False) -> None:
+        if repeats:
+            await self.execute(
+                "UPDATE conditional_rules SET fired_at = datetime('now') WHERE id = ?",
+                (rule_id,),
+            )
+        else:
+            await self.execute(
+                "UPDATE conditional_rules SET fired_at = datetime('now'), is_active = 0 "
+                "WHERE id = ?",
+                (rule_id,),
+            )
+        await self._conn.commit()
+
+    async def delete_conditional_rule(self, chat_id: int, rule_id: int) -> int:
+        cursor = await self.execute(
+            "DELETE FROM conditional_rules WHERE id = ? AND chat_id = ?",
+            (rule_id, chat_id),
         )
         await self._conn.commit()
         return cursor.rowcount or 0

@@ -7,7 +7,9 @@
 """
 
 import asyncio
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -223,6 +225,70 @@ async def send_proactive_reminders(bot: Any) -> int:
     return sent
 
 
+# ---------- Eval RAG semanal (2026-10-06): avisa SOLO si el recall cae ----------
+
+_RAG_EVAL_RECALL_MIN = 0.5
+_RAG_EVAL_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "rag_eval.py"
+
+
+async def _run_rag_eval() -> dict[str, Any]:
+    """Ejecuta agent/scripts/rag_eval.py como subproceso y devuelve su reporte."""
+    import os
+    import sys
+    import tempfile
+
+    out = Path(tempfile.mkdtemp()) / "rag_eval.json"
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(_RAG_EVAL_SCRIPT),
+        "--json",
+        str(out),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        env=dict(os.environ),
+    )
+    _, err = await asyncio.wait_for(proc.communicate(), timeout=900.0)
+    if proc.returncode != 0 or not out.exists():
+        detalle = (err or b"").decode("utf-8", "replace")[:200]
+        raise RuntimeError("rag_eval fallo (rc=%s): %s" % (proc.returncode, detalle))
+    report: dict[str, Any] = json.loads(out.read_text(encoding="utf-8"))
+    return report
+
+
+async def rag_eval_weekly(bot: Any, state: dict[str, str], now: datetime | None = None) -> bool:
+    """Cada domingo corre la eval del gold set RAG; avisa si recall@5 < minimo."""
+    now = now or datetime.now(ZoneInfo(settings.timezone))
+    if now.weekday() != 6:
+        return False
+    week = now.strftime("%G-W%V")
+    if state.get("last_week") == week:
+        return False
+    state["last_week"] = week
+    try:
+        report = await _run_rag_eval()
+    except Exception as e:
+        logger.warning("Eval RAG semanal fallo: %s", e)
+        return False
+    positives = report.get("positives") or {}
+    top_k = report.get("top_k", 5)
+    recall = float(positives.get("recall@%s" % top_k, 0.0) or 0.0)
+    mrr = float(positives.get("mrr@%s" % top_k, 0.0) or 0.0)
+    logger.info("Eval RAG semanal: recall@%s=%.2f mrr=%.2f", top_k, recall, mrr)
+    if recall >= _RAG_EVAL_RECALL_MIN:
+        return True
+    texto = (
+        "⚠️ *Eval RAG semanal:* el recall@%s ha bajado a *%.2f* (mínimo %.2f; "
+        "MRR %.2f). Revisa el índice o el modelo de embeddings."
+        % (top_k, recall, _RAG_EVAL_RECALL_MIN, mrr)
+    )
+    for admin_id in settings.admin_ids or []:
+        try:
+            await bot.send_proactive_message(admin_id, texto)
+        except Exception as e:
+            logger.warning("Eval RAG: no se pudo avisar a %s: %s", admin_id, e)
+    return True
+
+
 class BriefingWorker:
     """Tick cada 30 min: recordatorios proactivos + briefing a la hora fijada."""
 
@@ -230,6 +296,7 @@ class BriefingWorker:
         self._task: asyncio.Task | None = None
         self._shutdown_event: asyncio.Event | None = None
         self._last_briefing_day = ""
+        self._rag_eval_state: dict[str, str] = {}
         self._failures = 0
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
@@ -268,6 +335,18 @@ class BriefingWorker:
         from src.bot import bot
 
         await send_proactive_reminders(bot)
+        # Reglas condicionales ("avisa si llueve/la RAM supera X") cada tick.
+        try:
+            from src.utils.conditional_rules import evaluate_and_fire
+
+            await evaluate_and_fire(bot)
+        except Exception as e:
+            logger.warning("Reglas condicionales: %s", e)
+        # Eval RAG semanal (domingos) con aviso si el recall cae.
+        try:
+            await rag_eval_weekly(bot, self._rag_eval_state)
+        except Exception as e:
+            logger.warning("Eval RAG semanal: %s", e)
         now = datetime.now(ZoneInfo(settings.timezone))
         try:
             hour = int(settings.briefing_time.split(":")[0])
