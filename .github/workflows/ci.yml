@@ -91,6 +91,11 @@ jobs:
             --ignore-vuln PYSEC-2026-3815
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
+        env:
+          # gitleaks-action exige el token explicito desde su breaking update
+          # (sin el, todo run de pull_request falla: "GITHUB_TOKEN is now
+          # required to scan pull requests").
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build Docker Image
