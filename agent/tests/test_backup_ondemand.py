@@ -120,11 +120,10 @@ async def test_tool_run_backup_y_status(monkeypatch, tmp_path):
     assert status["pending"] is True
 
 
-async def test_comando_telegram_backup_dispara_sistema():
+async def test_comando_telegram_backup_dispara_sistema(tmp_path, monkeypatch):
+    data_dir = _prepare(tmp_path, monkeypatch)
     message = _FakeMessage()
     await backup.backup_command(_update(message), None)
     assert message.texts
     assert "Backup completo" in message.texts[0]
-    assert (settings.data_path / backup.TRIGGER_NAME).exists()
-    # limpieza para no arrastrar estado entre tests
-    (settings.data_path / backup.TRIGGER_NAME).unlink()
+    assert (data_dir / backup.TRIGGER_NAME).exists()

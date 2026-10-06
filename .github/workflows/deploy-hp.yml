@@ -1,15 +1,24 @@
 name: deploy-hp
 
-# Despliega en el nodo HP al hacer push (runner auto-hospedado en el propio
-# HP; sin puertos abiertos). El timer diario de las 05:30 se mantiene como
-# red de seguridad. El lock dentro de auto_update.sh evita solapes.
+# Despliega en el nodo HP SOLO cuando el CI de esta rama queda verde
+# (trigger workflow_run; un push ya no dispara el CD directamente, y una
+# conclusion != success no despliega). El timer diario de las 05:30 se
+# mantiene como red de seguridad y workflow_dispatch permite forzar un
+# despliegue manual. El lock dentro de auto_update.sh evita solapes.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [master]
   workflow_dispatch:
 
 jobs:
   deploy:
+    # Verde del CI (solo pushes) o despliegue manual explícito.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: self-hosted
     steps:
       - name: auto_update (Rafita + projects.conf)

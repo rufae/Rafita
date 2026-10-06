@@ -245,7 +245,12 @@ async def serve_call_page():
 async def serve_design_tokens_css():
     """Tokens de diseño compartidos (fuente unica, Fase 3): la pagina de
     llamada y la SPA consumen el mismo fichero."""
+    # Relativo al repo (CI) + rutas del contenedor (/workspace monta el repo;
+    # la imagen copia el codigo en /app, asi que se comprueban las dos).
+    raiz_repo = Path(__file__).resolve().parents[3]
     for path in (
+        raiz_repo / "web" / "app" / "design-tokens.css",
+        raiz_repo / "web" / "design-tokens.css",
         Path("/workspace/web/app/design-tokens.css"),
         Path("/workspace/web/design-tokens.css"),
     ):
