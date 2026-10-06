@@ -11,13 +11,18 @@
 #   git reset --hard → restaurar solo-HP → up -d --build con
 #   measure-readiness → health gate de /ready → si no vuelve en 3 min:
 #   ROLLBACK completo (código + árbol previo + recreate).
-# Proyectos genéricos: fetch → si hay commits nuevos → si hay cambios
-# locales tracked: stash → reset --hard → reaplicar stash (pop) → hook
-# opcional. Si el pop choca, árbol limpio en el nuevo commit y el stash se
-# conserva (aviso por Telegram). Los untracked no se tocan.
+# Proyectos genéricos: fetch → gate de CI verde → si hay commits nuevos →
+# si hay cambios locales tracked: stash → reset --hard → reaplicar stash
+# (pop) → hook opcional. Si el pop choca, árbol limpio en el nuevo commit y
+# el stash se conserva (aviso por Telegram). Los untracked no se tocan.
+#
+# Gate de CI: cada repo sólo se despliega si su último run del workflow
+# ci.yml en la rama está en success (red de seguridad del timer diario de
+# las 05:30; el CD normal ya sólo se dispara con workflow_run en success).
 #
 # Uso:  bash scripts/auto_update.sh [--force]
 #   --force  actualiza Rafita aunque HEAD ya esté en el remoto (pruebas)
+#   FORCE_DEPLOY=1  salta el gate de CI (sólo despliegues manuales)
 #
 # Estado: ~/.local/state/rafita/auto-update/  (snapshots + auto-update.log)
 set -uo pipefail
@@ -64,6 +69,53 @@ notify() {
         --data-urlencode "text=${text}" >/dev/null 2>&1 || true
 }
 
+# ------------------------------------------------------------ gate CI ------
+# slug_github: "git@github.com:rufae/X.git" | "https://github.com/rufae/X.git"
+# → "rufae/X" (si el remoto no es de GitHub, se devuelve tal cual).
+slug_github() {
+    printf '%s' "$1" | sed -E 's#^(git@|https://)github\.com[:/]##; s#\.git$##'
+}
+
+# ci_verde <owner/repo> <rama>: 0 sólo si el ÚLTIMO run del workflow ci.yml
+# de esa rama terminó en success. Un run fallido o en curso → no se
+# despliega (fail-closed). FORCE_DEPLOY=1 lo salta (workflow_dispatch).
+# Si la API no se puede consultar (sin jq, sin red, repo no accesible),
+# se continúa con aviso: el fetch de git fallaría igualmente en el peor
+# caso y así no se bloquea un despliegue legítimo para siempre.
+ci_verde() {
+    local repo="$1" branch="$2" runs concl token=""
+    [ -n "${FORCE_DEPLOY:-}" ] && return 0
+    if ! command -v jq >/dev/null 2>&1; then
+        log "AVISO: jq ausente; no se verifica CI de $repo@$branch (se continúa)"
+        return 0
+    fi
+    # Token del .git-credentials si existe (repos privados, p. ej. BuenaTierra).
+    if [ -f "$HOME/.git-credentials" ]; then
+        token="$(grep -oE 'https://[^:]+:[^@]+@github\.com' "$HOME/.git-credentials" 2>/dev/null \
+            | head -1 | sed -E 's#^https://[^:]+:##; s#@github\.com$##')" || true
+    fi
+    local args=(-s -f -m 15 -H "Accept: application/vnd.github+json")
+    [ -n "$token" ] && args+=(-H "Authorization: Bearer $token")
+    if ! runs="$(curl "${args[@]}" \
+        "https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=$branch&per_page=1" \
+        2>>"$LOG")"; then
+        log "AVISO: API de GitHub no consultable; no se verifica CI de $repo@$branch (se continúa)"
+        return 0
+    fi
+    if [ "$(printf '%s' "$runs" | jq '.workflow_runs | length' 2>>"$LOG")" = "0" ]; then
+        log "AVISO: sin runs de CI para $repo@$branch; se continúa"
+        return 0
+    fi
+    concl="$(printf '%s' "$runs" | jq -r '.workflow_runs[0].conclusion // ""' 2>>"$LOG")"
+    [ "$concl" = "success" ] && return 0
+    if [ -z "$concl" ]; then
+        log "gate CI: run de $repo@$branch aún en curso — despliegue omitido"
+    else
+        log "gate CI: $repo@$branch en '$concl' — despliegue omitido"
+    fi
+    return 1
+}
+
 # ---------------------------------------------------------------- Rafita ---
 # Flujo completo: snapshot, build, health gate y rollback (runbook §7).
 actualizar_rafita() {
@@ -82,6 +134,12 @@ actualizar_rafita() {
 
     if [ "$NEW_SHA" = "$OLD_SHA" ] && [ "${1:-}" != "--force" ]; then
         log "rafita: sin cambios: ya en $OLD_SHA"
+        return 0
+    fi
+
+    # Gate: no se despliega si el CI de master no está en success.
+    if ! ci_verde "rufae/Rafita" "master"; then
+        log "rafita: gate CI — se mantiene $OLD_SHA (el remoto está en $NEW_SHA)"
         return 0
     fi
 
@@ -156,7 +214,7 @@ actualizar_rafita() {
 # Los fallos notifican; lo normal (sin cambios) solo se registra en el log.
 actualizar_generico() {
     local nom="$1" dir="$2" branch="$3" remote="$4" hook="$5"
-    local OLD_SHA NEW_SHA STASHED=0
+    local OLD_SHA NEW_SHA STASHED=0 slug
     if [ ! -d "$dir/.git" ]; then
         log "$nom: no es un repo git ($dir); se omite"
         return 0
@@ -170,6 +228,13 @@ actualizar_generico() {
     OLD_SHA="$(git -C "$dir" rev-parse HEAD)"
     if [ "$NEW_SHA" = "$OLD_SHA" ]; then
         log "$nom: sin cambios: ya en $OLD_SHA"
+        return 0
+    fi
+    # Gate: no se despliega si el CI de su rama no está en success
+    # (sólo aplica a remotos de GitHub; el resto se omite con nota arriba).
+    slug="$(slug_github "$remote")"
+    if [ "$slug" != "$remote" ] && ! ci_verde "$slug" "$branch"; then
+        log "$nom: gate CI — se mantiene $OLD_SHA (el remoto está en $NEW_SHA)"
         return 0
     fi
     if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null | grep -v '^??')" ]; then

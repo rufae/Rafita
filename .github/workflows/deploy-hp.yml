@@ -20,6 +20,10 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
     runs-on: self-hosted
+    env:
+      # Gate de CI verde de auto_update.sh: sólo el despliegue manual lo
+      # salta; el workflow_run siempre llega con el CI en success.
+      FORCE_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
     steps:
       - name: auto_update (Rafita + projects.conf)
         run: bash "$HOME/proyectos/rafita/scripts/auto_update.sh"
