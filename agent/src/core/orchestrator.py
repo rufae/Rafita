@@ -988,6 +988,47 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
 
     full = ""
     if tool_calls:
+        # Guardia de exito inventado (bug 2026-10-06, llamada): si TODAS las
+        # herramientas fallaron, la composicion no puede afirmar que se hizo.
+        # En texto ya existia la guarda; en streaming faltaba y el modelo
+        # respondia "he marcado las tareas" sin haberlo hecho.
+        resultados = []
+        for m in messages_for_llm:
+            if m.get("role") == "tool":
+                try:
+                    resultados.append(json.loads(m.get("content") or "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        todas_fallidas = bool(resultados) and all(r.get("success") is False for r in resultados)
+        detalles_error = "; ".join(
+            str(r.get("message") or r.get("error") or "error")[:140] for r in resultados[:2]
+        )
+        fallback_error = ""
+        if todas_fallidas:
+            fallback_error = "No he podido completar la acción: %s" % (
+                detalles_error or "error de la herramienta"
+            )
+
+        def _guardia_desvio(buffer_texto: str) -> str:
+            """Fallback determinista si la composicion se desvia.
+
+            Cobre saludo generico/negacion falsa tras herramientas con datos
+            (2026-09-30) y exitos inventados tras herramientas fallidas
+            (2026-10-06). Devuelve "" si la composicion va bien.
+            """
+            if _es_saludo_solo(text) or not _hay_tool_results(messages_for_llm):
+                return ""
+            desviado = _respuesta_desviada(buffer_texto) or (
+                todas_fallidas and _hallucination_risk(buffer_texto, text)
+            )
+            if not desviado:
+                return ""
+            return (
+                fallback_error
+                or _ultimo_mensaje_tool(messages_for_llm)
+                or "Ahora mismo no puedo responderte a eso."
+            )
+
         # Se retiene la primera frase antes de emitirla para detectar el
         # saludo generico tras herramientas (bug 2026-09-30); si aparece, se
         # responde con el mensaje real de la herramienta.
@@ -1011,16 +1052,10 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                 listo = buffer.rstrip().endswith((".", "!", "?", ":")) or len(buffer) >= 60
                 if not listo:
                     continue
-                if (
-                    not _es_saludo_solo(text)
-                    and _respuesta_desviada(buffer)
-                    and _hay_tool_results(messages_for_llm)
-                ):
+                fallback = _guardia_desvio(buffer)
+                if fallback:
                     logger.warning(
-                        "[ORCHESTRATOR] saludo/negacion falsa en streaming; uso la herramienta"
-                    )
-                    fallback = _ultimo_mensaje_tool(messages_for_llm) or (
-                        "Ahora mismo no puedo responderte a eso."
+                        "[ORCHESTRATOR] composicion desviada en streaming; uso fallback determinista"
                     )
                     full = fallback
                     for chunk in _chunk_words(fallback):
@@ -1034,13 +1069,10 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
                     yield buffer_out
                 buffer = ""
             if buffer and not validado:
-                if (
-                    not _es_saludo_solo(text)
-                    and _respuesta_desviada(buffer)
-                    and _hay_tool_results(messages_for_llm)
-                ):
-                    fallback = _ultimo_mensaje_tool(messages_for_llm) or (
-                        "Ahora mismo no puedo responderte a eso."
+                fallback = _guardia_desvio(buffer)
+                if fallback:
+                    logger.warning(
+                        "[ORCHESTRATOR] composicion desviada al final; uso fallback determinista"
                     )
                     full = fallback
                     for chunk in _chunk_words(fallback):
@@ -1054,6 +1086,12 @@ async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
             logger.warning("[ORCHESTRATOR] streaming fallo, uso texto completo: %s", e)
             full = content or "Consulta completada. Revisa el resultado."
             yield full
+        # Red de seguridad: si la composicion se valido y aun asi afirma una
+        # accion con todas las tools caidas, se corrige el texto guardado (el
+        # audio ya emitido no se puede recuperar).
+        if fallback_error and full and _hallucination_risk(full, text):
+            logger.warning("[ORCHESTRATOR] exito inventado tras tools fallidas; corrijo el texto")
+            full = fallback_error
     elif content:
         full = content
         for chunk in _chunk_words(content):

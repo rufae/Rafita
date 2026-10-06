@@ -548,3 +548,28 @@ async def test_gdpr_extra_ids_cubre_dos_espacios(db):
     assert deleted["chat_history"] == 2
     after = await db.export_user_data(53, 900_000_053)
     assert "chat_history" not in after
+
+
+# ---------- tasks: rowcount (bug 2026-10-06) y poda de historial ----------
+
+
+async def test_task_rowcounts(db):
+    tid = await db.add_task(1, "comprar pilas")
+    assert await db.complete_task(1, tid) == 1
+    assert await db.complete_task(1, 999_999) == 0
+    assert await db.complete_task(2, tid) == 0  # otro chat no toca la fila
+    assert await db.delete_task(1, tid) == 1
+    assert await db.delete_task(1, tid) == 0
+
+
+async def test_delete_stale_chat_history_solo_podalo_viejo(db):
+    await db.save_chat_message(0, "user", "reciente")
+    await db.execute(
+        "INSERT INTO chat_history (chat_id, role, content, created_at) "
+        "VALUES (0, 'user', 'viejo', datetime('now', '-5 hours'))"
+    )
+    await db._conn.commit()
+    borrados = await db.delete_stale_chat_history(0, hours=2)
+    assert borrados == 1
+    history = await db.get_chat_history(0, 10)
+    assert [h["content"] for h in history] == ["reciente"]

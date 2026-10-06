@@ -48,9 +48,13 @@ class _FakeDB:
         for t in self.tasks:
             if t["id"] == task_id:
                 t["status"] = "completed"
+                return 1
+        return 0
 
     async def delete_task(self, chat_id, task_id):
+        antes = len(self.tasks)
         self.tasks = [t for t in self.tasks if t["id"] != task_id]
+        return antes - len(self.tasks)
 
 
 def _install_db(monkeypatch):

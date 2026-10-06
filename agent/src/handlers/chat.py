@@ -2686,10 +2686,26 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                                 return await google_services.complete_task(alt_id)
                             return await google_services.delete_task(alt_id)
                     return resultado
+                try:
+                    tid = int(tarea_id)
+                except ValueError:
+                    return {"success": False, "message": "task_id no válido: %s" % tarea_id}
                 if action == "complete":
-                    await db.complete_task(chat_id, int(tarea_id))
+                    hechas = await db.complete_task(chat_id, tid)
+                    if not hechas:
+                        return {
+                            "success": False,
+                            "message": "No encontré ninguna tarea local con id %s "
+                            "(¿ya estaba completada o borrada?)." % tarea_id,
+                        }
                     return {"success": True, "message": "Tarea completada (local)."}
-                await db.delete_task(chat_id, int(tarea_id))
+                borradas = await db.delete_task(chat_id, tid)
+                if not borradas:
+                    return {
+                        "success": False,
+                        "message": "No encontré ninguna tarea local con id %s "
+                        "(¿ya estaba borrada?)." % tarea_id,
+                    }
                 return {"success": True, "message": "Tarea eliminada (local)."}
             return {
                 "success": False,

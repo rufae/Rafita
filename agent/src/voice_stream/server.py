@@ -337,14 +337,16 @@ async def start_call(request: Request):
 
     chat_id = payload.get("chat_id", 0)
     if not chat_id:
-        # Cada llamada empieza con contexto limpio: se borra el historial de
-        # voz anterior (chat_id 0) para que no contamine respuestas nuevas.
+        # Contexto de voz (chat_id 0): se poda solo lo antiguo (>2h). Si se
+        # borraba TODO al empezar cada sesion, una reconexion (WS, pestana,
+        # movil) perdia el hilo y el modelo volvia a saludar "Hola, ¿en que
+        # puedo ayudarte?" en mitad de la llamada (bug 2026-10-06).
         try:
             from src.database import db
 
-            await db.delete_chat_history(0)
+            await db.delete_stale_chat_history(0, hours=2)
         except Exception as e:
-            logger.debug("VoiceStream: no se pudo limpiar historial de voz: %s", e)
+            logger.debug("VoiceStream: no se pudo podar historial de voz: %s", e)
     session_id = str(uuid.uuid4())
 
     _active_sessions[session_id] = {

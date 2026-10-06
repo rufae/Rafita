@@ -1517,3 +1517,30 @@ async def test_get_google_calendar_events_filtra_por_dias(monkeypatch):
     assert result["success"]
     assert "Cerca" in result["message"]
     assert "Lejos" not in result["message"]
+
+
+# ---------- manage_google_tasks local: rowcount real (bug 2026-10-06) ----------
+
+
+async def test_manage_google_tasks_local_no_afirma_si_no_hay_fila(monkeypatch):
+    monkeypatch.setattr(GoogleServicesManager, "is_ready", property(lambda self: False))
+    monkeypatch.setattr(chat_mod.db, "list_tasks", _fn([]))
+    monkeypatch.setattr(chat_mod.db, "complete_task", _fn(0))
+    monkeypatch.setattr(chat_mod.db, "delete_task", _fn(0))
+    res = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_id": "42"}
+    )
+    assert res["success"] is False
+    res = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "delete", "task_id": "42"}
+    )
+    assert res["success"] is False
+    res = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_id": "no-es-numero"}
+    )
+    assert res["success"] is False
+    monkeypatch.setattr(chat_mod.db, "complete_task", _fn(1))
+    res = await chat_mod._execute_tool(
+        1, "manage_google_tasks", {"action": "complete", "task_id": "42"}
+    )
+    assert res["success"] is True
