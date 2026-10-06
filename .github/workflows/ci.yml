@@ -16,9 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-biome@v2
-        with:
-          version: 2.5.14
+      # Instalación por npm: la action oven-sh/setup-biome no existe y el job
+      # llevaba rojo desde el 29-sep ("repository not found" al resolverla).
+      - name: Install Biome
+        run: npm install -g @biomejs/biome@2.5.14
       - name: Biome check (formato + lint)
         run: biome ci web/
   lint:

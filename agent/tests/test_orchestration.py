@@ -162,3 +162,76 @@ async def test_trigger_n8n_del_catalogo_pasa_por_permisos(monkeypatch):
     assert res2["success"] is False
     assert res2.get("needs_confirmation") is True
     assert len(llamadas) == 1
+
+
+def test_resolve_con_espacios_y_preview_del_webhook():
+    # linea 160: clave escrita con espacios ("crm seguimiento") normaliza a guiones
+    assert orch.resolve("crm seguimiento").key == "crm-seguimiento"
+    spec = orch.AUTOMATIONS["radar-ia"]
+    preview = orch.webhook_preview(spec)
+    assert preview.endswith("/webhook/manual-radar-ia")
+    assert " " not in preview
+
+
+class _PostFalso:
+    """Doble de httpx.AsyncClient para _post (exito, error HTTP y excepcion)."""
+
+    def __init__(self, status_code=200, cuerpo=None, excepcion=None, texto=""):
+        self._status = status_code
+        self._cuerpo = cuerpo
+        self._excepcion = excepcion
+        self.text = texto
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, url, json=None):
+        if self._excepcion:
+            raise self._excepcion
+        return self
+
+    @property
+    def status_code(self):
+        return self._status
+
+    def json(self):
+        if isinstance(self._cuerpo, Exception):
+            raise self._cuerpo
+        return self._cuerpo
+
+
+async def test_post_exito_con_mensaje_de_n8n(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    cliente = _PostFalso(cuerpo={"message": "Workflow was started"})
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(AsyncClient=lambda **k: cliente))
+    ok, detalle = await orch._post("http://n8n/webhook/x", {"a": 1})
+    assert ok is True
+    assert "HTTP 200" in detalle
+    assert "Workflow was started" in detalle
+
+
+async def test_post_falla_de_red_es_honesta(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    cliente = _PostFalso(excepcion=ConnectionError("n8n caido"))
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(AsyncClient=lambda **k: cliente))
+    ok, detalle = await orch._post("http://n8n/webhook/x", None)
+    assert ok is False
+    assert "n8n" in detalle
+
+
+async def test_post_http_400_y_cuerpo_no_json(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    cliente = _PostFalso(status_code=404, cuerpo=ValueError("no json"), texto="Not Found")
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(AsyncClient=lambda **k: cliente))
+    ok, detalle = await orch._post("http://n8n/webhook/x", {})
+    assert ok is False
+    assert "404" in detalle

@@ -93,6 +93,12 @@ def _bot_falso(monkeypatch):
             enviados.append((chat_id, text))
 
     monkeypatch.setattr("src.bot.bot", _Bot())
+    # Los avisos se envian a settings.admin_ids; en CI no hay .env y la lista
+    # esta vacia (el bucle no se ejecuta y el test no ve nada). El helper
+    # fija el admin para que el test no dependa del entorno.
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "admin_ids", [900000001])
     return enviados
 
 

@@ -131,3 +131,68 @@ def test_unpersistable_webhook_secret_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(security_manager, "ENV_PATH", blocker / "sub" / ".env")
     monkeypatch.setattr(settings, "webhook_secret", "")
     assert security_manager.get_or_create_webhook_secret() == ""
+
+
+def test_env_file_ilegible_no_genera_token_efimero(tmp_path, monkeypatch):
+    """18-20/38-39: env inaccesible (leido como directorio) -> fail-closed."""
+    directorio = tmp_path / "no_es_un_fichero"
+    directorio.mkdir()
+    monkeypatch.setattr(security_manager, "ENV_PATH", directorio)
+    monkeypatch.setattr(settings, "voice_call_token", "")
+    assert security_manager.get_or_create_voice_call_token() == ""
+
+
+def test_voice_call_token_configurado_y_persistido(isolated_env_file, monkeypatch):
+    monkeypatch.setattr(settings, "voice_call_token", "  tok-cfg ")
+    assert security_manager.get_or_create_voice_call_token() == "tok-cfg"
+
+    monkeypatch.setattr(settings, "voice_call_token", "")
+    token = security_manager.get_or_create_voice_call_token()
+    assert len(token) >= 32
+    assert ("VOICE_CALL_TOKEN=%s" % token) in isolated_env_file.read_text(encoding="utf-8")
+
+
+def test_web_auth_secret_configurado_y_persistido(isolated_env_file, monkeypatch):
+    monkeypatch.setattr(settings, "web_auth_secret", " secreto-cfg ")
+    assert security_manager.get_or_create_web_auth_secret() == "secreto-cfg"
+
+    monkeypatch.setattr(settings, "web_auth_secret", "")
+    secreto = security_manager.get_or_create_web_auth_secret()
+    assert len(secreto) >= 40
+    assert ("WEB_AUTH_SECRET=%s" % secreto) in isolated_env_file.read_text(encoding="utf-8")
+
+    # 171-172: el valor ya persistido se reutiliza en el proximo arranque.
+    monkeypatch.setattr(settings, "web_auth_secret", "")
+    assert security_manager.get_or_create_web_auth_secret() == secreto
+
+
+def test_persist_sustituye_valor_vacio_y_no_duplica(isolated_env_file, monkeypatch):
+    """45-48: linea existente con valor vacio -> se sustituye, sin duplicarla."""
+    monkeypatch.setattr(settings, "web_auth_secret", "")
+    isolated_env_file.write_text("WEB_AUTH_SECRET=\n", encoding="utf-8")
+    secreto = security_manager.get_or_create_web_auth_secret()
+    contenido = isolated_env_file.read_text(encoding="utf-8")
+    assert ("WEB_AUTH_SECRET=%s" % secreto) in contenido
+    assert contenido.count("WEB_AUTH_SECRET=") == 1
+    assert "WEB_AUTH_SECRET=\n" not in contenido
+
+
+def test_persist_completa_salto_final_ausente(isolated_env_file, monkeypatch):
+    """51: fichero sin newline final -> se completa antes de anadir la clave."""
+    monkeypatch.setattr(settings, "web_auth_secret", "")
+    isolated_env_file.write_text("TELEGRAM_TOKEN=dummy", encoding="utf-8")
+    secreto = security_manager.get_or_create_web_auth_secret()
+    contenido = isolated_env_file.read_text(encoding="utf-8")
+    assert contenido.endswith("\n")
+    assert ("WEB_AUTH_SECRET=%s" % secreto) in contenido
+
+
+def test_clave_vacia_rechazada():
+    with pytest.raises(ValueError, match="empty"):
+        security_manager._normalize_key("''")
+
+
+def test_decrypt_fallido_devuelve_el_valor_almacenado(monkeypatch):
+    """Fail-closed: descifro roto -> se devuelve tal cual, nunca inventa."""
+    monkeypatch.setattr(settings, "encryption_key", "")
+    assert security_manager.decrypt_value("token-corrupto!!") == "token-corrupto!!"

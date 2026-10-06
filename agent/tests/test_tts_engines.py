@@ -327,3 +327,96 @@ async def test_prewarm_tts_kokoro_fails_falls_back_to_piper(tmp_path, monkeypatc
     monkeypatch.setattr(tts, "ensure_voice_model", fake_ensure)
     monkeypatch.setattr(tts, "_load_piper_voice", lambda p: object())
     assert await tts.prewarm_tts() is True
+
+
+# ---------- _work_dir / _load_kokoro reales / rutas de error ----------
+
+
+def test_work_dir_falla_y_vuelve_al_original(tmp_path, monkeypatch):
+    bloqueador = tmp_path / "archivo"
+    bloqueador.write_text("x")
+    monkeypatch.setattr(kokoro, "KOKORO_DIR", bloqueador / "a")
+    monkeypatch.setattr(kokoro, "FALLBACK_DIR", bloqueador / "b")
+    assert kokoro._work_dir() == bloqueador / "a"
+
+
+async def test_ensure_descarga_solo_el_archivo_faltante(tmp_path, monkeypatch):
+    monkeypatch.setattr(kokoro, "KOKORO_DIR", tmp_path)
+    (tmp_path / kokoro.MODEL_FILE).write_bytes(b"modelo-existente")
+    _patch_httpx(monkeypatch, _DownloadClient)
+    result = await kokoro.ensure_kokoro_model()
+    assert result is not None
+    modelo, voces = result
+    assert modelo.read_bytes() == b"modelo-existente"
+    assert voces.exists() and voces.read_bytes().startswith(b"KOKORO-")
+
+
+class _RtFalso:
+    class SessionOptions:
+        def __init__(self):
+            self.intra_op_num_threads = 0
+            self.inter_op_num_threads = 0
+
+    llamadas = []
+
+    @classmethod
+    def InferenceSession(cls, path, so, providers=None):
+        cls.llamadas.append((path, so, providers))
+        return "sesion-falsa"
+
+
+class _EngineFalso:
+    def create(self, text, voice=None, lang="es", speed=1.0):
+        return np.zeros(80, dtype="float32"), 16000
+
+
+class _KokoroFalso:
+    @staticmethod
+    def from_session(session, voices):
+        return _EngineFalso()
+
+
+def test_load_kokoro_con_dobles_y_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(kokoro, "_kokoro", None)
+    monkeypatch.setattr(settings, "kokoro_threads", 2)
+    monkeypatch.setitem(sys.modules, "onnxruntime", _RtFalso)
+    monkeypatch.setitem(sys.modules, "kokoro_onnx", SimpleNamespace(Kokoro=_KokoroFalso))
+    modelo, voces = tmp_path / "m.onnx", tmp_path / "v.bin"
+    motor = kokoro._load_kokoro(modelo, voces)
+    assert isinstance(motor, _EngineFalso)
+    assert _RtFalso.llamadas and _RtFalso.llamadas[-1][1].intra_op_num_threads == 2
+    # cache: la segunda llamada no vuelve a crear sesion
+    assert kokoro._load_kokoro(modelo, voces) is motor
+    assert len(_RtFalso.llamadas) == 1
+
+
+def test_synthesize_blocking_con_motor_cargado(monkeypatch, tmp_path):
+    monkeypatch.setattr(kokoro, "_kokoro", _EngineFalso())
+    muestras, rate = kokoro._synthesize_blocking(
+        tmp_path / "m", tmp_path / "v", "hola", "es_mia", 1.0
+    )
+    assert rate == 16000 and len(muestras) == 80
+
+
+async def test_synthesize_kokoro_excepcion_devuelve_none(monkeypatch, tmp_path):
+    async def fake_model():
+        return (tmp_path / "m.onnx", tmp_path / "v.bin")
+
+    def roto(*a, **k):
+        raise RuntimeError("motor roto")
+
+    monkeypatch.setattr(kokoro, "ensure_kokoro_model", fake_model)
+    monkeypatch.setattr(kokoro, "_synthesize_blocking", roto)
+    assert await kokoro.synthesize_kokoro("hola") is None
+
+
+async def test_prewarm_kokoro_excepcion_devuelve_false(monkeypatch, tmp_path):
+    async def fake_model():
+        return (tmp_path / "m.onnx", tmp_path / "v.bin")
+
+    def roto(*a, **k):
+        raise RuntimeError("carga rota")
+
+    monkeypatch.setattr(kokoro, "ensure_kokoro_model", fake_model)
+    monkeypatch.setattr(kokoro, "_load_kokoro", roto)
+    assert await kokoro.prewarm_kokoro() is False
