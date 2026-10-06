@@ -261,6 +261,7 @@ credenciales. Los secretos también pueden servirse desde ficheros
 | [docs/threat-model.md](docs/threat-model.md) | Modelo de amenazas STRIDE |
 | [docs/adr/](docs/adr/) | Decisiones de arquitectura (ADR 001–006) |
 | [docs/INSTALL.md](docs/INSTALL.md) | Instalación detallada |
+| [docs/wake-word.md](docs/wake-word.md) | Wake word manos libres (torre) |
 | [docs/web.md](docs/web.md) | Web, llamada, proxy y HTTPS |
 | [docs/secrets.md](docs/secrets.md) | Secretos file-based (Docker secrets) |
 | [docs/SECURITY.md](docs/SECURITY.md) | Seguridad y modelo de amenaza |
