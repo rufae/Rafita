@@ -1,0 +1,205 @@
+# Eval suite de Rafita (Fase 1 de mejoras.md §5).
+# - modo offline: determinista, corre en cada CI (guardias, argumentos, permisos).
+# - modo live: seleccion de tool con el LLM real; requiere EVAL_LIVE=1 + Ollama
+#   (pytest -m eval). El runner es agent/tests/test_eval_offline.py / test_eval_live.py.
+# Formato por caso: entrada + (guion del LLM o asercion directa) + esperado;
+# "no_debe_pasar" documenta la salida prohibida que las guardias deben evitar.
+
+casos:
+  # ---------- 1. Guardia anti-alucinacion (determinista) ----------
+  - id: off_riesgo_afirma_accion
+    modo: offline
+    tipo: hallucination_risk
+    entrada: "guarda una tarea"
+    content: "He guardado la tarea."
+    esperado: { riesgo: true }
+    no_debe_pasar: "Aceptar la afirmacion sin tool_calls como verdad"
+
+  - id: off_riesgo_inventa_email
+    modo: offline
+    tipo: hallucination_risk
+    entrada: "busca un correo"
+    content: "Te escribio anabel@x.com"
+    esperado: { riesgo: true }
+    no_debe_pasar: "Devolver datos (emails) que no llegaron de una herramienta"
+
+  - id: off_sin_riesgo_vacio
+    modo: offline
+    tipo: hallucination_risk
+    entrada: "busca un correo"
+    content: "No encuentro nada."
+    esperado: { riesgo: false }
+    no_debe_pasar: "Castigar una respuesta honesta de vacio"
+
+  - id: off_sin_riesgo_cita_del_usuario
+    modo: offline
+    tipo: hallucination_risk
+    entrada: "mi correo es yo@x.com"
+    content: "Tu correo es yo@x.com"
+    esperado: { riesgo: false }
+    no_debe_pasar: "Marcar como alucinacion el eco del dato del usuario"
+
+  # ---------- 2. Reintento honesto ----------
+  - id: off_reintento_ejecuta_tool
+    modo: offline
+    tipo: honesty_retry
+    entrada: "busca un correo sobre anabel"
+    guion:
+      - content: "Buscando un correo sobre Anabel. Un momento por favor."
+        tool_calls: null
+      - content: null
+        tool_calls:
+          - id: c1
+            function:
+              name: search_gmail
+              arguments: '{"query": "anabel"}'
+    esperado:
+      llamadas: 2
+      ejecutados:
+        - tool: search_gmail
+          args: { query: anabel }
+
+  # ---------- 3. Negativa sin herramienta ----------
+  - id: off_negativa_sin_tool
+    modo: offline
+    tipo: negative_no_tool
+    entrada: "busca un correo"
+    guion:
+      - content: "No encuentro ningun correo de Anabel."
+        tool_calls: null
+    esperado:
+      llamadas: 1
+      ejecutados: []
+      content_contenga: "No encuentro"
+    no_debe_pasar: "Reintentar o ejecutar herramientas sin afirmacion de accion"
+
+  # ---------- 4. Argumentos de herramienta ----------
+  - id: off_tool_save_expense
+    modo: offline
+    tipo: tool_args
+    entrada: "Gasté 45 euros en gasolina esta mañana."
+    guion:
+      - content: null
+        tool_calls:
+          - id: c1
+            function:
+              name: save_expense
+              arguments: '{"amount": 45, "concept": "gasolina", "currency": "EUR"}'
+    esperado:
+      llamadas: 1
+      ejecutados:
+        - tool: save_expense
+          args: { amount: 45, concept: gasolina, currency: EUR }
+
+  - id: off_tool_create_alert
+    modo: offline
+    tipo: tool_args
+    entrada: "Recuérdame llamar al banco mañana a las 10."
+    guion:
+      - content: null
+        tool_calls:
+          - id: c1
+            function:
+              name: create_alert
+              arguments: '{"text": "llamar al banco", "when": "manana 10:00"}'
+    esperado:
+      llamadas: 1
+      ejecutados:
+        - tool: create_alert
+          args: { text: llamar al banco }
+
+  - id: off_tool_search_web
+    modo: offline
+    tipo: tool_args
+    entrada: "Busca en internet el precio actual del bitcoin."
+    guion:
+      - content: null
+        tool_calls:
+          - id: c1
+            function:
+              name: search_web
+              arguments: '{"query": "precio bitcoin"}'
+    esperado:
+      llamadas: 1
+      ejecutados:
+        - tool: search_web
+          args: { query: precio bitcoin }
+
+  - id: off_tool_args_vacios
+    modo: offline
+    tipo: tool_args
+    entrada: "¿Cómo está el sistema?"
+    guion:
+      - content: null
+        tool_calls:
+          - id: c1
+            function:
+              name: analyze_system_logs
+              arguments: "{}"
+    esperado:
+      llamadas: 1
+      ejecutados:
+        - tool: analyze_system_logs
+          args: {}
+
+  # ---------- 5. Permisos de automatizaciones ----------
+  - id: off_auto_read_sin_confirm
+    modo: offline
+    tipo: automation_permission
+    clave: briefing
+    confirm: false
+    esperado: { allowed: true, mode: read }
+
+  - id: off_auto_execute_requiere_confirm
+    modo: offline
+    tipo: automation_permission
+    clave: secuencias-email
+    confirm: false
+    esperado: { allowed: false, needs_confirmation: true }
+
+  - id: off_auto_execute_confirmado
+    modo: offline
+    tipo: automation_permission
+    clave: secuencias-email
+    confirm: true
+    esperado: { allowed: true }
+
+  - id: off_auto_clave_desconocida
+    modo: offline
+    tipo: automation_resolve
+    clave: "flujo-inexistente"
+    esperado: { resolve: null }
+
+  # ---------- 6. Live: seleccion de tool con el LLM real ----------
+  - id: live_save_expense
+    modo: live
+    entrada: "Gasté 45 euros en gasolina esta mañana."
+    esperado: { tool: save_expense }
+
+  - id: live_create_event
+    modo: live
+    entrada: "Apúntame una cita con el dentista el viernes a las 17:00."
+    esperado:
+      tool: create_event
+      alternativas: [manage_google_calendar]
+
+  - id: live_create_alert
+    modo: live
+    entrada: "Recuérdame que tengo que renovar el DNI, es urgente."
+    esperado: { tool: create_alert }
+
+  - id: live_remember_fact
+    modo: live
+    entrada: "Guarda que mi color favorito es el azul."
+    esperado: { tool: remember_fact }
+
+  - id: live_search_web
+    modo: live
+    entrada: "Busca en internet el precio actual del bitcoin."
+    esperado: { tool: search_web }
+
+  - id: live_negativa_conversacion
+    modo: live
+    entrada: "Hola, ¿qué tal estás?"
+    esperado: { tool: NINGUNA }
+    no_debe_pasar: "Invocar herramientas en una charla social"
