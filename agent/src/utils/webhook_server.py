@@ -8,7 +8,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.config import settings
@@ -306,6 +306,126 @@ async def get_metrics():
         "status": "ok",
         **tm.snapshot(),
     }
+
+
+# --- Observabilidad Prometheus (GET /metrics.prom) ---------------------------
+# /metrics se queda tal cual (JSON, retrocompatibilidad con los consumidores
+# actuales). Se prefiere una ruta aparte a content-negotiation: un cliente con
+# `Accept: */*` (curl y Prometheus por defecto) se llevaria JSON si el formato
+# por defecto cambiara, y asi nadie se rompe.
+_PROCESO_INICIO = time.time()
+_CACHE_IA_TTL_S = 30.0
+_CACHE_IA_TIMEOUT_S = 5.0
+_ESTADOS_IA = ("ok", "degraded", "unhealthy", "uninitialized", "unknown")
+_cache_ia_prom: tuple[float, dict[str, Any]] | None = None
+
+
+async def _estado_ia_prom() -> dict[str, Any]:
+    """Estado del backend de IA para /metrics.prom, cacheado 30 s.
+
+    `check_health()` dedica hasta 10 s a un nodo caido: el scrape de
+    Prometheus no debe bloquearse ni repetirlo en cada peticion, asi que se
+    limita a 5 s y el resultado se reutiliza durante 30 s.
+    """
+    global _cache_ia_prom
+    ahora = time.time()
+    if _cache_ia_prom is not None and ahora - _cache_ia_prom[0] < _CACHE_IA_TTL_S:
+        return _cache_ia_prom[1]
+    try:
+        datos = await asyncio.wait_for(_check_ai(), timeout=_CACHE_IA_TIMEOUT_S)
+    except Exception as e:  # TimeoutError va incluido (Python 3.11+)
+        datos = {"status": "unhealthy", "detail": "health check fallo: %s" % str(e)[:120]}
+    _cache_ia_prom = (ahora, datos)
+    return datos
+
+
+@app.get("/metrics.prom")
+async def get_metrics_prom() -> Response:
+    """Exposition format de Prometheus (`GET /metrics` sigue devolviendo JSON).
+
+    Metricas que salen aqui (ademas de todo lo de `telemetry.snapshot()`):
+
+    - `rafita_process_uptime_seconds` / `rafita_process_start_time_seconds`:
+      uptime del proceso del gateway.
+    - `rafita_ai_up{provider}` y `rafita_ai_health_status{status}`: estado del
+      backend de IA (Ollama o compatible), cacheado 30 s para no castigar el
+      scrape.
+    - `rafita_tool_latency_ms{tool,quantile}`: latencia por herramienta como
+      gauge p50/p95/p99 (el registro no guarda buckets, asi que no se inventa
+      un histograma) mas sus `_sum`/`_count`.
+    - Contadores de peticiones y tokens, con el mismo nombre de clave que el
+      JSON: `rafita_llm_requests`, `rafita_llm_prompt_tokens`,
+      `rafita_llm_completion_tokens`, `rafita_tool_calls{tool}`,
+      `rafita_tool_calls_total` y `rafita_tool_calls_failed`.
+    - `rafita_infra_checks_ok`: resultado de la ultima ronda de infra.
+
+    Unidades y HELP van en el propio texto; los nombres no cambian respecto a
+    `/metrics` JSON, asi que las dos vistas se correlacionan 1 a 1.
+
+    Sin dependencia `prometheus_client`: el texto lo genera
+    `telemetry.render_prometheus()` (string build).
+    """
+    from src.utils.telemetry import metrics as tm
+    from src.utils.telemetry import prom_block, render_prometheus
+
+    ia = await _estado_ia_prom()
+    estado = str(ia.get("status") or "unknown")
+    proveedor = str(ia.get("provider") or "unknown")
+    activo = 1.0 if estado in ("ok", "degraded") else 0.0
+    estados = _ESTADOS_IA if estado in _ESTADOS_IA else (*_ESTADOS_IA, estado)
+    ahora = time.time()
+    bloques: list[str] = [
+        prom_block(
+            "process_start_time_seconds",
+            "gauge",
+            "Momento (epoch) en el que arranco el proceso del gateway.",
+            [({}, _PROCESO_INICIO)],
+        ),
+        prom_block(
+            "process_uptime_seconds",
+            "gauge",
+            "Segundos transcurridos desde el arranque del proceso del gateway.",
+            [({}, ahora - _PROCESO_INICIO)],
+        ),
+        prom_block(
+            "build_info",
+            "gauge",
+            "Version del gateway: el valor es siempre 1, la version va en el label.",
+            [({"version": app.version}, 1.0)],
+        ),
+        prom_block(
+            "ai_up",
+            "gauge",
+            "1 si el backend de IA responde (estado ok o degradado), 0 si esta caido o sin comprobar.",
+            [({"provider": proveedor}, activo)],
+        ),
+        prom_block(
+            "ai_health_status",
+            "gauge",
+            "Ultimo estado del backend de IA, codificado one-hot (1 en el estado vigente).",
+            [({"status": s}, 1.0 if s == estado else 0.0) for s in estados],
+        ),
+    ]
+    if ia.get("model"):
+        bloques.append(
+            prom_block(
+                "ai_model_available",
+                "gauge",
+                "1 si el modelo de chat configurado esta descargado en el proveedor.",
+                [({"model": str(ia["model"])}, 1.0 if ia.get("model_available") else 0.0)],
+            )
+        )
+    if ia.get("latency_ms") is not None:
+        bloques.append(
+            prom_block(
+                "ai_health_latency_ms",
+                "gauge",
+                "Latencia del ultimo chequeo de salud del backend de IA, en milisegundos.",
+                [({"provider": proveedor}, float(ia["latency_ms"]))],
+            )
+        )
+    texto = render_prometheus(tm.snapshot()) + "".join(bloques)
+    return Response(content=texto, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.get("/connectors")
