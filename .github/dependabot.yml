@@ -18,8 +18,11 @@ updates:
       - dependency-name: "piper-tts"
       # 1.55 -> 1.109 (y 3.x) cambian tipos que ya no casan en
       # openai_compat.py (mypy union-attr) → se ignora hasta que haga
-      # falta tocar el código para el nuevo SDK.
+      # falta tocar el código para el nuevo SDK. Y como openai queda
+      # fijado en 1.55 (que pasa `proxies=` a httpx), httpx >=0.28
+      # rompe AsyncHttpxClientWrapper → también ignorado.
       - dependency-name: "openai"
+      - dependency-name: "httpx"
 
   - package-ecosystem: "github-actions"
     directory: "/"
