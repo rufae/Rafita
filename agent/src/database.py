@@ -496,16 +496,41 @@ class DatabaseManager:
         """ % ("" if show_completed else " AND status = 'pending'")
         return await self.fetchall(sql, (chat_id,))
 
-    async def complete_task(self, chat_id: int, task_id: int) -> None:
-        await self.execute(
+    async def complete_task(self, chat_id: int, task_id: int) -> int:
+        """Marca completada y devuelve cuantas filas toco (0 = no existia).
+
+        Bug 2026-10-06 (llamada): sin rowcount el caller devolvia
+        success=True aunque no hubiera tarea y el modelo decia "hecho".
+        """
+        cursor = await self.execute(
             "UPDATE tasks SET status = 'completed' WHERE id = ? AND chat_id = ?",
             (task_id, chat_id),
         )
         await self._conn.commit()
+        return cursor.rowcount or 0
 
-    async def delete_task(self, chat_id: int, task_id: int) -> None:
-        await self.execute("DELETE FROM tasks WHERE id = ? AND chat_id = ?", (task_id, chat_id))
+    async def delete_task(self, chat_id: int, task_id: int) -> int:
+        """Borra la tarea y devuelve cuantas filas toco (0 = no existia)."""
+        cursor = await self.execute(
+            "DELETE FROM tasks WHERE id = ? AND chat_id = ?", (task_id, chat_id)
+        )
         await self._conn.commit()
+        return cursor.rowcount or 0
+
+    async def delete_stale_chat_history(self, chat_id: int, hours: int = 2) -> int:
+        """Poda solo los mensajes mas antiguos que `hours` (bug 2026-10-06).
+
+        Al empezar cada llamada se borraba TODO el historial de voz: una
+        reconexion (WS, pestana, movil) perdia el hilo y el modelo volvia a
+        saludar "Hola, ¿en que puedo ayudarte?". Con la poda por antigüedad
+        las reconexiones conservan el contexto y solo se limpia lo viejo.
+        """
+        cursor = await self.execute(
+            "DELETE FROM chat_history WHERE chat_id = ? AND created_at < datetime('now', ?)",
+            (chat_id, "-%d hours" % hours),
+        )
+        await self._conn.commit()
+        return cursor.rowcount or 0
 
     # ---------- suscripciones web push (PWA, mejora 6) ----------
 

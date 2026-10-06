@@ -1085,3 +1085,76 @@ async def test_generate_response_stream_voz_quita_marcas(monkeypatch):
     assert "[S1]" not in full
     assert "Fuentes" not in full
     assert "Ana trabaja en Babel." in full
+
+
+async def test_generate_response_stream_no_afirma_exito_si_tools_fallaron(monkeypatch):
+    """2026-10-06 (llamada): si TODAS las tools fallan, la composicion no puede
+    decir 'hecho'; se usa el mensaje determinista de error."""
+    _patch_common(monkeypatch)
+    tool_call = {
+        "id": "1",
+        "function": {"name": "manage_google_tasks", "arguments": "{}"},
+    }
+    monkeypatch.setattr(
+        orch,
+        "llm",
+        _FakeLLM(
+            _plain(None, [tool_call]),
+            stream_tokens=["He", " marcado", " las tareas", "."],
+        ),
+    )
+    from src.handlers import chat as chat_mod
+
+    async def fake_exec(chat_id, name, args):
+        return {
+            "success": False,
+            "message": "No encontre ninguna tarea pendiente llamada 'x'.",
+        }
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+    salida = ""
+    async for chunk in orch.generate_response_stream("marca las tareas", 1, voice=True):
+        salida += chunk
+    assert "No he podido completar la acción" in salida
+    assert "He marcado" not in salida
+
+
+async def test_generate_response_stream_exito_inventado_tarde_se_corrige(monkeypatch):
+    """Red de seguridad: si la primera frase pasa la guarda pero luego el modelo
+    afirma la accion con todas las tools caidas, el texto que se guarda (y que
+    alimenta el historial) se corrige al final."""
+    _patch_common(monkeypatch)
+    guardados = []
+
+    async def save(chat_id, role, content):
+        guardados.append((role, content))
+
+    monkeypatch.setattr(orch.db, "save_chat_message", save)
+    tool_call = {
+        "id": "1",
+        "function": {"name": "manage_google_tasks", "arguments": "{}"},
+    }
+    monkeypatch.setattr(
+        orch,
+        "llm",
+        _FakeLLM(
+            _plain(None, [tool_call]),
+            stream_tokens=[
+                "He",
+                " revisado",
+                " todo.",
+                " He marcado las tareas como completadas.",
+            ],
+        ),
+    )
+    from src.handlers import chat as chat_mod
+
+    async def fake_exec(chat_id, name, args):
+        return {"success": False, "message": "error interno de la herramienta"}
+
+    monkeypatch.setattr(chat_mod, "_execute_tool", fake_exec)
+    async for _chunk in orch.generate_response_stream("marca las tareas", 1, voice=True):
+        pass
+    assert guardados, "la respuesta no se guardo"
+    assert "No he podido completar la acción" in guardados[-1][1]
+    assert "He marcado" not in guardados[-1][1]
