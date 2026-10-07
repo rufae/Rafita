@@ -36,7 +36,9 @@ def _enable_segfault_trace() -> None:
 
     path = Path(os.environ.get("DATA_DIR", "/tmp")) / "faulthandler.log"
     try:
-        fh = path.open("a", buffering=0)
+        # Binario sin buffer: en modo texto buffering=0 lanza ValueError
+        # ("can't have unbuffered text I/O") y rompia la importacion en CI.
+        fh = path.open("ab", buffering=0)
         faulthandler.enable(file=fh, all_threads=True)
     except OSError:
         faulthandler.enable(all_threads=True)
