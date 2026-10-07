@@ -304,6 +304,7 @@ class Application:
         self._indexer = BackgroundIndexer()
         self._gateway_task: asyncio.Task | None = None
         self._voice_stream_task: asyncio.Task | None = None
+        self._mcp_task: asyncio.Task | None = None
         self._brain_maintainer = BrainMaintainer()
         from src.utils.infra_monitor import InfraWorker
 
@@ -474,6 +475,24 @@ class Application:
         except Exception as e:
             logger.warning("Voice Stream start skipped: %s", e)
 
+        # Servidor MCP (solo lectura, loopback + token Bearer). Desactivado
+        # por defecto: solo arranca con MCP_ENABLED=true y MCP_TOKEN puesto.
+        if settings.mcp_enabled:
+            if settings.mcp_token:
+                try:
+                    from src.utils.mcp_server import start_mcp_server
+
+                    self._mcp_task = asyncio.create_task(start_mcp_server())
+                    self._mcp_task.add_done_callback(_log_background_task_failure)
+                    logger.info(
+                        "MCP server enabled on port %s/mcp (read-only, Bearer auth)",
+                        settings.mcp_port,
+                    )
+                except Exception as e:
+                    logger.warning("MCP server start skipped: %s", e)
+            else:
+                logger.warning("MCP_ENABLED=true pero MCP_TOKEN vacio: servidor MCP NO arrancado")
+
         logger.info("Step 8/9: Initializing Telegram bot...")
         await bot.initialize()
 
@@ -507,6 +526,13 @@ class Application:
             except asyncio.CancelledError:
                 pass
             logger.info("Voice Stream stopped")
+        if self._mcp_task:
+            self._mcp_task.cancel()
+            try:
+                await self._mcp_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("MCP server stopped")
         try:
             await self._indexer.stop()
         except Exception as e:

@@ -20,6 +20,30 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN pip install --no-cache-dir --user --no-deps kokoro-onnx==0.6.1 && \
     pip install --no-cache-dir --user phonemizer==3.4.0 espeakng-loader==0.2.4
 
+# Obscura (fase 3, 2026-10-07): motor headless en Rust para leer paginas con
+# JS (solo lectura). Version fija + sha256 por arquitectura (cadena de
+# suministro). En arquitecturas sin binario oficial se omite la instalacion
+# y la tool cae al modo estatico httpx (honesto, no humo).
+ARG OBSCURA_VERSION=0.2.4
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) oc_arch="x86_64"; \
+             oc_sha="757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000" ;; \
+      arm64) oc_arch="aarch64"; \
+             oc_sha="d9ba3719c2442a227567d7664b5505b38ab68236f3f5388884eee2e27f55db28" ;; \
+      *) echo "obscura: sin binario oficial para $arch; modo estatico"; \
+         mkdir -p /opt/obscura; exit 0 ;; \
+    esac; \
+    curl -fsSL --retry 3 -o /tmp/obscura.tar.gz \
+      "https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/obscura-${oc_arch}-linux.tar.gz"; \
+    echo "${oc_sha}  /tmp/obscura.tar.gz" | sha256sum -c -; \
+    mkdir -p /opt/obscura; \
+    tar -xzf /tmp/obscura.tar.gz -C /opt/obscura obscura obscura-worker; \
+    chmod 755 /opt/obscura/obscura /opt/obscura/obscura-worker; \
+    /opt/obscura/obscura --version; \
+    rm /tmp/obscura.tar.gz
+
 
 FROM python:3.11-slim AS runtime
 
@@ -41,6 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R rafita:rafita /app /data
 
 COPY --from=builder /root/.local /home/rafita/.local
+COPY --from=builder /opt/obscura/ /usr/local/bin/
 
 WORKDIR /app
 COPY src/ ./src/
