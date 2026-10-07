@@ -161,7 +161,7 @@ async def test_circuit_breaker_unexpected_error_wrapped():
         await cb.execute("op", factory)
 
 
-async def test_circuit_breaker_open_waits_backoff(monkeypatch):
+async def test_circuit_breaker_abierto_falla_rapido(monkeypatch):
     _no_sleep(monkeypatch)
     cb = OllamaCircuitBreaker(max_failures=1, reset_timeout=600.0)
     cb.record_failure("op")
@@ -170,7 +170,15 @@ async def test_circuit_breaker_open_waits_backoff(monkeypatch):
     async def factory():
         return "recuperado"
 
-    assert await cb.execute("op", factory) == "recuperado"
+    # P2 (2026-10-07): con el breaker abierto no se espera ni se reintenta;
+    # se falla rapido con un mensaje honesto y el reintento es automatico
+    # cuando caduca el reset_timeout.
+    with pytest.raises(OllamaClientError) as exc:
+        await cb.execute("op", factory)
+    assert "degradado" in str(exc.value)
+    # Tambien expuesto para el streaming (chat_stream_tokens).
+    with pytest.raises(OllamaClientError):
+        cb.fail_if_open("op")
 
 
 async def test_circuit_breaker_rate_limit_retried(monkeypatch):

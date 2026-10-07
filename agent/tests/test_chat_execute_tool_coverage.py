@@ -360,7 +360,7 @@ async def test_manage_obsidian_note_write_and_read_actions(monkeypatch):
     read = await chat_mod._execute_tool(1, "manage_obsidian_note", {"action": "read", "title": "X"})
     assert read["content"] == "hola"
     deleted = await chat_mod._execute_tool(
-        1, "manage_obsidian_note", {"action": "delete", "title": "X"}
+        1, "manage_obsidian_note", {"action": "delete", "title": "X", "confirm": True}
     )
     assert deleted["message"] == "borrada"
     assert calls
@@ -673,20 +673,22 @@ async def test_manage_google_calendar_delete_by_id_and_title(monkeypatch):
         ),
     )
     by_id = await chat_mod._execute_tool(
-        1, "manage_google_calendar", {"action": "delete", "event_id": "e1"}
+        1, "manage_google_calendar", {"action": "delete", "event_id": "e1", "confirm": True}
     )
     assert by_id["success"]
     by_title = await chat_mod._execute_tool(
-        1, "manage_google_calendar", {"action": "delete", "title": "cena"}
+        1, "manage_google_calendar", {"action": "delete", "title": "cena", "confirm": True}
     )
     assert by_title["success"]
     assert deleted[1][0][0] == "e1"
 
-    missing = await chat_mod._execute_tool(1, "manage_google_calendar", {"action": "delete"})
+    missing = await chat_mod._execute_tool(
+        1, "manage_google_calendar", {"action": "delete", "confirm": True}
+    )
     assert not missing["success"]
 
     unknown = await chat_mod._execute_tool(
-        1, "manage_google_calendar", {"action": "delete", "title": "fiesta"}
+        1, "manage_google_calendar", {"action": "delete", "title": "fiesta", "confirm": True}
     )
     assert not unknown["success"]
     assert "No encontre" in unknown["message"]
@@ -978,7 +980,7 @@ async def test_manage_google_tasks_variants(monkeypatch):
     )
     assert completed["success"]
     deleted = await chat_mod._execute_tool(
-        1, "manage_google_tasks", {"action": "delete", "task_id": "t1"}
+        1, "manage_google_tasks", {"action": "delete", "task_id": "t1", "confirm": True}
     )
     assert deleted["success"]
 
@@ -1086,7 +1088,9 @@ async def test_manage_google_tasks_delete_por_titulo(monkeypatch):
     )
     monkeypatch.setattr(chat_mod, "google_services", google)
     result = await chat_mod._execute_tool(
-        1, "manage_google_tasks", {"action": "delete", "task_title": "comprar pilas"}
+        1,
+        "manage_google_tasks",
+        {"action": "delete", "task_title": "comprar pilas", "confirm": True},
     )
     assert result["success"]
     assert llamadas and llamadas[0][0][0] == "abc"
@@ -1096,7 +1100,7 @@ async def test_manage_google_tasks_delete_titulo_no_encontrado(monkeypatch):
     google = SimpleNamespace(is_ready=True, list_tasks=_fn({"success": True, "tasks": []}))
     monkeypatch.setattr(chat_mod, "google_services", google)
     result = await chat_mod._execute_tool(
-        1, "manage_google_tasks", {"action": "delete", "task_title": "no existe"}
+        1, "manage_google_tasks", {"action": "delete", "task_title": "no existe", "confirm": True}
     )
     assert not result["success"]
     assert "No encontre" in result["message"]
@@ -1349,7 +1353,9 @@ async def test_add_relation_invalida_y_search_vacia(monkeypatch):
 async def test_delete_relation(monkeypatch):
     _patch_db(monkeypatch)
     monkeypatch.setattr(chat_mod.db, "delete_relation", _fn(True))
-    result = await chat_mod._execute_tool(1, "delete_relation", {"relation_id": "3"})
+    result = await chat_mod._execute_tool(
+        1, "delete_relation", {"relation_id": "3", "confirm": True}
+    )
     assert result["success"]
     assert "3" in result["message"]
 
@@ -1591,10 +1597,10 @@ async def test_create_condition_rule_crud(monkeypatch):
     res = await chat_mod._execute_tool(1, "create_condition_rule", {"action": "list"})
     assert res["success"] and "Reglas" in res["message"]
     res = await chat_mod._execute_tool(
-        1, "create_condition_rule", {"action": "delete", "rule_id": 5}
+        1, "create_condition_rule", {"action": "delete", "rule_id": 5, "confirm": True}
     )
     assert res["success"]
     res = await chat_mod._execute_tool(
-        1, "create_condition_rule", {"action": "delete", "rule_id": 99}
+        1, "create_condition_rule", {"action": "delete", "rule_id": 99, "confirm": True}
     )
     assert res["success"] is False

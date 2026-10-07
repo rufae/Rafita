@@ -13,7 +13,12 @@ from src.vault_config import get_taxonomy
 
 # Tools that write to the second brain. With PERSIST_TO_BRAIN=false they are
 # rejected at the executor level (task 2.3), not only hidden from the prompt.
-WRITE_TOOLS = {"manage_obsidian_note", "move_or_rename_file", "ingest_file"}
+WRITE_TOOLS = {
+    "manage_obsidian_note",
+    "move_or_rename_file",
+    "ingest_file",
+    "guardar_aprendizaje",
+}
 
 TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -1426,6 +1431,95 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "guardar_aprendizaje",
+            "description": "Guarda un aprendizaje (procedimiento que funciono, "
+            "fix, preferencia del usuario, leccion aprendida) en "
+            "Aprendizajes/ del segundo cerebro. Usalo cuando el usuario "
+            "confirme que algo funciono tras un problema, te pida que "
+            "recuerdes como se hace algo o te diga 'aprende esto'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "titulo": {
+                        "type": "string",
+                        "description": "Titulo corto del aprendizaje",
+                    },
+                    "contenido": {
+                        "type": "string",
+                        "description": "Que se aprendio y como aplicarlo",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Etiquetas opcionales",
+                    },
+                },
+                "required": ["titulo", "contenido"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "listar_skills",
+            "description": "Lista las skills (procedimientos guardados en "
+            "Markdown) disponibles para seguirlos. Usalo antes de ofrecer "
+            "hacer algo complejo a mano, o si el usuario pregunta que sabes "
+            "hacer de forma procedimental.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cargar_skill",
+            "description": "Carga el cuerpo completo de una skill por nombre "
+            "(usa primero listar_skills si no sabes el nombre) y sigue sus "
+            "pasos con tus herramientas normales.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {
+                        "type": "string",
+                        "description": "Nombre de la skill (stem del fichero)",
+                    },
+                },
+                "required": ["nombre"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_historial",
+            "description": "Busca mensajes del historial de conversaciones "
+            "por texto literal. Usalo cuando el usuario pregunte 'que te "
+            "dije sobre X', 'que quedo pendiente el martes' o algo que se "
+            "hablo en el pasado. No sirve para buscar en notas (usa "
+            "search_second_brain para eso).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "consulta": {
+                        "type": "string",
+                        "description": "Texto a buscar en los mensajes",
+                    },
+                    "dias": {
+                        "type": "integer",
+                        "description": "Dias hacia atras (defecto 30, max 365)",
+                    },
+                },
+                "required": ["consulta"],
             },
         },
     },
