@@ -150,7 +150,8 @@ async def test_enrich_entidades_se_enlazan_solo_si_existe_la_nota(tmp_path, monk
     monkeypatch.setattr(
         "src.ollama_client.llm",
         _LLMFalso(
-            '{"tags": ["reuniones"], "summary": "S.", "entities": ["Ana Perez", "Martillo"]}'
+            '{"tags": ["reuniones"], "summary": "S.", '
+            '"entities": ["Ana Perez", "Perez", "Martillo"]}'
         ),
     )
     ok = await vi.VaultIndexer()._enrich_note(nota)
@@ -159,6 +160,8 @@ async def test_enrich_entidades_se_enlazan_solo_si_existe_la_nota(tmp_path, monk
     assert "[[Ana Perez]]" in texto
     assert "- Martillo" in texto
     assert "[[Martillo]]" not in texto
+    # "Perez" enlaza por substring a la unica nota que existe ("Ana Perez").
+    assert texto.count("[[Ana Perez]]") == 2
 
 
 async def test_enrich_llm_caido_no_rompe(tmp_path, monkeypatch):
