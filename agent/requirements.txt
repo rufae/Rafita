@@ -29,6 +29,9 @@ starlette==1.7.0
 uvicorn==0.34.0
 websockets==14.1
 python-multipart==0.0.31
+# Servidor MCP (solo lectura). 1.12.4 es la ultima version compatible con
+# pydantic==2.10.3 (1.13+ exige >=2.11); 2.x renombra FastMCP y sube pydantic.
+mcp==1.12.4
 watchdog==6.0.0
 pyyaml==6.0.2
 python-docx==1.1.2

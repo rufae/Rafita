@@ -30,6 +30,7 @@ from src.utils import workspace_manager as wm
 from src.utils.citations import citations
 from src.utils.google_calendar_manager import gcal
 from src.utils.obsidian_manager import move_or_rename_file as obsidian_move_rename
+from src.utils.page_fetch import fetch_page
 from src.utils.telemetry import metrics, new_correlation_id
 from src.utils.vector_manager import vector_db
 from src.utils.web_search import format_search_results, search_duckduckgo
@@ -1273,6 +1274,25 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             return {
                 "success": True,
                 "message": f"Resultados de búsqueda para '{query}':\n\n{formatted}",
+            }
+
+        elif func_name == "fetch_pagina":
+            url = args.get("url", "").strip()
+            if not url:
+                return {
+                    "success": False,
+                    "message": "Debes proporcionar la URL de la página.",
+                }
+            fetched = await fetch_page(url)
+            if not fetched["success"]:
+                return {"success": False, "message": fetched["message"]}
+            if fetched["method"] == "obscura":
+                nota = "renderizado con Obscura"
+            else:
+                nota = "HTML estático (Obscura no disponible)"
+            return {
+                "success": True,
+                "message": f"Contenido de {url} ({nota}):\n\n{fetched['text']}",
             }
 
         elif func_name == "manage_obsidian_note":

@@ -245,6 +245,27 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "fetch_pagina",
+            "description": "Lee el contenido REAL de una pagina web dada una "
+            "URL (renderiza JavaScript con Obscura y devuelve texto plano). "
+            "Usala cuando necesites el contenido de una URL concreta, no un "
+            "resumen de busqueda. Solo lectura: no rellena formularios ni "
+            "pulsa botones.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL completa de la pagina (https://...)",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_obsidian_note",
             "description": "Gestiona notas en la bóveda local de Obsidian. Invocala "
             "directamente (sin preguntar) cuando el usuario pida guardar, "

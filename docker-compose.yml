@@ -55,6 +55,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8001:8001"
+      - "127.0.0.1:8020:8020"
     depends_on:
       ollama-service:
         condition: service_healthy

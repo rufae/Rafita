@@ -142,6 +142,19 @@ class Settings(BaseSettings):
     heartbeat_briefing_time: str = Field("08:50", alias="HEARTBEAT_BRIEFING_TIME")
     heartbeat_radar_time: str = Field("09:40", alias="HEARTBEAT_RADAR_TIME")
 
+    # Obscura (fase 3, 2026-10-07): motor headless en Rust para renderizar
+    # paginas con JS (solo lectura). Sin binario -> la tool cae al modo
+    # estatico httpx y lo dice.
+    obscura_bin: str = Field("obscura", alias="OBSCURA_BIN")
+    obscura_timeout: int = Field(30, alias="OBSCURA_TIMEOUT", ge=5, le=120)
+
+    # Servidor MCP (2026-10-07): expone herramientas de SOLO LECTURA a
+    # clientes MCP (opencode, Claude Desktop...) en loopback con token.
+    # Sin MCP_TOKEN el servidor no arranca (se crea en main.py solo si true).
+    mcp_enabled: bool = Field(False, alias="MCP_ENABLED")
+    mcp_port: int = Field(8020, alias="MCP_PORT", ge=1024, le=65535)
+    mcp_token: str = Field("", alias="MCP_TOKEN")
+
     # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.
     n8n_webhooks: str = Field("", alias="N8N_WEBHOOKS")
     # Base para los webhooks manuales del catalogo (tarea 13, orquestador).
@@ -295,6 +308,7 @@ _SECRET_ENVS = (
     "OPENAI_API_KEY",
     "PASSWORD_APPLICATION",
     "APPLICATION_PASSWORD",
+    "MCP_TOKEN",
 )
 
 
