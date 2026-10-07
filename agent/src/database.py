@@ -1,6 +1,6 @@
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -454,6 +454,28 @@ class DatabaseManager:
     async def clear_chat_history(self, chat_id: int) -> None:
         await self.execute("DELETE FROM chat_history WHERE chat_id = ?", (chat_id,))
         await self._conn.commit()
+
+    async def search_chat_history(
+        self, chat_id: int, query: str, days: int = 30, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Busqueda literal (LIKE escapado) en el historial del chat.
+
+        `created_at` se guarda en UTC (datetime('now') de SQLite), por eso el
+        limite se calcula en UTC tambien.
+        """
+        consulta = str(query or "").strip()
+        if not consulta:
+            return []
+        desde = (datetime.now(UTC) - timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+        pat = "%" + consulta.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        sql = """
+            SELECT role, content, created_at
+            FROM chat_history
+            WHERE chat_id = ? AND created_at >= ? AND content LIKE ? ESCAPE '\\'
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """
+        return await self.fetchall(sql, (chat_id, desde, pat, max(1, min(int(limit), 50))))
 
     async def add_event(
         self, chat_id: int, title: str, event_datetime: str, description: str | None = None

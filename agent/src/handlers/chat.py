@@ -378,7 +378,8 @@ async def _process_ai_message(
                     "- ingest_file (registra archivos en el segundo cerebro con metadatos)\n"
                     "- manage_google_calendar / set_recurring_reminder\n"
                     "- generate_google_auth_link / save_google_verification_code\n"
-                    "- get_google_calendar_events / create_google_calendar_event\n\n"
+                    "- get_google_calendar_events / create_google_calendar_event\n"
+                    "- guardar_aprendizaje / listar_skills / cargar_skill / buscar_historial\n\n"
                     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
                     f"{reply_instruction()}"
                 ),
@@ -1298,6 +1299,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             elif action == "read":
                 result = await ob.read_note(title, folder)
             elif action == "delete":
+                if args.get("confirm") is not True:
+                    return {
+                        "success": False,
+                        "message": (
+                            "ATENCION: esto borra la nota '%s' de forma irreversible. "
+                            "Si estas seguro, vuelve a llamar con confirm=true." % title
+                        ),
+                    }
                 result = await ob.delete_note(title, folder)
             else:
                 return {
@@ -1548,6 +1557,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 rel_id = int(args.get("relation_id"))
             except (TypeError, ValueError):
                 return {"success": False, "message": "relation_id debe ser un numero entero."}
+            if args.get("confirm") is not True:
+                return {
+                    "success": False,
+                    "message": (
+                        "ATENCION: esto borra la relacion %d de tu grafo de forma "
+                        "irreversible. Si estas seguro, vuelve a llamar con confirm=true." % rel_id
+                    ),
+                }
             deleted = await db.delete_relation(chat_id, rel_id)
             return {
                 "success": deleted,
@@ -2123,6 +2140,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     lines.append("  • %s - %s (id: %s)" % (ev["title"], ev["start"], ev["id"]))
                 return {"success": True, "message": "\n".join(lines)}
             elif action == "delete":
+                if args.get("confirm") is not True:
+                    return {
+                        "success": False,
+                        "message": (
+                            "ATENCION: esto borra el evento de forma irreversible. "
+                            "Si estas seguro, vuelve a llamar con confirm=true."
+                        ),
+                    }
                 event_id = args.get("event_id", "").strip()
                 title = args.get("title", "").strip()
                 if not event_id and title:
@@ -2608,6 +2633,14 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     "success": True,
                     "message": "Tarea guardada localmente%s: %s (id: %s)" % (aviso, title, task_id),
                 }
+            if action == "delete" and args.get("confirm") is not True:
+                return {
+                    "success": False,
+                    "message": (
+                        "ATENCION: esto borra la tarea de forma irreversible. "
+                        "Si estas seguro, vuelve a llamar con confirm=true."
+                    ),
+                }
             if action in ("complete", "delete"):
                 tarea_id = str(args.get("task_id", "") or "").strip()
                 task_title = str(
@@ -2732,6 +2765,15 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     )
                 return {"success": True, "message": "\n".join(lines)}
             if action == "delete":
+                if args.get("confirm") is not True:
+                    return {
+                        "success": False,
+                        "message": (
+                            "ATENCION: esto borra la regla condicional de forma "
+                            "irreversible. Si estas seguro, vuelve a llamar con "
+                            "confirm=true."
+                        ),
+                    }
                 try:
                     rule_id = int(args.get("rule_id") or 0)
                 except (TypeError, ValueError):
@@ -2912,6 +2954,94 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     ),
                 }
             return result
+
+        elif func_name == "guardar_aprendizaje":
+            titulo = str(args.get("titulo") or "").strip()
+            contenido = str(args.get("contenido") or "").strip()
+            tags = args.get("tags") if isinstance(args.get("tags"), list) else []
+            if not titulo or not contenido:
+                return {"success": False, "message": "Necesito titulo y contenido del aprendizaje."}
+            now = datetime.now()
+            front = (
+                "---\n"
+                "type: aprendizaje\n"
+                "tags: %s\n"
+                "status: abierto\n"
+                "created: %s\n"
+                "updated: %s\n"
+                "related: []\n"
+                "---\n"
+            ) % (
+                str(tags) if tags else "[]",
+                now.strftime("%Y-%m-%d"),
+                now.strftime("%Y-%m-%d"),
+            )
+            full = front + "\n# %s\n\n## Aprendizaje\n\n%s\n" % (titulo, contenido)
+            result = await ob.overwrite_note(titulo, full, "Aprendizajes")
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "message": "Aprendizaje guardado en Aprendizajes/%s." % titulo,
+                }
+            return result
+
+        elif func_name == "listar_skills":
+            from src.utils.skills_manager import list_skills
+
+            skills = list_skills()
+            if not skills:
+                return {"success": True, "message": "No hay skills guardadas aun.", "skills": []}
+            lineas = ["%s — %s" % (s["name"], s["description"]) for s in skills]
+            return {
+                "success": True,
+                "message": "Skills disponibles:\n" + "\n".join(lineas),
+                "skills": skills,
+            }
+
+        elif func_name == "cargar_skill":
+            from src.utils.skills_manager import get_skill
+
+            nombre = str(args.get("nombre") or "")
+            skill = get_skill(nombre)
+            if not skill:
+                return {
+                    "success": False,
+                    "message": "No existe la skill '%s'. Usa listar_skills." % nombre,
+                }
+            return {
+                "success": True,
+                "skill": skill["name"],
+                "message": "# %s\n\n%s" % (skill["name"], skill["body"]),
+            }
+
+        elif func_name == "buscar_historial":
+            consulta = str(args.get("consulta") or "").strip()
+            if not consulta:
+                return {
+                    "success": False,
+                    "message": "Necesito una consulta para buscar en el historial.",
+                }
+            try:
+                dias = max(1, min(int(args.get("dias", 30) or 30), 365))
+            except (TypeError, ValueError):
+                dias = 30
+            rows = await db.search_chat_history(chat_id, consulta, days=dias)
+            if not rows:
+                return {
+                    "success": True,
+                    "message": "Nada en el historial de los ultimos %d dias sobre '%s'."
+                    % (dias, consulta),
+                    "resultados": [],
+                }
+            lineas = [
+                "- [%s] (%s) %s" % (r["created_at"], r["role"], str(r["content"])[:160])
+                for r in rows
+            ]
+            return {
+                "success": True,
+                "message": "%d mensaje(s):\n%s" % (len(rows), "\n".join(lineas)),
+                "resultados": rows,
+            }
 
         else:
             return {

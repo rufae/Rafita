@@ -28,6 +28,7 @@ from src.models.schemas import MessageRole
 from src.ollama_client import OllamaClientError, llm
 from src.services.google_services_manager import google_services
 from src.utils.citations import citations, finalize_citations, strip_citation_marks
+from src.utils.skills_manager import skills_catalog_prompt
 from src.utils.telemetry import get_correlation_id, metrics
 from src.vault_config import get_taxonomy
 
@@ -451,6 +452,7 @@ def build_system_prompt(voice: bool = False) -> str:
         "recordatorio de seguimiento para la fecha prometida.\n"
         + EMAIL_STYLE_RULE
         + _estilos_correo_hint()
+        + skills_catalog_prompt()
     )
     format_rule = (
         "FORMAT_RULE: cuando el usuario pida una tabla, estadisticas, "

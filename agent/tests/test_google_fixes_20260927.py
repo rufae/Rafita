@@ -431,7 +431,7 @@ async def test_manage_calendar_delete_by_title(monkeypatch):
     monkeypatch.setattr(chat_mod.gcal, "list_upcoming_events", fake_list)
     monkeypatch.setattr(chat_mod.gcal, "delete_event", fake_delete)
     result = await chat_mod._execute_tool(
-        1, "manage_google_calendar", {"action": "delete", "title": "lunes triste"}
+        1, "manage_google_calendar", {"action": "delete", "title": "lunes triste", "confirm": True}
     )
     assert result["success"]
     assert deleted["id"] == "ev1"
@@ -445,7 +445,7 @@ async def test_manage_calendar_delete_unknown_title(monkeypatch):
 
     monkeypatch.setattr(chat_mod.gcal, "list_upcoming_events", fake_list)
     result = await chat_mod._execute_tool(
-        1, "manage_google_calendar", {"action": "delete", "title": "lunes triste"}
+        1, "manage_google_calendar", {"action": "delete", "title": "lunes triste", "confirm": True}
     )
     assert not result["success"]
     assert "lunes triste" in result["message"]

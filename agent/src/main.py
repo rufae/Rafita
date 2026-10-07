@@ -69,6 +69,7 @@ class ProactiveWorker:
         self._last_gc_date: date | None = None
         self._last_commitment_date: date | None = None
         self._last_unanswered_date: date | None = None
+        self._last_learning_date: date | None = None
 
     async def start(self, shutdown_event: asyncio.Event) -> None:
         self._shutdown_event = shutdown_event
@@ -176,6 +177,18 @@ class ProactiveWorker:
                         logger.info("Correos sin respuesta: %d", len(res["avisos"]))
                 except Exception as e:
                     logger.warning("Rastreo de correo sin respuesta falló: %s", e)
+            # Learning loop (fase 2): destila Aprendizajes/ en skills una vez
+            # por semana (guard KV interno); aqui solo se lanza una vez al dia.
+            if self._last_learning_date != now.date():
+                self._last_learning_date = now.date()
+                try:
+                    from src.services.learning_service import weekly_learning_review
+
+                    res = await weekly_learning_review()
+                    if res.get("guardadas"):
+                        logger.info("Learning loop: skills creadas: %s", res["guardadas"])
+                except Exception as e:
+                    logger.warning("Learning loop falló: %s", e)
             chat_ids = await db.get_all_chat_ids()
             for chat_id in chat_ids:
                 await self._notify_expiring_events(chat_id)
@@ -295,6 +308,9 @@ class Application:
         from src.utils.infra_monitor import InfraWorker
 
         self._infra_worker = InfraWorker()
+        from src.utils.heartbeat import HeartbeatWorker
+
+        self._heartbeat_worker = HeartbeatWorker()
 
     async def _ensure_embedding_model(self) -> None:
         try:
@@ -467,6 +483,7 @@ class Application:
         await self._indexer.start(self._shutdown_event)
         await self._brain_maintainer.start(self._shutdown_event)
         await self._infra_worker.start(self._shutdown_event)
+        await self._heartbeat_worker.start(self._shutdown_event)
 
         asyncio.create_task(_catch_up_scan())
         asyncio.create_task(_health_monitor())
@@ -510,6 +527,10 @@ class Application:
             await self._infra_worker.stop()
         except Exception as e:
             logger.error("Error stopping InfraWorker: %s", e)
+        try:
+            await self._heartbeat_worker.stop()
+        except Exception as e:
+            logger.error("Error stopping HeartbeatWorker: %s", e)
         try:
             from src.utils.app_connector import connector
 

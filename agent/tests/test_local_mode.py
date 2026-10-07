@@ -91,7 +91,7 @@ async def test_calendar_delete_and_move_local(monkeypatch):
     fake.events = [{"id": 3, "title": "Reunion", "event_datetime": "2026-10-01 10:00:00"}]
 
     deleted = await chat_mod._execute_tool(
-        7, "manage_google_calendar", {"action": "delete", "title": "reunion"}
+        7, "manage_google_calendar", {"action": "delete", "title": "reunion", "confirm": True}
     )
     assert deleted["success"]
     assert fake.deleted == [3]

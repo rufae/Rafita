@@ -137,6 +137,11 @@ class Settings(BaseSettings):
     # anexo 2 del Plan Meteoalerta de AEMET).
     aemet_area: str = Field("61", alias="AEMET_AREA")
 
+    # Heartbeat de fiabilidad (2026-10-07): horas de comprobacion de que el
+    # briefing/radar del dia llegaron (zona `timezone`).
+    heartbeat_briefing_time: str = Field("08:50", alias="HEARTBEAT_BRIEFING_TIME")
+    heartbeat_radar_time: str = Field("09:40", alias="HEARTBEAT_RADAR_TIME")
+
     # n8n (mejora 1): mapa JSON {"nombre": "https://n8n.../webhook/xxx"}.
     n8n_webhooks: str = Field("", alias="N8N_WEBHOOKS")
     # Base para los webhooks manuales del catalogo (tarea 13, orquestador).
