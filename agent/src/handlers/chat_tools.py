@@ -50,7 +50,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "create_event",
             "description": "Crea una cita, evento o reunion CON fecha y hora en la agenda "
-            "(ej: cita el viernes a las 10, reunion manana a las 9). Para "
+            "(ej: cita el viernes a las 10, reunion manana a las 9). Es la "
+            "herramienta por defecto para 'agendame', 'apuntalo' o 'pone una "
+            "cita' con hora. Para "
             "tareas, recados o cosas que tengo que hacer sin hora concreta usa "
             "manage_google_tasks; para avisos sin fecha usa create_alert; si "
             "menciona Google Calendar usa create_google_calendar_event.",
@@ -562,12 +564,13 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "manage_google_calendar",
-            "description": "Borra, elimina, cancela, mueve, lista o crea eventos y "
-            "citas en el calendario del usuario (Google Calendar o local). "
-            "Acciones: create (crear), list (listar), delete (borrar/eliminar "
-            "un evento por titulo o ID), move (cambiar fecha/hora). Usalo "
-            "cuando diga borra el evento, elimina la cita, mueve la reunion o "
-            "apunta una cita.",
+            "description": "Borra, elimina, cancela, mueve o lista eventos y citas "
+            "EXISTENTES (Google Calendar o local). Acciones: list (listar), "
+            "delete (borrar/eliminar un evento por titulo o ID), move "
+            "(cambiar fecha/hora). Usalo cuando diga borra el evento, "
+            "elimina la cita, mueve la reunion o lista la agenda. NO la uses "
+            "para crear citas nuevas: para eso usa create_event (o "
+            "create_google_calendar_event si menciona Google Calendar).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -921,7 +924,8 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "name": "search_gmail",
             "description": "Busca correos en Gmail del usuario (solo lectura) y devuelve asunto, "
             "remitente, fecha y un extracto. Usalo para 'resumeme los correos de hoy', "
-            "'busca el correo de...', 'que me ha mandado...'. Admite consultas Gmail: "
+            "'busca el correo de...', 'que me ha mandado...', 'me ha escrito "
+            "alguien hoy?', 'mira mi buzón'. Admite consultas Gmail: "
             "'is:unread', 'from:banco', 'newer_than:1d', 'subject:factura'.",
             "parameters": {
                 "type": "object",
@@ -1063,7 +1067,7 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "apunta que tengo que comprar pilas, recuerdame llamar a mama, "
             "guarda esta tarea, que tareas tengo, borra la tarea X. NO lo uses "
             "para citas, reuniones o eventos con fecha y hora (eso es "
-            "create_event o manage_google_calendar).",
+            "create_event o create_google_calendar_event).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1242,7 +1246,9 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "para los que lo necesiten (quedan en Gmail SIN enviar; el "
             "usuario los revisa y manda). Usalo con 'triaja mi correo', "
             "'clasifica la bandeja', 'prepara borradores', 'que correos son "
-            "urgentes'. Necesita Gmail conectado; di claramente si no lo "
+            "urgentes'. NO sirve para leer o consultar correos concretos "
+            "(para eso usa search_gmail). Necesita Gmail conectado; di "
+            "claramente si no lo "
             "esta.",
             "parameters": {
                 "type": "object",
