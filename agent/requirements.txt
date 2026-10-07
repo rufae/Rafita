@@ -6,7 +6,7 @@ python-dotenv==1.2.2
 aiosqlite==0.20.0
 aiofiles==24.1.0
 httpx==0.27.2
-pydantic==2.10.3
+pydantic==2.11.10
 pydantic-settings==2.7.0
 matplotlib==3.9.3
 tabulate==0.9.0
@@ -29,9 +29,10 @@ starlette==1.7.0
 uvicorn==0.34.0
 websockets==14.1
 python-multipart==0.0.31
-# Servidor MCP (solo lectura). 1.12.4 es la ultima version compatible con
-# pydantic==2.10.3 (1.13+ exige >=2.11); 2.x renombra FastMCP y sube pydantic.
-mcp==1.12.4
+# Servidor MCP (solo lectura). 1.28.1 es la ultima 1.x sin avisos de
+# pip-audit (1.12-1.27: GHSA DNS-rebind/principal/WSS); exige pydantic>=2.11
+# (por eso el bump de arriba). 2.x renombra FastMCP y sube mas dependencias.
+mcp==1.28.1
 watchdog==6.0.0
 pyyaml==6.0.2
 python-docx==1.1.2
