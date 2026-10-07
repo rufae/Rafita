@@ -112,7 +112,7 @@ async def test_enrich_completa_tags_y_resumen(tmp_path, monkeypatch):
 async def test_enrich_omite_si_ya_esta_completa(tmp_path, monkeypatch):
     nota = tmp_path / "hecha.md"
     nota.write_text(
-        "---\ntags: [x]\n---\n# Hecha\n\n## Resumen\nya tiene\n\ncuerpo\n",
+        "---\ntags: [x]\nentities: [Algo]\n---\n# Hecha\n\n## Resumen\nya tiene\n\ncuerpo\n",
         encoding="utf-8",
     )
     falso = _LLMFalso(AssertionError("no debe llamar al LLM"))
@@ -120,6 +120,45 @@ async def test_enrich_omite_si_ya_esta_completa(tmp_path, monkeypatch):
     ok = await vi.VaultIndexer()._enrich_note(nota)
     assert ok is False
     assert falso.llamadas == 0
+
+
+async def test_enrich_anade_entidades_si_solo_faltan_ellas(tmp_path, monkeypatch):
+    _vault(tmp_path, monkeypatch)
+    nota = tmp_path / "catalogada.md"
+    nota.write_text(
+        "---\ntags: [x]\n---\n# Catalogada\n\n## Resumen\nya tiene\n\ncuerpo\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "src.ollama_client.llm",
+        _LLMFalso('{"tags": ["x"], "summary": "", "entities": ["Proyecto Prueba"]}'),
+    )
+    ok = await vi.VaultIndexer()._enrich_note(nota)
+    assert ok is True
+    texto = nota.read_text(encoding="utf-8")
+    assert "Proyecto Prueba" in texto
+
+
+async def test_enrich_entidades_se_enlazan_solo_si_existe_la_nota(tmp_path, monkeypatch):
+    _vault(tmp_path, monkeypatch)
+    (tmp_path / "Ana Perez.md").write_text("# Ana\n", encoding="utf-8")
+    nota = tmp_path / "reunion.md"
+    nota.write_text(
+        "---\ntags: []\n---\n# Reunion\n\nNotas con Ana Perez y Martillo.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "src.ollama_client.llm",
+        _LLMFalso(
+            '{"tags": ["reuniones"], "summary": "S.", "entities": ["Ana Perez", "Martillo"]}'
+        ),
+    )
+    ok = await vi.VaultIndexer()._enrich_note(nota)
+    assert ok is True
+    texto = nota.read_text(encoding="utf-8")
+    assert "[[Ana Perez]]" in texto
+    assert "- Martillo" in texto
+    assert "[[Martillo]]" not in texto
 
 
 async def test_enrich_llm_caido_no_rompe(tmp_path, monkeypatch):
