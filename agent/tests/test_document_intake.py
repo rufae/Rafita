@@ -164,6 +164,28 @@ async def test_enrich_entidades_se_enlazan_solo_si_existe_la_nota(tmp_path, monk
     assert texto.count("[[Ana Perez]]") == 2
 
 
+async def test_enrich_entidad_ambigua_se_queda_en_texto_plano(tmp_path, monkeypatch):
+    _vault(tmp_path, monkeypatch)
+    (tmp_path / "Ana Perez.md").write_text("# Ana\n", encoding="utf-8")
+    (tmp_path / "Luis Perez.md").write_text("# Luis\n", encoding="utf-8")
+    nota = tmp_path / "ambigua.md"
+    nota.write_text(
+        "---\ntags: []\n---\n# Ambigua\n\nNotas varias.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "src.ollama_client.llm",
+        _LLMFalso('{"tags": ["notas"], "summary": "S.", "entities": ["Perez"]}'),
+    )
+    ok = await vi.VaultIndexer()._enrich_note(nota)
+    assert ok is True
+    texto = nota.read_text(encoding="utf-8")
+    assert "[[Perez]]" not in texto
+    assert "[[Ana Perez]]" not in texto
+    assert "[[Luis Perez]]" not in texto
+    assert "- Perez" in texto
+
+
 async def test_enrich_llm_caido_no_rompe(tmp_path, monkeypatch):
     original = "---\ntags: []\n---\n# T\n\ncontenido\n"
     nota = tmp_path / "t.md"

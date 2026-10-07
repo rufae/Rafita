@@ -576,14 +576,14 @@ class VaultIndexer:
                 stem = titulos.get(clave)
                 if stem is None and len(clave) >= 4:
                     # El objetivo existe siempre (sale del propio baúl), asi
-                    # que el substring no puede crear enlaces fantasma.
+                    # que el substring no puede crear enlaces fantasma; si hay
+                    # varias notas que encajan, la entidad queda en texto plano
+                    # por ambigua.
                     candidatos = [
-                        (len(t), s)
-                        for t, s in titulos.items()
-                        if len(t) >= 4 and (clave in t or t in clave)
+                        s for t, s in titulos.items() if len(t) >= 4 and (clave in t or t in clave)
                     ]
-                    if candidatos:
-                        stem = min(candidatos)[1]
+                    if len(candidatos) == 1:
+                        stem = candidatos[0]
                 enlazadas.append("[[%s]]" % stem if stem else entidad)
         nuevo_body = body
         if resumen and not tiene_resumen:
