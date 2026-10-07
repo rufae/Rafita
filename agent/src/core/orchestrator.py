@@ -521,30 +521,27 @@ async def _elegir_herramienta_por_texto(
     )
 
 
-async def _prepare_tool_phase(
-    text: str, chat_id: int, voice: bool = False
-) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Fase comun (Telegram y voz): historial + herramientas + ejecucion.
+async def _build_messages(
+    text: str, chat_id: int, voice: bool, save_message: bool = True
+) -> list[dict[str, Any]]:
+    """Historial de mensajes para el LLM (comun al flujo normal y al directo).
 
-    Devuelve (messages_for_llm, content, tool_calls, tools_for_call). Si hubo
-    herramientas, `messages_for_llm` ya incluye sus resultados para que cada
-    interfaz haga su composicion final (chat normal o streaming de voz).
-
-    En voz (chat_id 0) las herramientas que guardan datos (tareas, eventos,
-    gastos, CRM) se ejecutan con el chat del administrador, para que lo
-    apuntado por llamada aparezca en Telegram y en el briefing.
+    - Guarda el mensaje del usuario (`save_message=False` cuando ya se guardo
+      en el intento de streaming directo V2).
+    - En voz inyecta el resumen rodante de lo antiguo (V3, 2026-10-07).
+    - Refuerzo de fecha en el ultimo mensaje del usuario.
+    Citas [S#]: numeracion unica por turno (mejora 1).
     """
-    tool_chat_id = chat_id
-    if voice and chat_id == 0 and settings.admin_ids:
-        tool_chat_id = settings.admin_ids[0]
-    # Citas [S#]: numeración única por turno (mejora 1).
     citations.reset()
-    await db.save_chat_message(chat_id, MessageRole.user.value, text)
+    if save_message:
+        await db.save_chat_message(chat_id, MessageRole.user.value, text)
 
-    # 12 mensajes (2026-09-30): con 6 se perdia el hilo en conversaciones
-    # largas; medido en la GPU, la diferencia de latencia es inapreciable
-    # (1,11 s vs 1,12 s con gemma4:12b).
-    history = await db.get_chat_history(chat_id, 12)
+    # 12 mensajes en texto (2026-09-30): con 6 se perdia el hilo en
+    # conversaciones largas; medido en la GPU, la diferencia de latencia es
+    # inapreciable (1,11 s vs 1,12 s con gemma4:12b). En voz sube a 16
+    # (V3, VOICE_HISTORY_TURNS) y lo demas se resume (memory_summary).
+    turnos = int(getattr(settings, "voice_history_turns", 16)) if voice else 12
+    history = await db.get_chat_history(chat_id, turnos)
     trimmed_history = []
     for h in history:
         c = h.get("content", "")
@@ -558,6 +555,15 @@ async def _prepare_tool_phase(
     messages_for_llm: list[dict[str, Any]] = [
         {"role": "system", "content": build_system_prompt(voice=voice)}
     ]
+    if voice:
+        try:
+            from src.core.memory_summary import get_summary_block
+
+            bloque = await get_summary_block(chat_id)
+        except Exception:
+            bloque = ""
+        if bloque:
+            messages_for_llm.append({"role": "system", "content": bloque})
     for msg in trimmed_history:
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
     # Refuerzo de fecha en el último mensaje del usuario (los modelos pequeños
@@ -573,16 +579,46 @@ async def _prepare_tool_phase(
         # Garantiza que la pregunta actual llegue al modelo aunque el
         # historial no la incluya (o este vacio).
         messages_for_llm.append({"role": "user", "content": "%s %s" % (date_context_line(), text)})
+    return messages_for_llm
+
+
+async def _prepare_tool_phase(
+    text: str, chat_id: int, voice: bool = False, save_message: bool = True
+) -> tuple[list[dict[str, Any]], str, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fase comun (Telegram y voz): historial + herramientas + ejecucion.
+
+    Devuelve (messages_for_llm, content, tool_calls, tools_for_call). Si hubo
+    herramientas, `messages_for_llm` ya incluye sus resultados para que cada
+    interfaz haga su composicion final (chat normal o streaming de voz).
+
+    `save_message=False` cuando el usuario ya se guardo en el intento de
+    streaming directo (V2) y se cayo a este flujo por riesgo de alucinacion.
+
+    En voz (chat_id 0) las herramientas que guardan datos (tareas, eventos,
+    gastos, CRM) se ejecutan con el chat del administrador, para que lo
+    apuntado por llamada aparezca en Telegram y en el briefing.
+    """
+    tool_chat_id = chat_id
+    if voice and chat_id == 0 and settings.admin_ids:
+        tool_chat_id = settings.admin_ids[0]
+    messages_for_llm = await _build_messages(text, chat_id, voice, save_message=save_message)
 
     tools_for_call = await select_tools_semantic(text)
 
     _t_start = _time.time()
+    # Presupuesto de reintentos de herramientas en llamada (V2, 2026-10-07):
+    # agotado, se responde con lo que haya en vez de encadenar calls de 600 s.
+    budget = float(getattr(settings, "voice_tool_budget_s", 45.0)) if voice else 0.0
+
+    def _vencido() -> bool:
+        return bool(budget) and (_time.time() - _t_start) > budget
+
     logger.info(
-        "[ORCHESTRATOR] chat_id=%d cid=%s tools=%d history=%d chars=%d",
+        "[ORCHESTRATOR] chat_id=%d cid=%s tools=%d msgs=%d chars=%d",
         chat_id,
         get_correlation_id(),
         len(TOOLS_DEFINITIONS),
-        len(trimmed_history),
+        len(messages_for_llm),
         len(text),
     )
 
@@ -624,8 +660,10 @@ async def _prepare_tool_phase(
     # la ejecucion): si la respuesta afirma una accion sin herramienta (riesgo)
     # o la peticion encaja con una herramienta por similitud (score), se
     # reintenta; y si aun asi no llama, se fuerza esa herramienta con una sola
-    # tool ofrecida. Nunca se devuelven datos inventados.
-    if not tool_calls:
+    # tool ofrecida. Nunca se devuelven datos inventados. En llamada, si el
+    # presupuesto (VOICE_TOOL_BUDGET_S) esta agotado no se reintenta: si hay
+    # riesgo de alucinacion se responde con honestidad en vez de inventar.
+    if not tool_calls and not _vencido():
         risk = _hallucination_risk(content or "", text)
         try:
             # Limite corto: si el embedding se atasca, no se bloquea la respuesta.
@@ -744,6 +782,15 @@ async def _prepare_tool_phase(
                         content = content_retry
             except Exception as e:
                 logger.warning("[ORCHESTRATOR] reintento de herramienta fallo: %s", e)
+    elif not tool_calls and _hallucination_risk(content or "", text):
+        # Llamada con el presupuesto agotado (V2): no hay margen para
+        # reintentos/forzados, pero tampoco se puede devolver una accion
+        # inventada. Honestidad por encima de latencia.
+        logger.warning(
+            "[ORCHESTRATOR] presupuesto de voz agotado; respuesta honesta (chat_id=%d)",
+            chat_id,
+        )
+        content = HONEST_FALLBACK
 
     if tool_calls:
         results = []
@@ -781,7 +828,7 @@ async def _prepare_tool_phase(
                 fallidas.append(json.loads(r["content"]))
             except (json.JSONDecodeError, TypeError):
                 fallidas.append({})
-        if results and all(r.get("success") is False for r in fallidas):
+        if results and all(r.get("success") is False for r in fallidas) and not _vencido():
             from src.handlers.chat_tools import get_tools_with_date_context
 
             mensaje_actual = next(
@@ -976,20 +1023,115 @@ def _chunk_words(text: str):
         yield word + (" " if i < len(words) - 1 else "")
 
 
+async def _voice_stream_eligible(text: str) -> bool:
+    """True si la respuesta de voz puede emitirse en streaming directo (V2).
+
+    Small talk sin herramientas: una sola llamada con streaming real en vez
+    de embeddings + chat_with_tools + respuesta completa troceada. Si hay
+    herramientas con score >= VOICE_TOOL_MIN_SCORE, vuelve al flujo completo;
+    la validacion de la primera frase del streaming directo cubre ademas el
+    caso de que el modelo alucine una accion sin herramientas.
+    """
+    umbral = float(getattr(settings, "voice_tool_min_score", 0.0) or 0.0)
+    if umbral <= 0:
+        return False
+    try:
+        top_tools, top_score = await asyncio.wait_for(best_tools_for_message(text), timeout=8.0)
+    except Exception:
+        return False
+    # Sin candidatas (small talk, o embeddings caidas: best_tools devuelve
+    # ([], 0.0)) → directo; la validacion de la primera frase cubre ademas el
+    # caso de que el modelo alucine una accion sin herramientas.
+    return not (top_tools and top_score >= umbral)
+
+
 async def generate_response_stream(text: str, chat_id: int, voice: bool = True):
     """Genera la respuesta emitiendo tokens reales (modo llamada de voz).
 
+    - Streaming directo (V2, 2026-10-07): si no hay herramientas relevantes
+      (score < VOICE_TOOL_MIN_SCORE), un solo `chat_stream_tokens` con la
+      primera frase retenida hasta validar que no alucina una accion; si
+      alucina, se descarta antes de emitir NADA y se cae al flujo completo.
     - Con herramientas: la composicion final se hace con `chat_stream_tokens`
       (el primer token llega en cuanto el modelo empieza a escribir, sin
       esperar a la respuesta completa).
-    - Sin herramientas: la respuesta ya esta generada; se trocea al vuelo.
+    - Sin herramientas (flujo normal): la respuesta ya esta generada; se
+      trocea al vuelo.
     """
-    messages_for_llm, content, tool_calls, _tools = await _prepare_tool_phase(
-        text, chat_id, voice=voice
-    )
-
     full = ""
-    if tool_calls:
+    messages_for_llm: list[dict[str, Any]] = []
+    content = ""
+    tool_calls: list[dict[str, Any]] = []
+    _tools: list[dict[str, Any]] = []
+    prepared = False
+
+    if voice and await _voice_stream_eligible(text):
+        # ---- Streaming directo: sin maquinaria de tools (V2) ----
+        messages_direct = await _build_messages(text, chat_id, voice, save_message=True)
+        buffer = ""
+        validado = False
+        riesgo = False
+        fallo = False
+        try:
+            async for token in llm.chat_stream_tokens(
+                messages=messages_direct,
+                max_tokens=180 if voice else 512,
+                repeat_penalty=1.15 if voice else None,
+            ):
+                token_out = strip_citation_marks(token) if voice else token
+                if validado:
+                    full += token
+                    if token_out:
+                        yield token_out
+                    continue
+                buffer += token
+                listo = buffer.rstrip().endswith((".", "!", "?", ":")) or len(buffer) >= 60
+                if not listo:
+                    continue
+                if _hallucination_risk(buffer, text):
+                    # No se ha emitido nada aun: se descarta y se usa el
+                    # flujo completo con herramientas.
+                    riesgo = True
+                    break
+                validado = True
+                full += buffer
+                buffer_out = strip_citation_marks(buffer) if voice else buffer
+                if buffer_out:
+                    yield buffer_out
+                buffer = ""
+            if buffer and not validado and not riesgo:
+                if _hallucination_risk(buffer, text):
+                    riesgo = True
+                else:
+                    full += buffer
+                    buffer_out = strip_citation_marks(buffer) if voice else buffer
+                    if buffer_out:
+                        yield buffer_out
+                    buffer = ""
+        except Exception as e:
+            logger.warning("[ORCHESTRATOR] streaming directo fallo: %s", e)
+            fallo = True
+
+        if riesgo or (fallo and not full):
+            # Riesgo de alucinacion (nada emitido aun) o error del streaming
+            # sin ningun token: se cae al flujo completo con herramientas
+            # (el usuario ya quedo guardado en _build_messages).
+            motivo = "riesgo de alucinacion" if riesgo else "error de streaming"
+            logger.info("[ORCHESTRATOR] streaming directo descartado (%s); flujo con tools", motivo)
+            full = ""
+            messages_for_llm, content, tool_calls, _tools = await _prepare_tool_phase(
+                text, chat_id, voice=voice, save_message=False
+            )
+        prepared = True
+
+    if not prepared:
+        messages_for_llm, content, tool_calls, _tools = await _prepare_tool_phase(
+            text, chat_id, voice=voice
+        )
+
+    if full:
+        pass  # streaming directo ya emitio la respuesta (o su fallback)
+    elif tool_calls:
         # Guardia de exito inventado (bug 2026-10-06, llamada): si TODAS las
         # herramientas fallaron, la composicion no puede afirmar que se hizo.
         # En texto ya existia la guarda; en streaming faltaba y el modelo

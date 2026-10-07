@@ -320,7 +320,9 @@ def test_ws_buffers_speech_and_utterance_on_silence(client, monkeypatch):
         assert ws.receive_json() == {"type": "interrupted", "reason": "user_stop"}
         assert voice_server._active_sessions["w2"]["state"] == "listening"
     assert processed and processed[0][0] == "w2"
-    assert processed[0][1] == LOUD_BIG * 3
+    # Captura continua (V1, 2026-10-07): el turno incluye tambien las pausas
+    # (antes se recortaban y el STT recibia audio discontinuo).
+    assert processed[0][1] == LOUD_BIG * 3 + SILENT_BIG * 4
 
 
 def test_ws_end_speech_starts_utterance(client, monkeypatch):
@@ -736,14 +738,22 @@ async def test_process_utterance_skips_short_and_silent(monkeypatch):
 
 
 async def test_process_utterance_reports_no_speech_and_errors(monkeypatch):
+    async def fake_synth(text):
+        return b"wav"
+
+    # El STT vacio dispara ahora el "clarify" (V1): se sintetiza la frase.
+    monkeypatch.setattr(voice_server, "_synthesize_speech_bytes", fake_synth)
+
     async def empty_stt(data, source_rate=48000):
         return "   "
 
     monkeypatch.setattr(voice_server, "_transcribe_audio_bytes", empty_stt)
     ws = _WS()
     await voice_server._process_utterance(ws, _session(), "s1", LOUD * 10)
-    assert _types(ws)[-1] == "transcript"
-    assert ws.sent[-1][1]["error"] == "no speech detected"
+    transcripciones = [p for k, p in ws.sent if k == "json" and p["type"] == "transcript"]
+    assert transcripciones and transcripciones[0]["error"] == "no speech detected"
+    clarifys = [p for k, p in ws.sent if k == "json" and p["type"] == "clarify"]
+    assert clarifys and "Perdona" in clarifys[0]["text"]
 
     async def raising_stt(data, source_rate=48000):
         raise RuntimeError("whisper caido")
@@ -751,7 +761,8 @@ async def test_process_utterance_reports_no_speech_and_errors(monkeypatch):
     monkeypatch.setattr(voice_server, "_transcribe_audio_bytes", raising_stt)
     ws = _WS()
     await voice_server._process_utterance(ws, _session(), "s1", LOUD * 10)
-    assert ws.sent[-1][1]["error"] == "no speech detected"
+    transcripciones = [p for k, p in ws.sent if k == "json" and p["type"] == "transcript"]
+    assert transcripciones and transcripciones[0]["error"] == "no speech detected"
 
     async def loop_stt(data, source_rate=48000):
         return "la vida, " * 12
@@ -759,7 +770,8 @@ async def test_process_utterance_reports_no_speech_and_errors(monkeypatch):
     monkeypatch.setattr(voice_server, "_transcribe_audio_bytes", loop_stt)
     ws = _WS()
     await voice_server._process_utterance(ws, _session(), "s1", LOUD * 10)
-    assert ws.sent[-1][1]["error"] == "no speech detected"
+    transcripciones = [p for k, p in ws.sent if k == "json" and p["type"] == "transcript"]
+    assert transcripciones and transcripciones[0]["error"] == "no speech detected"
 
 
 async def test_process_utterance_reuses_speculative_stt(monkeypatch):
@@ -854,3 +866,152 @@ async def test_transcribe_audio_bytes_failure_paths(monkeypatch):
 
     monkeypatch.setattr(voice_server, "_get_whisper", lambda: _BrokenModel())
     assert await voice_server._transcribe_audio_bytes(b"\x00\x01\x02\x03\x05", 48000) is None
+
+
+# ---------- V1 (2026-10-07): captura continua, pico y clarify ----------
+
+
+def test_reset_turn_y_track_peak():
+    session = {
+        "audio_buffer": io.BytesIO(b"xx"),
+        "vad_chunks": 3,
+        "speech_ms": 100.0,
+        "silencio_ms": 50.0,
+        "capturing": True,
+        "turn_peak_rms": 123.0,
+    }
+    voice_server._reset_turn(session)
+    assert session["capturing"] is False
+    assert session["turn_peak_rms"] == 0.0
+    assert session["vad_chunks"] == 0
+    assert session["audio_buffer"].getvalue() == b""
+    assert session["speech_ms"] == 0.0 and session["silencio_ms"] == 0.0
+
+    voice_server._track_peak(session, LOUD)
+    assert session["turn_peak_rms"] > voice_server.SILENCE_RMS_THRESHOLD
+    pico = session["turn_peak_rms"]
+    voice_server._track_peak(session, SILENT)
+    assert session["turn_peak_rms"] == pico  # el pico solo sube
+    voice_server._track_peak(session, b"\x00")  # audio invalido no rompe
+    assert session["turn_peak_rms"] == pico
+
+
+async def test_process_utterance_gate_usa_pico_del_turno(monkeypatch):
+    stt_calls: list = []
+
+    async def fake_stt(data, source_rate=48000):
+        stt_calls.append(len(data))
+        return "hola"
+
+    async def fake_gen(text, chat_id, voice=True):
+        yield "Vale."
+
+    async def fake_tts(text):
+        return b"WAV"
+
+    monkeypatch.setattr(voice_server, "_transcribe_audio_bytes", fake_stt)
+    monkeypatch.setattr(voice_server, "_synthesize_speech_bytes", fake_tts)
+    monkeypatch.setattr("src.core.generate_response_stream", fake_gen)
+    monkeypatch.setattr(settings, "voice_speculative_stt", False)
+    monkeypatch.setattr(voice_server, "_LAST_STT_SOURCE", "remote")
+
+    # Buffer silencioso sin pico registrado → se ignora (sin STT).
+    ws = _WS()
+    await voice_server._process_utterance(ws, _session(turn_peak_snapshot=0.0), "s1", SILENT * 10)
+    assert stt_calls == []
+    assert _types(ws) == []
+
+    # Mismo buffer silencioso pero con pico de voz registrado → se procesa
+    # (el gate usa el pico del turno, no el RMS medio del buffer continuo).
+    ws = _WS()
+    session = _session(turn_peak_snapshot=800.0)
+    await voice_server._process_utterance(ws, session, "s1", SILENT * 10)
+    assert stt_calls
+    tipos = _types(ws)
+    assert "transcript" in tipos and "latency_report" in tipos
+    reporte = [p for k, p in ws.sent if k == "json" and p["type"] == "latency_report"][0]
+    assert reporte["stt_source"] == "remote"
+
+
+async def test_clarify_respeta_cooldown(monkeypatch):
+    enviados: list = []
+
+    async def fake_json(ws, session, payload):
+        enviados.append(payload)
+        return True
+
+    async def fake_bytes(ws, session, data):
+        enviados.append(data)
+        return True
+
+    async def fake_synth(text):
+        return b"wav"
+
+    monkeypatch.setattr(voice_server, "_safe_send_json", fake_json)
+    monkeypatch.setattr(voice_server, "_safe_send_bytes", fake_bytes)
+    monkeypatch.setattr(voice_server, "_synthesize_speech_bytes", fake_synth)
+
+    session = {"state": "listening"}
+    await voice_server._clarify_si_vacio(None, session)  # type: ignore[arg-type]
+    await voice_server._clarify_si_vacio(None, session)  # dentro del cooldown
+    clarifys = [e for e in enviados if isinstance(e, dict) and e.get("type") == "clarify"]
+    assert len(clarifys) == 1
+    assert clarifys[0]["text"] == voice_server.CLARIFY_PHRASE
+
+    await voice_server._clarify_si_vacio(None, {"state": "ended"})  # type: ignore[arg-type]
+    assert len(clarifys) == 1
+
+
+async def test_clarify_sin_tts_no_envia(monkeypatch):
+    enviados: list = []
+
+    async def fake_json(ws, session, payload):
+        enviados.append(payload)
+        return True
+
+    async def fake_bytes(ws, session, data):
+        enviados.append(data)
+        return True
+
+    async def sin_tts(text):
+        return None
+
+    monkeypatch.setattr(voice_server, "_safe_send_json", fake_json)
+    monkeypatch.setattr(voice_server, "_safe_send_bytes", fake_bytes)
+    monkeypatch.setattr(voice_server, "_synthesize_speech_bytes", sin_tts)
+
+    await voice_server._clarify_si_vacio(None, {"state": "listening"})  # type: ignore[arg-type]
+    assert not [e for e in enviados if isinstance(e, dict) and e.get("type") == "clarify"]
+
+
+async def test_start_voice_stream_server_prewarm_segun_config(monkeypatch):
+    import uvicorn as uvicorn_mod
+
+    class _Cfg:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _Srv:
+        def __init__(self, cfg):
+            pass
+
+        async def serve(self):
+            return None
+
+    from src.utils import tts_manager
+
+    async def fake_prewarm():
+        return False
+
+    monkeypatch.setattr(uvicorn_mod, "Config", _Cfg)
+    monkeypatch.setattr(uvicorn_mod, "Server", _Srv)
+    monkeypatch.setattr(voice_server, "_get_whisper", lambda: None)
+    monkeypatch.setattr(tts_manager, "prewarm_tts", fake_prewarm)
+
+    # Con STT remoto NO se precalienta el whisper local (V1).
+    monkeypatch.setattr(settings, "whisper_remote_url", "http://100.97.252.19:9001")
+    await voice_server.start_voice_stream_server()
+
+    # Sin remoto se precalienta (aqui parcheado para no cargar el modelo).
+    monkeypatch.setattr(settings, "whisper_remote_url", "")
+    await voice_server.start_voice_stream_server()

@@ -52,8 +52,15 @@ FILLER_PHRASES = (
     "Ahora mismo te digo...",
     "Vale, dame un instante...",
 )
-FILLER_DELAY_S = 5.5  # por defecto; configurable con VOICE_FILLER_DELAY_S
+# 2026-10-07: 3 s (antes 5,5): con la cadena optimizada (streaming directo +
+# TTS en paralelo) el primer audio llega antes y el silencio percibido es lo
+# que molesta. Si aun asi parece precipitado, sube VOICE_FILLER_DELAY_S.
+FILLER_DELAY_S = 3.0  # por defecto; configurable con VOICE_FILLER_DELAY_S
 FILLER_COOLDOWN_S = 25.0
+# STT vacio (V1, 2026-10-07): el usuario hablo (habia voz en el buffer) pero
+# la transcripcion salio en blanco/hallucination; se le pide que lo repita en
+# vez de quedarse en silencio como si no hubiera llamado a nadie.
+CLARIFY_PHRASE = "Perdona, no te he entendido. ¿Puedes repetirlo?"
 # Saludos/cortesias: no merecen frase de espera (la respuesta es inmediata).
 _SALUDOS_CORTOS = {"hola", "buenas", "buenos", "gracias", "adios", "tal", "hey"}
 
@@ -90,9 +97,9 @@ class _FillerController:
 async def _filler_si_tarda(websocket: WebSocket, session: dict[str, Any]) -> None:
     """Emite una frase de espera si la respuesta no ha empezado a tiempo.
 
-    2026-09-30: el retardo por defecto subio a 5,5 s (configurable) y los
-    saludos cortos ("hola", "gracias") no la reciben: su respuesta es
-    inmediata y la frase molestaba.
+    2026-10-07: el retardo por defecto es 3 s (configurable) y los saludos
+    cortos ("hola", "gracias") no la reciben: su respuesta es inmediata y la
+    frase molestaba.
     """
     try:
         await asyncio.sleep(float(getattr(settings, "voice_filler_delay_s", FILLER_DELAY_S)))
@@ -120,6 +127,32 @@ async def _filler_si_tarda(websocket: WebSocket, session: dict[str, Any]) -> Non
     await _safe_send_bytes(websocket, session, audio)
 
 
+async def _clarify_si_vacio(websocket: WebSocket, session: dict[str, Any]) -> None:
+    """Pide repeticion cuando hubo voz pero el STT salio vacio (V1, 2026-10-07).
+
+    Reutiliza el cooldown del _FillerController para no atosigar si hay
+    varios turnos seguidos sin transcripcion (ruido, micro cortado).
+    """
+    if session.get("state") == "ended":
+        return
+    controller = session.get("filler")
+    if not isinstance(controller, _FillerController):
+        controller = _FillerController()
+        session["filler"] = controller
+    ahora = time.time()
+    if not controller.should_speak(ahora):
+        return
+    controller.next_phrase(ahora)  # consume el cooldown (rota el pool tambien)
+    audio = await _synthesize_speech_bytes(CLARIFY_PHRASE)
+    if not audio:
+        return
+    logger.info("VoiceStream: STT vacio, se pide repeticion session=%s", session.get("chat_id"))
+    await _safe_send_json(
+        websocket, session, {"type": "clarify", "text": CLARIFY_PHRASE, "timestamp": time.time()}
+    )
+    await _safe_send_bytes(websocket, session, audio)
+
+
 def _call_token_valid(token: str | None) -> bool:
     """Token de acceso de la pagina de llamadas (VOICE_CALL_TOKEN en .env).
 
@@ -139,6 +172,10 @@ def _call_token_valid(token: str | None) -> bool:
 _active_sessions: dict[str, dict[str, Any]] = {}
 _whisper_model = None
 _tts_engine = None
+# Fuente del ultimo STT (remote/local) para el latency_report: se guarda en
+# un global porque _transcribe_audio_bytes se llama tambien desde la tarea
+# especulativa (sin acceso a la sesion); solo se usa como diagnostico.
+_LAST_STT_SOURCE = ""
 
 # Ciclo de vida de sesiones de llamada (2026-10-02): al caer el WebSocket la
 # sesion se marcaba "ended" pero nunca se borraba de _active_sessions (solo
@@ -337,16 +374,15 @@ async def start_call(request: Request):
 
     chat_id = payload.get("chat_id", 0)
     if not chat_id:
-        # Contexto de voz (chat_id 0): se poda solo lo antiguo (>2h). Si se
-        # borraba TODO al empezar cada sesion, una reconexion (WS, pestana,
-        # movil) perdia el hilo y el modelo volvia a saludar "Hola, ¿en que
-        # puedo ayudarte?" en mitad de la llamada (bug 2026-10-06).
+        # Memoria de voz (V3, 2026-10-07): lo antiguo (>2h) se RESUME con el
+        # LLM y se guarda en chat_summaries antes de podarlo (antes se borraba
+        # y se perdia). En segundo plano: no bloquea el arranque de la llamada.
         try:
-            from src.database import db
+            from src.core.memory_summary import resumener_y_poda
 
-            await db.delete_stale_chat_history(0, hours=2)
+            asyncio.create_task(resumener_y_poda(0, hours=2))
         except Exception as e:
-            logger.debug("VoiceStream: no se pudo podar historial de voz: %s", e)
+            logger.debug("VoiceStream: no se pudo programar el resumen de voz: %s", e)
     session_id = str(uuid.uuid4())
 
     _active_sessions[session_id] = {
@@ -364,6 +400,10 @@ async def start_call(request: Request):
         "speech_ms": 0.0,
         "silencio_ms": 0.0,
         "barge_ms": 0.0,
+        # Captura continua (V1, 2026-10-07): tras la primera voz se guarda
+        # TODO el turno (incluidas las pausas) y el VAD solo decide el cierre.
+        "capturing": False,
+        "turn_peak_rms": 0.0,
     }
     session = _active_sessions[session_id]
     session["unused_task"] = asyncio.create_task(_cleanup_session_if_unused(session_id))
@@ -443,6 +483,26 @@ async def _interrupt(session: dict, websocket: WebSocket, reason: str = "barge_i
     logger.info("VoiceStream: respuesta interrumpida (%s)", reason)
 
 
+def _track_peak(session: dict, audio_bytes: bytes) -> None:
+    """Guarda el pico de RMS del turno (silencio incluido, V1)."""
+    try:
+        rms_val = float(audioop.rms(audio_bytes, 2))
+    except Exception:
+        return
+    if rms_val > session.get("turn_peak_rms", 0.0):
+        session["turn_peak_rms"] = rms_val
+
+
+def _reset_turn(session: dict) -> None:
+    """Cierra el turno de captura: buffer, contadores y estado VAD."""
+    session["audio_buffer"] = io.BytesIO()
+    session["vad_chunks"] = 0
+    session["speech_ms"] = 0.0
+    session["silencio_ms"] = 0.0
+    session["capturing"] = False
+    session["turn_peak_rms"] = 0.0
+
+
 def _start_utterance(websocket: WebSocket, session: dict, session_id: str) -> None:
     """Lanza el procesado del turno sin bloquear la recepcion (barge-in)."""
     if session.get("state") == "ended":
@@ -451,6 +511,10 @@ def _start_utterance(websocket: WebSocket, session: dict, session_id: str) -> No
     if task and not task.done():
         return
     audio_data = session["audio_buffer"].getvalue()
+    # Pico del turno capturado: el task arranca despues de que el bucle
+    # reinicie contadores, asi que se congela aqui (sin parametro extra,
+    # para no romper los tests que parchean _process_utterance con 4 args).
+    session["turn_peak_snapshot"] = session.get("turn_peak_rms", 0.0)
     session["processing_task"] = asyncio.create_task(
         _process_utterance(websocket, session, session_id, audio_data)
     )
@@ -510,10 +574,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
     if session.get("state") == "ended":
         _cancel_task(session.get("cleanup_task"))
         session["state"] = "listening"
-        session["audio_buffer"] = io.BytesIO()
-        session["vad_chunks"] = 0
-        session["speech_ms"] = 0.0
-        session["silencio_ms"] = 0.0
+        _reset_turn(session)
         session["barge_ms"] = 0.0
         session["processing_task"] = None
         logger.info("VoiceStream: sesion revivida tras reconexion session=%s", session_id)
@@ -551,44 +612,53 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                                 session["speech_ms"] = chunk_ms
                                 session["silencio_ms"] = 0.0
                                 session["barge_ms"] = 0.0
+                                # Captura continua: el nuevo turno empieza aqui.
+                                session["capturing"] = True
+                                session["turn_peak_rms"] = 0.0
+                                _track_peak(session, audio_chunk)
                         else:
                             session["barge_ms"] = 0.0
                     continue
 
                 if session.get("ptt_mode", False):
-                    session["audio_buffer"].write(audio_chunk)
-                    session["vad_chunks"] += 1
-                    # end_speech decide con speech_ms: en PTT tambien cuenta.
+                    # PTT: todo el audio mientras se sostiene cuenta como voz.
                     session["speech_ms"] = session.get("speech_ms", 0.0) + chunk_ms
+                    session["capturing"] = True
                 else:
                     is_speech = _vad_adaptativo(audio_chunk, session)
                     if is_speech:
-                        session["audio_buffer"].write(audio_chunk)
-                        session["vad_chunks"] += 1
                         session["speech_ms"] = session.get("speech_ms", 0.0) + chunk_ms
                         session["silencio_ms"] = 0.0
-                        _maybe_schedule_speculative_stt(session, session.get("sample_rate", 48000))
-                        if session["speech_ms"] >= MAX_TURNO_MS:
-                            # Turno larguisimo: se procesa ya para no crecer sin fin.
-                            _start_utterance(websocket, session, session_id)
-                            session["audio_buffer"] = io.BytesIO()
-                            session["vad_chunks"] = 0
-                            session["speech_ms"] = 0.0
+                        if not session.get("capturing"):
+                            session["capturing"] = True
+                            session["turn_peak_rms"] = 0.0
                     elif session.get("speech_ms", 0.0) > 0.0:
                         session["silencio_ms"] = session.get("silencio_ms", 0.0) + chunk_ms
-                        if session["silencio_ms"] >= SILENCIO_FIN_MS:
-                            if session["speech_ms"] >= MIN_VOZ_MS:
-                                _start_utterance(websocket, session, session_id)
-                            else:
-                                logger.info(
-                                    "VoiceStream: blip descartado (%.0f ms) session=%s",
-                                    session["speech_ms"],
-                                    session_id,
-                                )
-                            session["audio_buffer"] = io.BytesIO()
-                            session["vad_chunks"] = 0
-                            session["speech_ms"] = 0.0
-                            session["silencio_ms"] = 0.0
+
+                # Captura continua (V1, 2026-10-07): una vez que hay voz se
+                # guarda TODO el turno (pasillos incluidos). Antes solo se
+                # escribian los chunks con voz y las pausas se recortaban: el
+                # STT recibia audio discontinuo y las frases lentas salian
+                # troceadas o vacias. El VAD solo decide cuando cierra el turno.
+                if session.get("capturing"):
+                    session["audio_buffer"].write(audio_chunk)
+                    session["vad_chunks"] += 1
+                    _track_peak(session, audio_chunk)
+                    _maybe_schedule_speculative_stt(session, session.get("sample_rate", 48000))
+                    if session["speech_ms"] >= MAX_TURNO_MS:
+                        # Turno larguisimo: se procesa ya para no crecer sin fin.
+                        _start_utterance(websocket, session, session_id)
+                        _reset_turn(session)
+                    elif session["silencio_ms"] >= SILENCIO_FIN_MS:
+                        if session["speech_ms"] >= MIN_VOZ_MS:
+                            _start_utterance(websocket, session, session_id)
+                        else:
+                            logger.info(
+                                "VoiceStream: blip descartado (%.0f ms) session=%s",
+                                session["speech_ms"],
+                                session_id,
+                            )
+                        _reset_turn(session)
 
             elif "text" in data and data["text"]:
                 try:
@@ -597,20 +667,14 @@ async def voice_websocket(websocket: WebSocket, session_id: str):
                     if msg_type == "end_speech":
                         if session.get("speech_ms", 0.0) > 0.0:
                             _start_utterance(websocket, session, session_id)
-                        session["audio_buffer"] = io.BytesIO()
-                        session["vad_chunks"] = 0
-                        session["speech_ms"] = 0.0
-                        session["silencio_ms"] = 0.0
+                        _reset_turn(session)
                         session["ptt_mode"] = False
                     elif msg_type == "ptt_start":
                         task = session.get("processing_task")
                         if task and not task.done():
                             await _interrupt(session, websocket, reason="barge_in")
                         session["ptt_mode"] = True
-                        session["vad_chunks"] = 0
-                        session["speech_ms"] = 0.0
-                        session["silencio_ms"] = 0.0
-                        session["audio_buffer"] = io.BytesIO()
+                        _reset_turn(session)
                     elif msg_type == "stop_speaking":
                         await _interrupt(session, websocket, reason="user_stop")
                     elif msg_type == "audio_config":
@@ -732,7 +796,12 @@ async def _process_utterance(
         if len(audio_data) < 1000:
             return
 
-        rms = _compute_rms(audio_data)
+        # Pico de voz del turno (V1, 2026-10-07): con la captura continua el
+        # buffer incluye las pausas, asi que el RMS medio del buffer dejaba
+        # fuera las voces bajas. Se decide con el pico registrado durante la
+        # captura; sin snapshot (invocacion directa en tests) se cae al RMS
+        # del buffer de toda la vida.
+        rms = session.pop("turn_peak_snapshot", 0.0) or _compute_rms(audio_data)
         if rms < SILENCE_RMS_THRESHOLD:
             logger.info(
                 "VoiceStream: silence detected (RMS=%.0f), skipping STT session=%s",
@@ -781,6 +850,9 @@ async def _process_utterance(
                 logger.warning("VoiceStream: STT error session=%s: %s", session_id, e)
                 transcript = None
             t_stt = time.time() - t0
+        # Fuente del STT (remote/local) para el latency_report (diagnostico
+        # del fallback a whisper local en el HP).
+        stt_source = _LAST_STT_SOURCE or ""
 
         if not transcript or not transcript.strip():
             await _safe_send_json(
@@ -788,6 +860,7 @@ async def _process_utterance(
                 session,
                 {"type": "transcript", "text": "", "error": "no speech detected"},
             )
+            await _clarify_si_vacio(websocket, session)
             return
 
         from src.utils.voice_text import clean_stt_transcript
@@ -803,6 +876,7 @@ async def _process_utterance(
                 session,
                 {"type": "transcript", "text": "", "error": "no speech detected"},
             )
+            await _clarify_si_vacio(websocket, session)
             return
 
         session["transcript"] += transcript + " "
@@ -862,6 +936,21 @@ async def _process_utterance(
             session["filler"] = _FillerController()
         session["respuesta_iniciada"] = False
         filler_task = asyncio.create_task(_filler_si_tarda(websocket, session))
+        # TTS en paralelo (V2, 2026-10-07): el bucle de tokens solo trocea y
+        # encola; una unica tarea consumidora sintetiza y emite en orden FIFO.
+        # Asi el LLM nunca espera al Piper entre token y token. El filler solo
+        # dispara antes del primer token (respuesta_iniciada), asi que nunca
+        # hay dos sintesis de voz a la vez.
+        frag_queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _tts_worker() -> None:
+            while True:
+                frag = await frag_queue.get()
+                if frag is None:
+                    return
+                await _emit_fragment(frag)
+
+        tts_task = asyncio.create_task(_tts_worker())
         try:
             async for token in generate_response_stream(
                 transcript, session.get("chat_id", 0), voice=True
@@ -875,12 +964,15 @@ async def _process_utterance(
 
                 fragment, fragment_buffer = _split_fragment(fragment_buffer)
                 if fragment:
-                    await _emit_fragment(fragment)
+                    frag_queue.put_nowait(fragment)
+            if fragment_buffer.strip():
+                frag_queue.put_nowait(fragment_buffer.strip())
+            frag_queue.put_nowait(None)
+            await tts_task  # drena el TTS antes del reporte de latencia
         finally:
             filler_task.cancel()
-
-        if fragment_buffer.strip():
-            await _emit_fragment(fragment_buffer.strip())
+            if not tts_task.done():
+                tts_task.cancel()
 
         t_llm = time.time() - t1
 
@@ -906,6 +998,9 @@ async def _process_utterance(
                 "total_ms": round(total_latency * 1000),
                 "first_audio_ms": round(t_first_audio * 1000) if t_first_audio else None,
                 "fragments": fragment_count,
+                # Fuente STT (V1): si es "local", el servicio remoto de la
+                # torre no respondio y el HP transcribio con whisper small.
+                "stt_source": stt_source,
             },
         )
         logger.info(
@@ -997,6 +1092,8 @@ async def _transcribe_audio_bytes(audio_bytes: bytes, source_rate: int = 48000) 
         logger.warning("VoiceStream STT error: %s", e)
         return None
     texto = (resultado.get("text") or "").strip()
+    global _LAST_STT_SOURCE
+    _LAST_STT_SOURCE = str(resultado.get("source") or "")
     logger.info(
         "VoiceStream STT (%s): %s",
         resultado.get("source"),
@@ -1039,11 +1136,17 @@ async def start_voice_stream_server(host: str = "0.0.0.0", port: int = 8001):
 
     # Precalentado (2026-09-27): antes la primera llamada pagaba la carga de
     # Whisper y de Piper.
-    try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _get_whisper)
-    except Exception as e:
-        logger.warning("VoiceStream: no se pudo precalentar Whisper: %s", e)
+    if (getattr(settings, "whisper_remote_url", "") or "").strip():
+        # V1 (2026-10-07): con STT remoto configurado, el whisper local solo
+        # se carga si la torre no responde; precalentarlo aqui metia el modelo
+        # `small` en RAM del contenedor (2 GB) para nada.
+        logger.info("VoiceStream: STT remoto configurado; sin precalentado de Whisper local")
+    else:
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _get_whisper)
+        except Exception as e:
+            logger.warning("VoiceStream: no se pudo precalentar Whisper: %s", e)
     try:
         from src.utils.tts_manager import prewarm_tts
 

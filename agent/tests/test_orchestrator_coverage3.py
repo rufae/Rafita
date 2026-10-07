@@ -35,10 +35,16 @@ def _patch_common(monkeypatch, history=None):
     async def best_tools(text, k=3):
         return [], 0.0
 
+    async def no_directo(text):
+        # Los tests de este fichero ejercitan el flujo NORMAL (prepare +
+        # composicion); el streaming directo V2 se testea aparte.
+        return False
+
     monkeypatch.setattr(orch.db, "save_chat_message", save)
     monkeypatch.setattr(orch.db, "get_chat_history", get_history)
     monkeypatch.setattr(orch, "select_tools_semantic", select_tools)
     monkeypatch.setattr(orch, "best_tools_for_message", best_tools)
+    monkeypatch.setattr(orch, "_voice_stream_eligible", no_directo)
 
 
 def _plain(content, tool_calls=None):
