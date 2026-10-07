@@ -68,7 +68,14 @@ _STT_PROMPTS: dict[str, str] = {
 
 
 def stt_prompt() -> str:
-    return _STT_PROMPTS.get(settings.language, _STT_PROMPTS["es"])
+    base = _STT_PROMPTS.get(settings.language, _STT_PROMPTS["es"])
+    # Glosario de nombres propios (2026-10-07): Whisper confunde nombres poco
+    # comunes con frases similares («Soraya» -> «sol allá»); STT_PROMPT_EXTRA
+    # los nombra para que el modelo los mantenga.
+    extra = (getattr(settings, "stt_prompt_extra", "") or "").strip()
+    if extra:
+        return "%s Nombres propios del usuario: %s." % (base, extra.rstrip("."))
+    return base
 
 
 def timezone() -> ZoneInfo:

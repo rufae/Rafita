@@ -100,9 +100,27 @@ class Settings(BaseSettings):
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.
     voice_call_token: str = Field("", alias="VOICE_CALL_TOKEN")
     voice_speculative_stt: bool = Field(True, alias="VOICE_SPECULATIVE_STT")
-    # Frase de espera en llamada solo si la respuesta tarda mas de esto
-    # (2026-09-30: con 2,2 s salia hasta en un "hola"; el usuario pidio 5-6 s).
-    voice_filler_delay_s: float = Field(5.5, alias="VOICE_FILLER_DELAY_S", ge=1.0, le=60.0)
+    # Frase de espera en llamada solo si la respuesta tarda mas de esto.
+    # 2026-10-07: de 5,5 a 3 s con la cadena de voz optimizada (streaming
+    # directo + TTS en paralelo): el primer audio llega antes y el silencio
+    # percibido es el problema real; subir con VOICE_FILLER_DELAY_S si molesta.
+    voice_filler_delay_s: float = Field(3.0, alias="VOICE_FILLER_DELAY_S", ge=1.0, le=60.0)
+    # Memoria de la llamada (2026-10-07): turnos de historial en voz (antes
+    # eran 12 fijos en el orquestador) + resumen rodante de lo antiguo (ver
+    # core/memory_summary.py). Subir si el modelo aguanta el contexto.
+    voice_history_turns: int = Field(16, alias="VOICE_HISTORY_TURNS", ge=4, le=50)
+    # Streaming directo en voz (2026-10-07): si la similitud top-1 del mensaje
+    # con el catalogo de tools queda por debajo de este umbral, no se ofertan
+    # herramientas y la respuesta se emite en streaming real (un solo call y
+    # primer token en ~1 s). Calibrado con umbrales reales: small talk <= 0.44,
+    # acciones 0.51-0.66 (ver TOOL_RETRY_MIN_SCORE). 0 = desactivado.
+    voice_tool_min_score: float = Field(0.45, alias="VOICE_TOOL_MIN_SCORE", ge=0.0, le=1.0)
+    # Presupuesto para los reintentos de herramientas en llamada: agotado, se
+    # responde con lo que haya en vez de encadenar calls de 600 s.
+    voice_tool_budget_s: float = Field(45.0, alias="VOICE_TOOL_BUDGET_S", ge=5.0, le=600.0)
+    # Glosario de nombres propios para el STT (initial_prompt de Whisper):
+    # "Soraya, Alejandro, Moonlight..." en una linea, coma o coma espaciado.
+    stt_prompt_extra: str = Field("", alias="STT_PROMPT_EXTRA")
 
     # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
     # coma). Vacio = solo mismo origen/localhost.

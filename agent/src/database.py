@@ -325,6 +325,13 @@ class DatabaseManager:
                 fired_at TEXT
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS chat_summaries (
+                chat_id INTEGER PRIMARY KEY,
+                summary TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
         ]
         for stmt in schema:
             await self._conn.execute(stmt)
@@ -565,6 +572,45 @@ class DatabaseManager:
         )
         await self._conn.commit()
         return cursor.rowcount or 0
+
+    # ---------- resumen rodante por chat (2026-10-07, V3) ----------
+
+    async def get_chat_summary(self, chat_id: int) -> str:
+        """Resumen corto de lo antiguo de este chat ("" si no hay)."""
+        row = await self.fetchone(
+            "SELECT summary FROM chat_summaries WHERE chat_id = ?", (chat_id,)
+        )
+        return str(row["summary"]) if row else ""
+
+    async def upsert_chat_summary(self, chat_id: int, summary: str) -> None:
+        await self.execute(
+            """
+            INSERT INTO chat_summaries (chat_id, summary, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(chat_id) DO UPDATE SET
+                summary = excluded.summary,
+                updated_at = datetime('now')
+            """,
+            (chat_id, summary),
+        )
+        await self._conn.commit()
+
+    async def get_stale_chat_messages(
+        self, chat_id: int, hours: int = 2, limit: int = 40
+    ) -> list[dict[str, Any]]:
+        """Mensajes de `chat_id` mas antiguos que `hours` (para resumirlos)."""
+        rows = await self.fetchall(
+            """
+            SELECT id, role, content, created_at
+            FROM chat_history
+            WHERE chat_id = ? AND created_at < datetime('now', ?)
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (chat_id, "-%d hours" % hours, limit),
+        )
+        rows.reverse()
+        return rows
 
     # ---------- reglas condicionales (2026-10-06) ----------
 

@@ -243,12 +243,15 @@ def test_voice_prompt_replaces_format_rules():
 
 
 async def test_generate_response_stream_yields_tokens(monkeypatch):
-    async def fake_prepare(text, chat_id, voice=False):
+    async def fake_prepare(text, chat_id, voice=False, save_message=True):
         return [{"role": "system", "content": "x"}], "", [{"id": "t1"}], []
 
     async def fake_stream(messages, temperature=None, max_tokens=None, repeat_penalty=None):
         for token in ["Hola", " mundo"]:
             yield token
+
+    async def no_directo(text):
+        return False
 
     saved = []
 
@@ -256,6 +259,7 @@ async def test_generate_response_stream_yields_tokens(monkeypatch):
         saved.append((chat_id, role, content))
 
     monkeypatch.setattr(orchestrator, "_prepare_tool_phase", fake_prepare)
+    monkeypatch.setattr(orchestrator, "_voice_stream_eligible", no_directo)
     monkeypatch.setattr(orchestrator.llm, "chat_stream_tokens", fake_stream)
     monkeypatch.setattr(orchestrator.db, "save_chat_message", fake_save)
 
@@ -265,8 +269,11 @@ async def test_generate_response_stream_yields_tokens(monkeypatch):
 
 
 async def test_generate_response_stream_without_tools_chunks_words(monkeypatch):
-    async def fake_prepare(text, chat_id, voice=False):
+    async def fake_prepare(text, chat_id, voice=False, save_message=True):
         return [], "Una respuesta corta.", [], []
+
+    async def no_directo(text):
+        return False
 
     saved = []
 
@@ -274,6 +281,7 @@ async def test_generate_response_stream_without_tools_chunks_words(monkeypatch):
         saved.append(content)
 
     monkeypatch.setattr(orchestrator, "_prepare_tool_phase", fake_prepare)
+    monkeypatch.setattr(orchestrator, "_voice_stream_eligible", no_directo)
     monkeypatch.setattr(orchestrator.db, "save_chat_message", fake_save)
 
     tokens = [t async for t in orchestrator.generate_response_stream("hola", 7, voice=True)]

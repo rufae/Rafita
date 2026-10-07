@@ -918,6 +918,16 @@ function handleServerMessage(msg) {
       setStatus(STATUS.PROCESSING, 'Pensando...');
       rafitaTextBuffer = '';
       break;
+    case 'filler':
+      // Frase de espera (el audio ya llega por binario); solo se anota.
+      log('Rafita: ' + msg.text);
+      break;
+    case 'clarify':
+      // STT vacio con voz: Rafita pide que se repita (V1, 2026-10-07).
+      addTranscript('rafita', msg.text);
+      setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
+      log('No se entendio el turno; se pide repeticion');
+      break;
     case 'token':
       rafitaTextBuffer += msg.text;
       setStatus(STATUS.SPEAKING, 'Respondiendo...');
@@ -933,6 +943,10 @@ function handleServerMessage(msg) {
       log('STT=' + msg.stt_ms + 'ms LLM=' + msg.llm_ms + 'ms TTS=' + msg.tts_ms +
           'ms PrimerAudio=' + (msg.first_audio_ms != null ? msg.first_audio_ms + 'ms' : 'n/a') +
           ' Total=' + msg.total_ms + 'ms Frag=' + (msg.fragments || 0));
+      // Aviso si el STT cayo al modelo local (la torre no respondio).
+      if (msg.stt_source && msg.stt_source !== 'remote') {
+        log('Aviso: transcripcion con whisper LOCAL (' + msg.stt_source + ')');
+      }
       setStatus(STATUS.LISTENING, 'Escuchando... habla cuando quieras');
       break;
     case 'interrupted':

@@ -588,3 +588,27 @@ async def test_conditional_rules_crud(db):
     rid2 = await db.add_conditional_rule(7, '{"type": "metric"}', "otra", repeats=True)
     await db.fire_conditional_rule(rid2, repeats=True)
     assert any(r["id"] == rid2 for r in await db.list_active_conditional_rules())
+
+
+# ---------- resumen rodante por chat (V3, 2026-10-07) ----------
+
+
+async def test_chat_summaries_upsert(db):
+    assert await db.get_chat_summary(0) == ""
+    await db.upsert_chat_summary(0, "Hablamos de la mudanza.")
+    assert await db.get_chat_summary(0) == "Hablamos de la mudanza."
+    await db.upsert_chat_summary(0, "Y del viaje a Cancun.")
+    assert await db.get_chat_summary(0) == "Y del viaje a Cancun."
+    assert await db.get_chat_summary(7) == ""
+
+
+async def test_get_stale_chat_messages(db):
+    await db.execute(
+        "INSERT INTO chat_history (chat_id, role, content, created_at) "
+        "VALUES (3, 'user', 'viejo', datetime('now', '-5 hours'))"
+    )
+    await db._conn.commit()
+    await db.save_chat_message(3, "user", "reciente")
+    stale = await db.get_stale_chat_messages(3, hours=2)
+    assert [m["content"] for m in stale] == ["viejo"]
+    assert await db.get_stale_chat_messages(9, hours=2) == []

@@ -415,7 +415,11 @@ class OllamaClient:
             stream = await self._create_completion(
                 **params,
                 extra_body=self._ollama_extra_body(
-                    2048, extra_options={"repeat_penalty": repeat_penalty}
+                    # 4096 (antes 2048, V2 2026-10-07): con 16 turnos de voz
+                    # (VOICE_HISTORY_TURNS) + resumen rodante + system prompt
+                    # el contexto de 2048 se quedaba corto y recortaba.
+                    4096,
+                    extra_options={"repeat_penalty": repeat_penalty},
                 ),
             )
             while True:
