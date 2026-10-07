@@ -63,7 +63,7 @@
         "rawContentType": "application/json",
         "body": "={{ $json.body }}",
         "options": {
-          "timeout": 30000
+          "timeout": 600000
         }
       },
       "id": "b2000006-0000-4000-8000-000000000003",

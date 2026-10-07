@@ -1,4 +1,5 @@
 import asyncio
+import faulthandler
 import signal
 import sys
 from datetime import date, datetime, timedelta
@@ -22,6 +23,26 @@ TEMP_CLEANUP_DIRS = [
 TEMP_FILE_EXTENSIONS = (".ogg", ".wav", ".mp3", ".jpg", ".jpeg", ".png", ".webp")
 GC_HOUR = 3
 GC_MINUTE = 0
+
+
+def _enable_segfault_trace() -> None:
+    """Vuelca el traceback de Python si el proceso muere por SIGSEGV.
+
+    2026-10-07: el agente murio con exit 139 (segfault) a las 08:00 en mitad
+    del briefing sin dejar rastro en los logs; el volcado queda en
+    $DATA_DIR/faulthandler.log (persistente) para diagnosticar el origen.
+    """
+    import os
+
+    path = Path(os.environ.get("DATA_DIR", "/tmp")) / "faulthandler.log"
+    try:
+        fh = path.open("a", buffering=0)
+        faulthandler.enable(file=fh, all_threads=True)
+    except OSError:
+        faulthandler.enable(all_threads=True)
+
+
+_enable_segfault_trace()
 
 
 def _log_background_task_failure(task: asyncio.Task) -> None:
