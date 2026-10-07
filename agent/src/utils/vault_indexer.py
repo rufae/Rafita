@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,33 @@ INTAKE_MAX_BYTES = 10 * 1024 * 1024
 
 def _ignored_dirs() -> set[str]:
     return set(get_taxonomy().ignored_dirs)
+
+
+def _norm_text(text: str) -> str:
+    """Normaliza para comparar entidades del LLM con títulos del baúl."""
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"\s+", " ", sin_acentos).strip().casefold()
+
+
+def _vault_titles() -> dict[str, str]:
+    """Mapa normalizado -> stem real de cada nota .md del baúl.
+
+    Solo se usa para convertir entidades del LLM en `[[wikilinks]]`
+    válidos: una entidad sin nota equivalente queda como texto plano,
+    nunca como enlace fantasma.
+    """
+    if not VAULT_PATH.exists():
+        return {}
+    ignored = _ignored_dirs()
+    titulos: dict[str, str] = {}
+    for md in VAULT_PATH.rglob("*.md"):
+        parts = md.relative_to(VAULT_PATH).parts
+        if any(d in ignored or d.startswith(".") for d in parts):
+            continue
+        titulos.setdefault(_norm_text(md.stem), md.stem)
+    return titulos
 
 
 TOKENS_PER_WORD_ES = 1.4
@@ -453,12 +481,14 @@ class VaultIndexer:
         return {"success": True, "note": creada.name, "chars": len(texto)}
 
     async def _enrich_note(self, note_path: Path) -> bool:
-        """Rellena `tags` y `## Resumen` de notas nuevas sin metadata (ítem 10).
+        """Rellena `tags`, `## Resumen` y `entities` de notas nuevas (ítem 10).
 
-        Solo actúa si faltan etiquetas o falta el resumen; si el LLM no
+        Solo actúa si faltan etiquetas, resumen o entidades; si el LLM no
         responde, la nota queda como está (el siguiente evento lo reintentará).
-        La escritura dispara un nuevo evento, y como ya no falta nada, no hay
-        bucle.
+        Las entidades que coinciden con una nota existente del baúl se
+        guardan como `[[wikilinks]]` (GraphRAG-lite); el resto, como texto
+        plano. La escritura dispara un nuevo evento, y como ya no falta
+        nada, no hay bucle.
         """
         try:
             content = note_path.read_text(encoding="utf-8", errors="replace")
@@ -467,7 +497,8 @@ class VaultIndexer:
         metadata, body = parse_frontmatter(content)
         tags = metadata.get("tags") if isinstance(metadata.get("tags"), list) else []
         tiene_resumen = bool(re.search(r"^##\s+Resumen\s*$", body, re.MULTILINE))
-        if tags and tiene_resumen:
+        tiene_entities = isinstance(metadata.get("entities"), list)
+        if tags and tiene_resumen and tiene_entities:
             return False
         muestra = body[:3000].strip()
         if not muestra:
@@ -488,16 +519,20 @@ class VaultIndexer:
                         {
                             "role": "user",
                             "content": (
-                                "Etiqueta y resume esta nota en espanol.\n\n"
+                                "Etiqueta, resume y extrae entidades de esta nota "
+                                "en espanol.\n\n"
                                 "Responde SOLO con JSON:\n"
                                 '{"tags": ["etiqueta1", "etiqueta2"], '
-                                '"summary": "resumen de 2 frases"}\n\n'
+                                '"summary": "resumen de 2 frases", '
+                                '"entities": ["Nombre persona", "Nombre proyecto"]}\n'
+                                "entities: maximo 8 nombres propios relevantes "
+                                "(personas, proyectos, lugares, organizaciones).\n\n"
                                 "Nota:\n%s" % muestra
                             ),
                         },
                     ],
                     temperature=0.3,
-                    max_tokens=300,
+                    max_tokens=400,
                 ),
                 timeout=90.0,
             )
@@ -519,13 +554,26 @@ class VaultIndexer:
             else []
         )
         resumen = str(datos.get("summary") or "").strip()
-        if not nuevos_tags and not resumen:
+        crudos = datos.get("entities")
+        nuevos_entities = (
+            [e.strip() for e in crudos if isinstance(e, str) and e.strip()]
+            if isinstance(crudos, list)
+            else []
+        )
+        if not nuevos_tags and not resumen and not nuevos_entities:
             return False
         if not nuevos_tags and tags:
             nuevos_tags = tags
-        if not resumen and nuevos_tags == tags:
-            # Nada que cambiar (el LLM no aporto resumen ni etiquetas nuevas).
+        entidades_nuevas = isinstance(crudos, list) and not tiene_entities
+        if not resumen and nuevos_tags == tags and not entidades_nuevas:
+            # Nada que cambiar (el LLM no aporto resumen ni entidades nuevas).
             return False
+        enlazadas: list[str] = []
+        if nuevos_entities:
+            titulos = _vault_titles()
+            for entidad in nuevos_entities:
+                stem = titulos.get(_norm_text(entidad))
+                enlazadas.append("[[%s]]" % stem if stem else entidad)
         nuevo_body = body
         if resumen and not tiene_resumen:
             lineas = body.split("\n")
@@ -537,6 +585,8 @@ class VaultIndexer:
             lineas[idx:idx] = ["", "## Resumen", resumen, ""]
             nuevo_body = "\n".join(lineas)
         metadata["tags"] = nuevos_tags
+        if isinstance(crudos, list):
+            metadata["entities"] = enlazadas
         nuevo_fm = (
             "---\n"
             + yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip()
@@ -548,10 +598,11 @@ class VaultIndexer:
             logger.warning("Enrich %s: no se pudo escribir (%s)", note_path.name, e)
             return False
         logger.info(
-            "VaultIndexer: %s enriquecida (%d tags%s)",
+            "VaultIndexer: %s enriquecida (%d tags%s%s)",
             note_path.name,
             len(nuevos_tags),
             ", resumen" if resumen and not tiene_resumen else "",
+            ", %d entidades" % len(enlazadas) if enlazadas else "",
         )
         return True
 
