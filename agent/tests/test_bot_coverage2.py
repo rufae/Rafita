@@ -305,7 +305,7 @@ async def test_start_stop_and_destroy(monkeypatch):
 
     assert bot._app_started.is_set()
     assert bot.polling_status() == {"status": "ok"}
-    app.bot.delete_webhook.assert_awaited_once_with(drop_pending_updates=True)
+    app.bot.delete_webhook.assert_awaited_once_with(drop_pending_updates=False)
 
     await bot.stop()
     assert bot._polling_task.cancelled() or bot._polling_task.done()

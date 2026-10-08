@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     # "Soraya, Alejandro, Moonlight..." en una linea, coma o coma espaciado.
     stt_prompt_extra: str = Field("", alias="STT_PROMPT_EXTRA")
 
+    mpt_ssh_target: str = Field("", alias="MPT_SSH_TARGET")
+    mpt_ssh_key: str = Field("/data/mpt_ssh/id_ed25519", alias="MPT_SSH_KEY")
+    mpt_dir: str = Field("~/PROYECTOS/MoneyPrinterTurbo", alias="MPT_DIR")
+
     # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
     # coma). Vacio = solo mismo origen/localhost.
     web_allowed_origins: str = Field("", alias="WEB_ALLOWED_ORIGINS")
