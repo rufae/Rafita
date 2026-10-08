@@ -252,7 +252,7 @@ class RafitaBot:
             raise RuntimeError("Bot not initialized")
         await self._app.start()
         try:
-            await self._app.bot.delete_webhook(drop_pending_updates=True)
+            await self._app.bot.delete_webhook(drop_pending_updates=False)
         except Exception as e:
             logger.debug("deleteWebhook: %s", e)
         self._polling_task = asyncio.create_task(self._raw_poll_loop())

@@ -1544,6 +1544,42 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "hacer_videos",
+            "description": "Genera vídeos con MoneyPrinterTurbo en el PC del "
+            "usuario: cada guion de guiones/ se convierte en un vídeo en "
+            "español e inglés. Úsalo cuando pidan 'haz vídeos', 'genera el "
+            "vídeo de X', 'procesa los guiones' o '¿cómo va la generación?'. "
+            "Sin guion procesa todos; con 'estado' sólo consulta el avance. "
+            "Al terminar, un timer local sube los vídeos nuevos a n8n y "
+            "llegan a Telegram para aprobación (no se publica nada sin "
+            "aprobar).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "guion": {
+                        "type": "string",
+                        "description": "Guion .md concreto (ej: 'El_cachorro_perdido.md' "
+                        "o 'guiones/uno.md'). Vacío = todos los de guiones/.",
+                    },
+                    "fuerza": {
+                        "type": "boolean",
+                        "description": "true para ignorar el límite de 20-30 s de "
+                        "locución (por defecto false).",
+                    },
+                    "accion": {
+                        "type": "string",
+                        "enum": ["lanzar", "estado"],
+                        "description": "'lanzar' (por defecto) arranca la generación; "
+                        "'estado' muestra si sigue corriendo y el último log.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 

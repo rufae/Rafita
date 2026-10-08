@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -280,6 +280,31 @@ def _detect_tool_intent(text: str) -> bool:
     return False
 
 
+def _aviso_retraso(fecha_msg, ahora=None) -> str:
+    """Nota de contexto cuando el mensaje llega con retraso (Rafita offline).
+
+    Telegram encola los updates hasta 24 h; si el bot estuvo caído, al
+    arrancar los procesa tarde. Devuelve '' si el mensaje es reciente.
+    """
+    if fecha_msg is None:
+        return ""
+    ahora = ahora or datetime.now(UTC)
+    if fecha_msg.tzinfo is None:
+        fecha_msg = fecha_msg.replace(tzinfo=UTC)
+    delta = ahora - fecha_msg
+    if delta.total_seconds() < 120:
+        return ""
+    minutos = int(delta.total_seconds() // 60)
+    hace = ("%dh %02dm" % (minutos // 60, minutos % 60)) if minutos >= 60 else ("%dm" % minutos)
+    return (
+        "AVISO_MENSAJE_RETRASADO: El usuario envio esto hace %s (fecha real "
+        "%s UTC); estuviste offline o Telegram lo encolo. Al empezar tu "
+        "respuesta reconocelo brevemente ('Perdona la demora, acabo de "
+        "recibir esto...') y si el contenido ya caduco o es urgente, "
+        "hazelo notar.\n\n" % (hace, fecha_msg.strftime("%Y-%m-%d %H:%M"))
+    )
+
+
 async def _process_ai_message(
     update: Update, user_text: str, context, from_voice: bool = False
 ) -> str | None:
@@ -317,7 +342,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    f"{build_system_prompt()}"
+                    f"{_aviso_retraso(getattr(message, 'date', None))}{build_system_prompt()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "
@@ -380,7 +405,8 @@ async def _process_ai_message(
                     "- manage_google_calendar / set_recurring_reminder\n"
                     "- generate_google_auth_link / save_google_verification_code\n"
                     "- get_google_calendar_events / create_google_calendar_event\n"
-                    "- guardar_aprendizaje / listar_skills / cargar_skill / buscar_historial\n\n"
+                    "- guardar_aprendizaje / listar_skills / cargar_skill / buscar_historial\n"
+                    "- hacer_videos (genera vídeos MoneyPrinterTurbo desde guiones/)\n\n"
                     "Cuando invoques una herramienta, confirma al usuario lo realizado de forma breve. "
                     f"{reply_instruction()}"
                 ),
@@ -391,7 +417,7 @@ async def _process_ai_message(
             {
                 "role": "system",
                 "content": (
-                    f"{build_system_prompt()}"
+                    f"{_aviso_retraso(getattr(message, 'date', None))}{build_system_prompt()}"
                     "AUDIO_RULE: Si el usuario te pide explicitamente en su mensaje que le "
                     "respondas por audio, nota de voz o que hables, debes envolver OBLIGATORIAMENTE "
                     "tu respuesta completa dentro de las etiquetas [Audio] y [/Audio] para activar "
@@ -3062,6 +3088,16 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 "message": "%d mensaje(s):\n%s" % (len(rows), "\n".join(lineas)),
                 "resultados": rows,
             }
+
+        elif func_name == "hacer_videos":
+            from src.services.mpt_service import ejecutar_hacer_videos
+
+            fuerza_raw = args.get("fuerza", False)
+            return await ejecutar_hacer_videos(
+                guion=str(args.get("guion", "") or ""),
+                fuerza=fuerza_raw is True or str(fuerza_raw).lower() == "true",
+                accion=str(args.get("accion", "") or ""),
+            )
 
         else:
             return {
