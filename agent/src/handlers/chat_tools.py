@@ -1714,18 +1714,20 @@ async def select_tools_semantic(text: str, k: int = 10) -> list[dict[str, Any]]:
     import asyncio
 
     from src.ollama_client import llm
+    from src.utils.embed_prefix import embed_document_text, embed_query_text
 
     tools = get_tools_with_date_context()
     global _TOOL_EMBEDDINGS
     try:
         if _TOOL_EMBEDDINGS is None or len(_TOOL_EMBEDDINGS) != len(tools):
             vectors = await asyncio.to_thread(
-                llm.embed_texts, [_tool_catalog_text(t) for t in tools]
+                llm.embed_texts,
+                [embed_document_text(_tool_catalog_text(t), t["function"]["name"]) for t in tools],
             )
             _TOOL_EMBEDDINGS = {
                 t["function"]["name"]: v for t, v in zip(tools, vectors, strict=False)
             }
-        message_vec = (await asyncio.to_thread(llm.embed_texts, [text]))[0]
+        message_vec = (await asyncio.to_thread(llm.embed_texts, [embed_query_text(text)]))[0]
     except Exception:
         return tools
     return rank_tools_by_similarity(message_vec, _TOOL_EMBEDDINGS, tools, k)
@@ -1746,18 +1748,20 @@ async def best_tools_for_message(text: str, k: int = 3) -> tuple[list[dict[str, 
     import asyncio
 
     from src.ollama_client import llm
+    from src.utils.embed_prefix import embed_document_text, embed_query_text
 
     tools = get_tools_with_date_context()
     global _TOOL_EMBEDDINGS
     try:
         if _TOOL_EMBEDDINGS is None or len(_TOOL_EMBEDDINGS) != len(tools):
             vectors = await asyncio.to_thread(
-                llm.embed_texts, [_tool_catalog_text(t) for t in tools]
+                llm.embed_texts,
+                [embed_document_text(_tool_catalog_text(t), t["function"]["name"]) for t in tools],
             )
             _TOOL_EMBEDDINGS = {
                 t["function"]["name"]: v for t, v in zip(tools, vectors, strict=False)
             }
-        message_vec = (await asyncio.to_thread(llm.embed_texts, [text]))[0]
+        message_vec = (await asyncio.to_thread(llm.embed_texts, [embed_query_text(text)]))[0]
     except Exception:
         return [], 0.0
 

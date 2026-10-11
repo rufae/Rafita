@@ -792,6 +792,20 @@ def test_embed_texts_uses_native_endpoint(monkeypatch):
     assert captured["json"]["input"] == ["hola"]
 
 
+def test_embed_texts_uses_embed_host_override(monkeypatch):
+    monkeypatch.setattr(settings, "ollama_embed_host", "http://otra:11436")
+    client = OllamaClient()
+    captured = {}
+
+    def fake_post(url, json=None, timeout=None):
+        captured.update({"url": url})
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"embeddings": [[0.25]]})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert client.embed_texts(["hola"]) == [[0.25]]
+    assert captured["url"].startswith("http://otra:11436/api/embed")
+
+
 async def test_generate_embedding_paths(monkeypatch):
     monkeypatch.setattr(settings, "ollama_gpu_host", "")
     with pytest.raises(OllamaClientError, match="not initialized"):

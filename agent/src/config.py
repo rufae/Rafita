@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     ollama_request_timeout: int = Field(600, alias="OLLAMA_REQUEST_TIMEOUT", ge=30)
     ollama_gpu_host: str = Field("", alias="OLLAMA_GPU_HOST")
     ollama_gpu_probe_interval: int = Field(60, alias="OLLAMA_GPU_PROBE_INTERVAL", ge=10)
+    # Endpoint de embeddings (Chroma/RAG). Vacío = OLLAMA_HOST. Sirve para
+    # servirlos desde otra instancia de Ollama (p. ej. una en espacio de
+    # usuario con un modelo multimodal) sin tocar el host del chat.
+    ollama_embed_host: str = Field("", alias="OLLAMA_EMBED_HOST")
     llm_temperature: float = Field(0.7, alias="LLM_TEMPERATURE", ge=0.0, le=2.0)
     llm_max_tokens: int = Field(4096, alias="LLM_MAX_TOKENS", ge=128, le=16384)
 

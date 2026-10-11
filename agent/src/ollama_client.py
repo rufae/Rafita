@@ -590,8 +590,11 @@ class OllamaClient:
             # Los embeddings viven en el Dell: no fijarlos en RAM.
             "keep_alive": self.keep_alive_cpu,
         }
+        # OLLAMA_EMBED_HOST permite servirlos desde otra instancia de Ollama
+        # (p. ej. una en espacio de usuario con un modelo multimodal).
+        embed_host = settings.ollama_embed_host or settings.ollama_host
         response = httpx.post(
-            "%s/api/embed" % settings.ollama_host.rstrip("/"),
+            "%s/api/embed" % embed_host.rstrip("/"),
             json=payload,
             timeout=600.0,
         )
