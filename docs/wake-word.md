@@ -34,7 +34,7 @@ generarlo desde el HP:
 
 ```bash
 # en el HP (ejemplo; el token vive en la BD de la web)
-curl -s http://127.0.0.1:8000/api/health >/dev/null  # web arriba
+curl -s http://127.0.0.1:8010/api/health >/dev/null  # web arriba (HP)
 ```
 
 El token lo devuelve la web al pulsar «Llamada» (`/call/token`); cópialo.

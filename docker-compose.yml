@@ -53,6 +53,9 @@ services:
     networks:
       - rafita-net
     ports:
+      # El puerto del gateway en cada host se decide en su overlay
+      # (p. ej. deploy/hp/docker-compose.hp.yml lo publica en 8010 porque
+      # el 8000 lo ocupa Portainer); aqui solo localhost por defecto.
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8001:8001"
       - "127.0.0.1:8020:8020"

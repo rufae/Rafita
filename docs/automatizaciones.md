@@ -188,12 +188,9 @@ disparo + entrega; endpoints HMAC `/automation/*`).
 ## Pendientes documentados (para hacer más adelante)
 
 ### Voz más humana (mejora futura)
-- **Investigación completa en `docs/voz-tts-opciones.md`** (comparativa
-  Kokoro / Voicebox / Chatterbox / XTTS / Piper con licencias, hardware y
-  plan de integración por fases).
-- **Ya hecho**: voz por defecto `es_ES-davefx-medium` (calidad media) y
-  limpieza de texto (sin Markdown, emojis ni símbolos; unidades normalizadas
-  «24 h» → «24 horas»). Configurable con `TTS_VOICE`.
+- **Ya hecho**: limpieza de texto (sin Markdown, emojis ni símbolos; unidades
+  normalizadas «24 h» → «24 horas») y voces de ElevenLabs (plan gratuito) o
+  edge-tts. Configurable con `TTS_VOICE`/`TTS_PROVIDER`.
 - **Opciones siguientes** (gratis, local):
   1. Voz **`high`** de Piper cuando exista para español (p. ej. `es_MX-claude-high`)
      o voces `medium` alternativas (`es_ES-sharvard-medium`) — comparar y elegir.
