@@ -90,5 +90,3 @@ unidas por un hilo**:
 - **Sin scroll horizontal** en 390 px (login, chat, baúl, llamada).
 - **E2E real**: login → chat con respuesta del cerebro → crear/abrir/borrar
   nota del Baúl → 9/9 tests.
-
-Capturas reales de todas las vistas en `docs/web-screenshots/`.

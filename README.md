@@ -266,11 +266,11 @@ credenciales. Los secretos también pueden servirse desde ficheros
 | [docs/secrets.md](docs/secrets.md) | Secretos file-based (Docker secrets) |
 | [docs/SECURITY.md](docs/SECURITY.md) | Seguridad y modelo de amenaza |
 | [n8n/README.md](n8n/README.md) | Automatizaciones n8n (qué hacen y cuándo) |
-| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Cambios por versión |
-
-## Contribuir
-
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): entorno de desarrollo, tests y estilo.
+| [docs/n8n-hp.md](docs/n8n-hp.md) | n8n en el HP (deploy y workflow de subida) |
+| [docs/runbook.md](docs/runbook.md) | Runbook: operación diaria y fallos |
+| [docs/automatizaciones.md](docs/automatizaciones.md) | Automatizaciones (estado y pendientes) |
+| [docs/subir-a-redes.md](docs/subir-a-redes.md) | YouTube Shorts / Instagram Reels |
+| [docs/gastos-automaticos.md](docs/gastos-automaticos.md) | Gastos automáticos (Tasker → banco) |
 
 ## Licencia
 
