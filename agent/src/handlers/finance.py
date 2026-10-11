@@ -10,6 +10,7 @@ from src.config import settings
 from src.database import db
 from src.logger import logger
 from src.models.schemas import FinanceCategory
+from src.services.finance_service import registrar_movimiento
 from src.utils.telegram_fmt import reply_md
 
 
@@ -41,13 +42,12 @@ async def gasto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     category = args[1].lower()
     description = " ".join(args[2:]) if len(args) > 2 else None
 
-    record_id = await db.add_finance_record(
+    record_id = await registrar_movimiento(
         chat_id=user.id,
         amount=amount,
         category=FinanceCategory.expense.value,
         subcategory=category,
         description=description,
-        currency=settings.default_currency,
     )
 
     logger.info(
@@ -94,13 +94,12 @@ async def ingreso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     source = args[1].lower()
     description = " ".join(args[2:]) if len(args) > 2 else None
 
-    record_id = await db.add_finance_record(
+    record_id = await registrar_movimiento(
         chat_id=user.id,
         amount=amount,
         category=FinanceCategory.income.value,
         subcategory=source,
         description=description,
-        currency=settings.default_currency,
     )
 
     logger.info(

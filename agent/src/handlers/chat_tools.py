@@ -53,6 +53,34 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "save_income",
+            "description": "Registra un ingreso o cobro financiero (nómina, "
+            "trabajo freelance, venta, devolución...). Úsalo cuando el "
+            "usuario mencione que le pagan, cobró, ingresó o recibió dinero.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {
+                        "type": "number",
+                        "description": "Monto del ingreso en número (ej: 1500.00)",
+                    },
+                    "fuente": {
+                        "type": "string",
+                        "description": "Origen del dinero (ej: nomina, freelance, "
+                        "ventas, inversiones, regalo, otros)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Descripción opcional del ingreso",
+                    },
+                },
+                "required": ["amount", "fuente"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_event",
             "description": "Crea una cita, evento o reunion CON fecha y hora en la agenda "
             "(ej: cita el viernes a las 10, reunion manana a las 9). Es la "
@@ -121,8 +149,70 @@ TOOLS_DEFINITIONS: list[dict[str, Any]] = [
             "financiera, balance, ingresos o gastos.",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "mes": {
+                        "type": "string",
+                        "description": "Mes a resumir en formato aaaa-mm (ej: "
+                        "'2026-09'). Vacío o ausente = mes actual.",
+                    },
+                },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_finance_records",
+            "description": "Lista movimientos financieros recientes (gastos e "
+            "ingresos) con fecha, concepto e importe. Úsalo para 'muéstrame "
+            "mis gastos', 'qué he gastado este mes' con detalle o 'ver "
+            "movimientos' cuando necesites la línea a línea, no el resumen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {
+                        "type": "string",
+                        "enum": ["todos", "expense", "income"],
+                        "description": "Filtrar por tipo (defecto: todos)",
+                    },
+                    "mes": {
+                        "type": "string",
+                        "description": "Mes en formato aaaa-mm (ej: '2026-09'). "
+                        "Vacío = últimos movimientos sin filtrar por mes.",
+                    },
+                    "limite": {
+                        "type": "integer",
+                        "description": "Cuántos devolver (defecto 20, máx 100)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_finance_record",
+            "description": "Borra un movimiento financiero por su ID (para "
+            "corregir gastos duplicados o mal registrados, p. ej. un gasto "
+            "automático del banco que no era tuyo). REQUIERE confirm=true: si "
+            "el usuario no lo ha confirmado, pídeselo antes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "record_id": {
+                        "type": "integer",
+                        "description": "ID del movimiento (sale en el registro o "
+                        "en list_finance_records)",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "true SOLO si el usuario ha confirmado "
+                        "explícitamente que lo borre",
+                    },
+                },
+                "required": ["record_id", "confirm"],
             },
         },
     },

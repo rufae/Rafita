@@ -7,6 +7,7 @@ from telegram import Bot, Chat, Message, Update, User
 
 from src.config import settings
 from src.handlers import finance
+from src.services import finance_service
 
 
 class FakeDB:
@@ -68,6 +69,8 @@ def make_context(args=None):
 def install_db(monkeypatch, **kwargs):
     fake_db = FakeDB(**kwargs)
     monkeypatch.setattr(finance, "db", fake_db)
+    monkeypatch.setattr(finance_service, "db", fake_db)
+    monkeypatch.setattr(finance_service, "sync_obsidian_transaccion", AsyncMock(return_value=True))
     return fake_db
 
 

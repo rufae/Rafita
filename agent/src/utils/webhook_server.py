@@ -816,6 +816,77 @@ async def automation_sync(request: Request):
     return _notificar(await sync_google_vault(), "changes")
 
 
+@app.post("/automation/banco-gasto")
+async def automation_banco_gasto(request: Request):
+    """Gasto detectado en la app del banco (Tasker en el movil).
+
+    Autenticacion de doble via: firma HMAC del gateway (X-Webhook-Signature)
+    o token fijo X-Banco-Token (mas simple para Tasker); fail-closed si no
+    hay ninguno configurado. Descarta domiciliaciones y duplicados; avisa
+    por Telegram con el ID para poder corregirlo ("borra el gasto N").
+    """
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    token = request.headers.get("X-Banco-Token", "")
+    configurado = bool(_webhook_secret or settings.banco_webhook_token)
+    autorizado = False
+    if _webhook_secret and signature and _verify_signature(body, signature):
+        autorizado = True
+    if (
+        settings.banco_webhook_token
+        and token
+        and hmac.compare_digest(token, settings.banco_webhook_token)
+    ):
+        autorizado = True
+    if not configurado:
+        raise HTTPException(status_code=503, detail=_fallo("banco-gasto sin token configurado"))
+    if not autorizado:
+        raise HTTPException(status_code=401, detail=_fallo("Invalid bank token"))
+
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
+
+    admins = list(settings.admin_ids or [])
+    if not admins:
+        raise HTTPException(status_code=503, detail=_fallo("sin ADMIN_IDS configurados"))
+    chat_id = int(admins[0])
+
+    from src.services.finance_service import registrar_gasto_banco
+
+    resultado = await registrar_gasto_banco(
+        chat_id=chat_id,
+        amount=payload.get("amount", 0),
+        merchant=str(payload.get("merchant", ""))[:120],
+        text=str(payload.get("text", ""))[:300],
+        dedupe_key=str(payload.get("dedupe_key", ""))[:100],
+        recorded_at=str(payload.get("fecha", ""))[:19] or None,
+    )
+    if resultado.get("notify") and _bot_ref is not None and resultado.get("record_id"):
+        aviso = (
+            "💳 *Gasto automático detectado*\n"
+            "• Importe: %.2f %s\n"
+            "• Concepto: %s\n"
+            "• ID: %s\n\n"
+            "Ya está en tus cuentas. Si no es tuyo, dime "
+            "«borra el gasto %s»."
+            % (
+                float(resultado.get("amount") or 0),
+                settings.default_currency,
+                resultado.get("concepto", "-"),
+                resultado.get("record_id"),
+                resultado.get("record_id"),
+            )
+        )
+        for admin_id in admins:
+            try:
+                await _bot_ref.send_proactive_message(int(admin_id), aviso)
+            except Exception as e:
+                logger.warning("banco-gasto: no pude avisar a %s: %s", admin_id, e)
+    return _resultado(resultado)
+
+
 @app.post("/automation/crm-remind")
 async def automation_crm_remind(request: Request):
     """Seguimientos de clientes pendientes (mini-CRM, Fase 1)."""
