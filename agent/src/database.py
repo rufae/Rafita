@@ -970,6 +970,14 @@ class DatabaseManager:
         params.append(limit)
         return await self.fetchall(sql, tuple(params))
 
+    async def delete_finance_record(self, chat_id: int, record_id: int) -> int:
+        """Borra el movimiento y devuelve cuantas filas toco (0 = no existia)."""
+        cursor = await self.execute(
+            "DELETE FROM finance_records WHERE id = ? AND chat_id = ?", (record_id, chat_id)
+        )
+        await self._conn.commit()
+        return cursor.rowcount or 0
+
     async def create_export(self, chat_id: int, export_type: str) -> int:
         sql = """
             INSERT INTO exports (chat_id, export_type, status)

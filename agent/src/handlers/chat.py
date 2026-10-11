@@ -18,7 +18,7 @@ from src.handlers.chat_tools import (
     WRITE_TOOLS,
     select_tools_semantic,
 )
-from src.i18n import currency_symbol, language_name, reply_instruction
+from src.i18n import language_name, reply_instruction
 from src.logger import logger
 from src.models.schemas import COMMANDS_REGISTRY, MessageRole
 from src.ollama_client import OllamaClientError, llm
@@ -395,7 +395,9 @@ async def _process_ai_message(
                     "Tienes acceso a herramientas que debes invocar automáticamente cuando "
                     "el usuario lo necesite.\n\n"
                     "Herramientas disponibles:\n"
-                    "- save_expense / create_event / create_alert / get_finance_summary\n"
+                    "- save_expense / save_income / get_finance_summary / "
+                    "list_finance_records / delete_finance_record\n"
+                    "- create_event / create_alert\n"
                     "- remember_fact / search_knowledge / search_web\n"
                     "- manage_obsidian_note / search_obsidian_vault\n"
                     "- inspect_project_files / analyze_system_logs\n"
@@ -1055,43 +1057,131 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                 amount = 0.0
             category = args.get("category", "otros")
             description = args.get("description")
-            record_id = await db.add_finance_record(
+            from src.services.finance_service import registrar_movimiento
+
+            record_id = await registrar_movimiento(
                 chat_id=chat_id,
                 amount=amount,
                 category="expense",
                 subcategory=category,
                 description=description,
-                currency=settings.default_currency,
             )
-            try:
-                from datetime import datetime as _dt
-
-                from src.utils.obsidian_manager import create_or_append_note
-
-                date_str = _dt.now().strftime("%Y-%m-%d")
-                table_row = "| %s | %s | %s | %.2f %s | - |" % (
-                    date_str,
-                    (description or category)[:50],
-                    category,
-                    amount,
-                    currency_symbol(),
-                )
-                await create_or_append_note(
-                    title="Control_Financiero_2026",
-                    content=(
-                        "## Transacciones\n\n"
-                        "| Fecha | Concepto | Categoria | Ingreso/Gasto (%s) | Saldo |\n"
-                        "|---|---|---|---|---|\n%s"
-                    )
-                    % (settings.default_currency, table_row),
-                    folder=get_taxonomy().path("areas_finanzas"),
-                )
-            except Exception as sync_err:
-                logger.warning("Obsidian finance sync failed: %s", sync_err)
             return {
                 "success": True,
                 "message": f"Gasto registrado: {amount:.2f} {settings.default_currency} "
                 f"en {category} (ID: {record_id}). Sincronizado en Obsidian.",
+            }
+
+        elif func_name == "save_income":
+            amount = args.get("amount", 0)
+            try:
+                amount = float(amount)
+            except (TypeError, ValueError):
+                amount = 0.0
+            if amount <= 0:
+                return {"success": False, "message": "amount debe ser un numero positivo."}
+            fuente = str(args.get("fuente") or "otros").lower()[:40]
+            description = args.get("description")
+            from src.services.finance_service import registrar_movimiento
+
+            record_id = await registrar_movimiento(
+                chat_id=chat_id,
+                amount=amount,
+                category="income",
+                subcategory=fuente,
+                description=description,
+            )
+            return {
+                "success": True,
+                "message": f"Ingreso registrado: {amount:.2f} {settings.default_currency} "
+                f"de {fuente} (ID: {record_id}). Sincronizado en Obsidian.",
+            }
+
+        elif func_name == "delete_finance_record":
+            try:
+                rec_id = int(args.get("record_id"))
+            except (TypeError, ValueError):
+                return {"success": False, "message": "record_id debe ser un numero entero."}
+            if args.get("confirm") is not True:
+                return {
+                    "success": False,
+                    "message": (
+                        "ATENCION: esto borra el movimiento financiero %d de forma "
+                        "irreversible. Si el usuario esta seguro, vuelve a llamar "
+                        "con confirm=true." % rec_id
+                    ),
+                }
+            borrados = await db.delete_finance_record(chat_id, rec_id)
+            return {
+                "success": bool(borrados),
+                "message": (
+                    "Movimiento %d borrado." % rec_id
+                    if borrados
+                    else "No existe el movimiento %d para este usuario." % rec_id
+                ),
+            }
+
+        elif func_name == "list_finance_records":
+            tipo = str(args.get("tipo") or "todos")
+            if tipo not in ("todos", "expense", "income"):
+                tipo = "todos"
+            limite = args.get("limite")
+            try:
+                limite = max(1, min(int(limite or 20), 100))
+            except (TypeError, ValueError):
+                limite = 20
+            mes = str(args.get("mes") or "").strip()
+            start = end = None
+            if mes:
+                try:
+                    ano, mm = mes.split("-", 1)
+                    ano_i, mm_i = int(ano), int(mm)
+                    assert 2000 <= ano_i <= 2100 and 1 <= mm_i <= 12
+                    import calendar
+
+                    start = "%04d-%02d-01 00:00:00" % (ano_i, mm_i)
+                    fin_dia = calendar.monthrange(ano_i, mm_i)[1]
+                    end = "%04d-%02d-%02d 23:59:59" % (ano_i, mm_i, fin_dia)
+                except (ValueError, AssertionError, AttributeError):
+                    return {
+                        "success": False,
+                        "message": "mes no valido; usa formato aaaa-mm (ej: 2026-09).",
+                    }
+            registros = await db.get_finance_records(
+                chat_id,
+                start_date=start,
+                end_date=end,
+                category=None if tipo == "todos" else tipo,
+                limit=limite,
+            )
+            if not registros:
+                return {
+                    "success": True,
+                    "message": "No hay movimientos con esos filtros.",
+                    "registros": [],
+                }
+            cur = settings.default_currency
+            signo = {"expense": "-", "income": "+"}
+            lineas = ["| ID | Fecha | Concepto | Tipo | Importe |", "|---|---|---|---|---|"]
+            for r in registros:
+                lineas.append(
+                    "| %s | %s | %s | %s | %s%s %s |"
+                    % (
+                        r.get("id"),
+                        (r.get("recorded_at") or "")[:16],
+                        str(r.get("description") or r.get("subcategory") or "-").replace("|", "/")[
+                            :40
+                        ],
+                        "Gasto" if r.get("category") == "expense" else "Ingreso",
+                        signo.get(r.get("category"), ""),
+                        "%.2f" % float(r.get("amount") or 0),
+                        cur,
+                    )
+                )
+            return {
+                "success": True,
+                "message": "\n".join(lineas),
+                "registros": registros,
             }
 
         elif func_name == "create_event":
@@ -1184,18 +1274,39 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
             }
 
         elif func_name == "get_finance_summary":
+            mes = str(args.get("mes") or "").strip()
             now = datetime.utcnow()
-            start_date = now.replace(day=1).strftime("%Y-%m-%d 00:00:00")
-            end_date = now.strftime("%Y-%m-%d 23:59:59")
+            if mes:
+                try:
+                    ano, mm = mes.split("-", 1)
+                    ano_i, mm_i = int(ano), int(mm)
+                    if not 2000 <= ano_i <= 2100 or not 1 <= mm_i <= 12:
+                        raise ValueError
+                    import calendar
+
+                    inicio = datetime(ano_i, mm_i, 1)
+                    fin_dia = calendar.monthrange(ano_i, mm_i)[1]
+                    fin = datetime(ano_i, mm_i, fin_dia, 23, 59, 59)
+                except (ValueError, AttributeError):
+                    return {
+                        "success": False,
+                        "message": "mes no valido; usa formato aaaa-mm (ej: 2026-09).",
+                    }
+            else:
+                inicio = now.replace(day=1)
+                fin = now.replace(hour=23, minute=59, second=59)
+            start_date = inicio.strftime("%Y-%m-%d 00:00:00")
+            end_date = fin.strftime("%Y-%m-%d %H:%M:%S")
             summary = await db.get_finance_summary(chat_id, start_date, end_date)
             if summary["transaction_count"] == 0:
+                etiqueta = mes or now.strftime("%B %Y")
                 return {
                     "success": True,
-                    "message": "No hay registros financieros este mes.",
+                    "message": "No hay registros financieros en %s." % etiqueta,
                 }
             cur = settings.default_currency
             lines = [
-                f"📊 Resumen de {now.strftime('%B %Y')}:",
+                f"📊 Resumen de {(mes or now.strftime('%B %Y'))}:",
                 "",
                 "| Concepto | Importe |",
                 "|---|---|",

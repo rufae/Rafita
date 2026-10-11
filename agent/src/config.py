@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     mpt_ssh_key: str = Field("/data/mpt_ssh/id_ed25519", alias="MPT_SSH_KEY")
     mpt_dir: str = Field("~/PROYECTOS/MoneyPrinterTurbo", alias="MPT_DIR")
 
+    banco_webhook_token: str = Field("", alias="BANCO_WEBHOOK_TOKEN")
+
     # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
     # coma). Vacio = solo mismo origen/localhost.
     web_allowed_origins: str = Field("", alias="WEB_ALLOWED_ORIGINS")
