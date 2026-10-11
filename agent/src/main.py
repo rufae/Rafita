@@ -314,6 +314,14 @@ class Application:
         self._heartbeat_worker = HeartbeatWorker()
 
     async def _ensure_embedding_model(self) -> None:
+        if settings.ollama_embed_host:
+            # Los embeddings se sirven desde otro endpoint (p. ej. el servicio
+            # EmbeddingGemma 2 de la Dell): Ollama no tiene nada que bajar.
+            logger.info(
+                "OLLAMA_EMBED_HOST activo (%s): auto-pull del modelo de embeddings desactivado.",
+                settings.ollama_embed_host,
+            )
+            return
         try:
             import httpx
 

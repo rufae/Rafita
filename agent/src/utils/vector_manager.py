@@ -203,9 +203,23 @@ class VectorManager:
                 new_docs.append(documents[i])
                 new_metas.append(metadatas[i])
         if new_ids:
+            # Embeddings explicitos (con prefijo de rol, ver embed_prefix):
+            # Chroma no distingue consulta de documento en su embedding
+            # function y con EmbeddingGemma 2 esa distincion importa.
+            from src.ollama_client import llm
+            from src.utils.embed_prefix import embed_document_text
+
+            title = Path(file_path).stem
+            embed_inputs = [embed_document_text(d, title) for d in new_docs]
+            new_embeddings = await loop.run_in_executor(None, llm.embed_texts, embed_inputs)
             await loop.run_in_executor(
                 None,
-                lambda: self._collection.add(ids=new_ids, documents=new_docs, metadatas=new_metas),
+                lambda: self._collection.add(
+                    ids=new_ids,
+                    documents=new_docs,
+                    metadatas=new_metas,
+                    embeddings=new_embeddings,
+                ),
             )
         logger.info(
             "Vector DB: added %d chunks from %s (%d already existed)",
@@ -257,6 +271,43 @@ class VectorManager:
         added = 0
         skipped = 0
         note_path = chunks[0]["metadata"].get("note_path", "unknown")
+        # Embeddings explicitos con prefijo de rol (embed_prefix): Chroma no
+        # distingue consulta de documento y con EmbeddingGemma 2 importa.
+        from src.ollama_client import llm
+        from src.utils.embed_prefix import embed_document_text
+
+        title = Path(note_path).stem
+        embed_inputs = [embed_document_text(c["text"], title) for c in chunks]
+        embeddings: list[list[float]] | None = None
+        for attempt in range(3):
+            try:
+                embeddings = await loop.run_in_executor(None, llm.embed_texts, embed_inputs)
+                break
+            except Exception as e:
+                if attempt < 2:
+                    wait = 2**attempt
+                    logger.warning(
+                        "Embedding note '%s' failed (attempt %d/3): %s. Retrying in %ds...",
+                        note_path,
+                        attempt + 1,
+                        e,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        "Embedding note '%s' FAILED after 3 attempts: %s. Skipping note.",
+                        note_path,
+                        e,
+                    )
+        if embeddings is None or len(embeddings) != len(chunks):
+            logger.error("No embeddings for '%s': skipping all %d chunks", note_path, len(chunks))
+            return {
+                "success": True,
+                "chunks_added": 0,
+                "chunks_skipped": len(chunks),
+                "message": "Indexados 0 fragmentos (%d omitidos)." % len(chunks),
+            }
         for i, chunk in enumerate(chunks):
             chunk_id = "%s::h_%s::chunk_%d" % (
                 chunk["metadata"]["note_path"],
@@ -269,10 +320,11 @@ class VectorManager:
                     # chroma deja de avisar "Add of existing embedding ID".
                     await loop.run_in_executor(
                         None,
-                        lambda c=chunk, cid=chunk_id: self._collection.upsert(
+                        lambda c=chunk, cid=chunk_id, e=embeddings[i]: self._collection.upsert(
                             ids=[cid],
                             documents=[c["text"]],
                             metadatas=[c["metadata"]],
+                            embeddings=[e],
                         ),
                     )
                     added += 1
@@ -332,6 +384,19 @@ class VectorManager:
 
         where_filter = build_tag_where(filter_tags)
 
+        # Embedding de la consulta con prefijo de rol (embed_prefix); Chroma
+        # recibe el vector explicito y no vuelve a embebedor por su cuenta.
+        from src.ollama_client import llm
+        from src.utils.embed_prefix import embed_query_text
+
+        try:
+            query_vec = await loop.run_in_executor(
+                None, llm.embed_texts, [embed_query_text(query_text)]
+            )
+        except Exception as e:
+            logger.error("Vector query embed failed: %s", e)
+            return {"success": False, "results": [], "message": "Error en busqueda: %s" % e}
+
         try:
             # Sobrrecuperación (mejora 1): el reranking híbrido necesita más
             # candidatos que top_k para rescatar coincidencias exactas de
@@ -339,7 +404,7 @@ class VectorManager:
             results = await loop.run_in_executor(
                 None,
                 lambda: self._collection.query(
-                    query_texts=[query_text],
+                    query_embeddings=query_vec,
                     n_results=min(max(top_k * 4, 20), self._collection.count()),
                     where=where_filter,
                 ),
@@ -357,7 +422,7 @@ class VectorManager:
                 results = await loop.run_in_executor(
                     None,
                     lambda: self._collection.query(
-                        query_texts=[query_text],
+                        query_embeddings=query_vec,
                         n_results=wider,
                         where=None,
                     ),

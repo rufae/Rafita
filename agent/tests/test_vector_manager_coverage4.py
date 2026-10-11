@@ -17,6 +17,20 @@ def _fake_call(self, input):
     return [[float((len(t) + i) % 7)] * 4 for i, t in enumerate(input)]
 
 
+class _FakeLLM:
+    """Parchea src.ollama_client.llm: vector_manager embebe ahora el/la llama
+    directamente (embeddings explicitos con prefijo de rol), ya no Chroma."""
+
+    @staticmethod
+    def embed_texts(texts):
+        return [[float((len(t) + i) % 7)] * 4 for i, t in enumerate(texts)]
+
+
+@pytest.fixture(autouse=True)
+def _fake_llm_embed(monkeypatch):
+    monkeypatch.setattr("src.ollama_client.llm", _FakeLLM)
+
+
 class FakeCollection:
     def __init__(self, count=0, existing=None, query_result=None):
         self._count = count
@@ -27,6 +41,7 @@ class FakeCollection:
             "distances": [[]],
         }
         self.added = []
+        self.embedded = []
         self.deleted = []
         self.get_calls = []
         self.query_calls = []
@@ -46,16 +61,18 @@ class FakeCollection:
             raise self.get_error
         return self._existing
 
-    def add(self, ids=None, documents=None, metadatas=None):
+    def add(self, ids=None, documents=None, metadatas=None, embeddings=None):
         if self.add_errors:
             raise self.add_errors.pop(0)
         self.added.append((ids, documents, metadatas))
+        self.embedded.append(embeddings)
 
-    def upsert(self, ids=None, documents=None, metadatas=None):
+    def upsert(self, ids=None, documents=None, metadatas=None, embeddings=None):
         # index_chunks usa upsert desde 2026-09-30 (reindexado idempotente).
         if self.add_errors:
             raise self.add_errors.pop(0)
         self.added.append((ids, documents, metadatas))
+        self.embedded.append(embeddings)
 
     def delete(self, ids=None):
         self.deleted.append(ids)
