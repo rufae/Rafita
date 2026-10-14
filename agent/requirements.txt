@@ -27,7 +27,7 @@ fastapi==0.141.1
 pywebpush==2.5.0
 starlette==1.7.0
 uvicorn==0.34.0
-websockets==14.1
+websockets==17.2
 python-multipart==0.0.31
 # Servidor MCP (solo lectura). 1.28.1 es la ultima 1.x sin avisos de
 # pip-audit (1.12-1.27: GHSA DNS-rebind/principal/WSS); exige pydantic>=2.11
