@@ -32,7 +32,7 @@ python-multipart==0.0.31
 # Servidor MCP (solo lectura). 1.28.1 es la ultima 1.x sin avisos de
 # pip-audit (1.12-1.27: GHSA DNS-rebind/principal/WSS); exige pydantic>=2.11
 # (por eso el bump de arriba). 2.x renombra FastMCP y sube mas dependencias.
-mcp==1.28.1
+mcp==2.3.0
 watchdog==6.0.0
 pyyaml==6.0.2
 python-docx==1.1.2
