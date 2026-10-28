@@ -7,13 +7,14 @@ notificación de la app de tu banco, sin teclear nada.
 Notificación del banco (Android)
         │  Tasker (listener de notificaciones)
         ▼
-POST http://100.121.77.29:8010/automation/banco-gasto   (header X-Banco-Token)
+POST http://100.121.77.29:8010/automation/banco-gasto     (X-Banco-Token)
+POST http://100.121.77.29:8010/automation/banco-ingreso   (X-Banco-Token)
         │
         ▼
 Rafita Gateway (HP) ──► dedupe 48 h, descarta domiciliados
-        ├─► BD finance_records
+        ├─► BD finance_records (expense / income)
         ├─► Obsidian Control_Financiero_2026
-        └─► Aviso en Telegram con el ID ("borra el gasto 42")
+        └─► Aviso en Telegram con el ID ("borra el gasto 42" / "borra el ingreso 7")
 ```
 
 ## 1. En el HP (una vez)
@@ -105,6 +106,34 @@ escucha en todos los interfaces (`0.0.0.0:8010`), así que
 `http://192.168.1.x:8010/...` funciona sin VPN en la misma WiFi; fuera de
 la WiFi sigue funcionando por la cola.
 
+### Ingresos además de gastos (nómina, Bizum, transferencias)
+
+El mismo token vale para el endpoint gemelo `/automation/banco-ingreso`
+(categoría `income`). La gracia está en que no quiera registrar todo:
+duplica el perfil 1 de Tasker y en el evento de notificación añade el
+filtro **Text Contains**: `recibid|abono|ingres|transferencia|bizum` (el
+case-sensitivity da igual; tu app del banco dirá «Has recibido…», «Abono
+nómina» o similar — ajusta el filtro a las palabras que use TU banco).
+Cuerpo, headers y cola son idénticos, solo cambia la URL:
+
+```json
+{"text": "%NTITLE — %NTEXT"}
+```
+URL: `http://100.121.77.29:8010/automation/banco-ingreso`
+
+Prueba:
+
+```bash
+curl -sS http://100.121.77.29:8010/automation/banco-ingreso \
+  -H 'Content-Type: application/json' \
+  -H 'X-Banco-Token: <tu-token>' \
+  -d '{"text": "Has recibido 1.500,00 € Nómina septiembre"}'
+```
+
+Esperas aviso en Telegram `+1500.00 … Concepto: Nómina … ID: N` y aparece
+como `income` en `/finanzas`. Si se colara un falso positivo, «borra el
+ingreso N».
+
 ## 4. Probar
 
 Desde cualquier equipo en tailscale:
@@ -123,7 +152,8 @@ dinle «borra el gasto N» si era una prueba.
 
 | Caso | Resultado |
 |---|---|
-| Pago normal (`45,20 € en Mercadona`) | Se registra + aviso con ID |
+| Pago normal (`45,20 € en Mercadona`) a `banco-gasto` | Se registra + aviso con ID |
+| Ingreso recibido (`Has recibido 1.500,00 €`) a `banco-ingreso` | Se registra como `income` + aviso con ID |
 | Domiciliación, cuota, recibo, SEPA | Se ignora (no avisa, no registra) |
 | Mismo pago notificado 2 veces (reintentos) | Dedupe 48 h por hash importe+concepto+fecha |
 | Importe imposible de leer | Responde `success: false`, nada se guarda |

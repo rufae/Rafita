@@ -111,7 +111,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         lines.append("  Libre: %s" % _format_size(usage.free))
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
     lines.append("")
 
     lines.append("<b>🧠 Base Vectorial (RAG)</b>")
@@ -165,19 +165,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     lines.append("─── <b>%s Agent v4.0-RAG</b> ───" % _esc(settings.assistant_name))
 
-    # Chunking por líneas para no partir una etiqueta HTML a mitad
-    chunks: list[str] = []
-    current = ""
-    for line in lines:
-        if current and len(current) + len(line) + 1 > 4000:
-            chunks.append(current)
-            current = line
-        else:
-            current = current + "\n" + line if current else line
-    if current:
-        chunks.append(current)
-    for chunk in chunks:
-        await message.reply_text(chunk, parse_mode="HTML")
+    # Envio robusto: parte por bloques y respalda a plano si el HTML no parsea.
+    from src.utils.telegram_fmt import reply_rich
+
+    await reply_rich(message, "\n".join(lines))
     logger.info("Status panel sent to user %d", user.id)
 
 
@@ -463,7 +454,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         )
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     topics = {}
     if vault.exists():
@@ -498,7 +489,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     )
                 )
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     brain_data.append("Distribucion por tipo: %s" % str(topics))
 
@@ -512,7 +503,7 @@ async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "  - '%s' (%d chunks)" % (q["query_text"][:80], q["chunks_retrieved"])
                 )
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     brain_text = "\n".join(brain_data)
 

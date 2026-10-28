@@ -430,7 +430,7 @@ async def end_call(session_id: str, request: Request):
         try:
             await task
         except (asyncio.CancelledError, Exception):
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     duration = time.time() - session["started_at"]
     logger.info("VoiceStream: call ended session=%s duration=%.1fs", session_id, duration)
@@ -472,7 +472,7 @@ async def _interrupt(session: dict, websocket: WebSocket, reason: str = "barge_i
         try:
             await task
         except (asyncio.CancelledError, Exception):
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
     session["processing_task"] = None
     stale_spec = session.pop("spec_stt", None)
     if stale_spec and not stale_spec["task"].done():

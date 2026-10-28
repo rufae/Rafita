@@ -30,6 +30,7 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
     "T20", # flake8-print (warn on print statements)
+    "S110", # try-except-pass prohibido: un error jamas se traga en silencio
 ]
 ignore = [
     "E501",    # line too long (handled by formatter)

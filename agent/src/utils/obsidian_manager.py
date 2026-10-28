@@ -333,7 +333,7 @@ async def sync_calendar_to_obsidian(
                 dt_end = _dt.fromisoformat(end_raw.replace("Z", "+00:00"))
                 end_fmt = dt_end.strftime("%H:%M")
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
 
         link = ev.get("html_link", "")
         link_md = " [link](%s)" % link if link else ""

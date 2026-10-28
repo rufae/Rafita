@@ -28,6 +28,45 @@ from src.utils.web_api import router as _web_router  # noqa: E402
 app.include_router(_web_router)
 
 
+class _IpRateLimiter:
+    """Ventana deslizante por IP (auditoria 2026-10, hallazgo S1).
+
+    El gateway antes no limitaba peticiones: en LAN/tailnet un cliente
+    podia martillear los 23 endpoints o fuerza-bruta el HMAC. Ventana de
+    60 s por IP; `WEBHOOK_RATE_LIMIT=0` lo desactiva (CI/tests).
+    """
+
+    def __init__(self, max_requests: int, window_s: float = 60.0):
+        self.max_requests = max_requests
+        self.window_s = window_s
+        self._hits: dict[str, list[float]] = {}
+
+    def allow(self, key: str) -> bool:
+        if self.max_requests <= 0:
+            return True
+        ahora = time.monotonic()
+        ventana = self._hits.setdefault(key, [])
+        while ventana and ahora - ventana[0] > self.window_s:
+            ventana.pop(0)
+        if len(ventana) >= self.max_requests:
+            return False
+        ventana.append(ahora)
+        return True
+
+
+_rate_limiter = _IpRateLimiter(settings.webhook_rate_limit)
+
+
+@app.middleware("http")
+async def _limit_per_ip(request: Request, call_next):
+    if request.client is None:  # peticiones internas de TestClient sin socket
+        return await call_next(request)
+    if not _rate_limiter.allow(request.client.host):
+        logger.warning("Rate limit alcanzado para %s %s", request.client.host, request.url.path)
+        return JSONResponse(status_code=429, content={"detail": "Too Many Requests"})
+    return await call_next(request)
+
+
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     """Detalle dict en nivel raiz del cuerpo (esquema unico {success, error}).
@@ -816,16 +855,13 @@ async def automation_sync(request: Request):
     return _notificar(await sync_google_vault(), "changes")
 
 
-@app.post("/automation/banco-gasto")
-async def automation_banco_gasto(request: Request):
-    """Gasto detectado en la app del banco (Tasker en el movil).
+def _banco_auth(request: Request, body: bytes) -> None:
+    """Auth compartida de los endpoints bancarios, fail-closed.
 
-    Autenticacion de doble via: firma HMAC del gateway (X-Webhook-Signature)
-    o token fijo X-Banco-Token (mas simple para Tasker); fail-closed si no
-    hay ninguno configurado. Descarta domiciliaciones y duplicados; avisa
-    por Telegram con el ID para poder corregirlo ("borra el gasto N").
+    Doble via: firma HMAC del gateway (X-Webhook-Signature) o token fijo
+    X-Banco-Token (mas simple para Tasker). 503 si no hay credencial
+    configurada alguna; 401 si lo que llega no valida.
     """
-    body = await request.body()
     signature = request.headers.get("X-Webhook-Signature", "")
     token = request.headers.get("X-Banco-Token", "")
     configurado = bool(_webhook_secret or settings.banco_webhook_token)
@@ -839,14 +875,29 @@ async def automation_banco_gasto(request: Request):
     ):
         autorizado = True
     if not configurado:
-        raise HTTPException(status_code=503, detail=_fallo("banco-gasto sin token configurado"))
+        raise HTTPException(status_code=503, detail=_fallo("banco sin token configurado"))
     if not autorizado:
         raise HTTPException(status_code=401, detail=_fallo("Invalid bank token"))
 
+
+async def _banco_payload(request: Request, body: bytes) -> dict[str, Any]:
     try:
-        payload = json.loads(body) if body else {}
+        return json.loads(body) if body else {}
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
+
+
+@app.post("/automation/banco-gasto")
+async def automation_banco_gasto(request: Request):
+    """Gasto detectado en la app del banco (Tasker en el movil).
+
+    Autenticacion de doble via (ver `_banco_auth`): firma HMAC del gateway
+    o token fijo X-Banco-Token. Descarta domiciliaciones y duplicados; avisa
+    por Telegram con el ID para poder corregirlo («borra el gasto N»).
+    """
+    body = await request.body()
+    _banco_auth(request, body)
+    payload = await _banco_payload(request, body)
 
     admins = list(settings.admin_ids or [])
     if not admins:
@@ -884,6 +935,57 @@ async def automation_banco_gasto(request: Request):
                 await _bot_ref.send_proactive_message(int(admin_id), aviso)
             except Exception as e:
                 logger.warning("banco-gasto: no pude avisar a %s: %s", admin_id, e)
+    return _resultado(resultado)
+
+
+@app.post("/automation/banco-ingreso")
+async def automation_banco_ingreso(request: Request):
+    """Ingreso detectado en la app del banco (nomina, transferencia, Bizum).
+
+    Misma autenticacion y esquema de payload que `/automation/banco-gasto`;
+    registra category='income' con el mismo dedupe para reintentos de
+    Tasker y avisa a los admins para poder corregirlo (borra el ingreso N).
+    """
+    body = await request.body()
+    _banco_auth(request, body)
+    payload = await _banco_payload(request, body)
+
+    admins = list(settings.admin_ids or [])
+    if not admins:
+        raise HTTPException(status_code=503, detail=_fallo("sin ADMIN_IDS configurados"))
+    chat_id = int(admins[0])
+
+    from src.services.finance_service import registrar_ingreso_banco
+
+    resultado = await registrar_ingreso_banco(
+        chat_id=chat_id,
+        amount=payload.get("amount", 0),
+        merchant=str(payload.get("merchant", ""))[:120],
+        text=str(payload.get("text", ""))[:300],
+        dedupe_key=str(payload.get("dedupe_key", ""))[:100],
+        recorded_at=str(payload.get("fecha", ""))[:19] or None,
+    )
+    if resultado.get("notify") and _bot_ref is not None and resultado.get("record_id"):
+        aviso = (
+            "💰 *Ingreso automático detectado*\n"
+            "• Importe: +%.2f %s\n"
+            "• Concepto: %s\n"
+            "• ID: %s\n\n"
+            "Ya está en tus cuentas. Si no es tuyo, dime "
+            "«borra el ingreso %s»."
+            % (
+                float(resultado.get("amount") or 0),
+                settings.default_currency,
+                resultado.get("concepto", "-"),
+                resultado.get("record_id"),
+                resultado.get("record_id"),
+            )
+        )
+        for admin_id in admins:
+            try:
+                await _bot_ref.send_proactive_message(int(admin_id), aviso)
+            except Exception as e:
+                logger.warning("banco-ingreso: no pude avisar a %s: %s", admin_id, e)
     return _resultado(resultado)
 
 
@@ -941,14 +1043,41 @@ async def automation_sequences_run(request: Request):
     )
 
 
+# Ciclo de alerta por workflow, en memoria (proceso unico): tras un reinicio
+# el peor caso es un aviso duplicado o un «recuperada» perdido, aceptable.
+_automation_alerts: dict[str, dict[str, float]] = {}
+_AUTOMATION_ALERT_COOLDOWN_S = 60 * 60 * 12  # un workflow roto avisa ~2 veces/dia
+
+
 async def _notify_automation_error(workflow: str, error: str | None) -> bool:
-    """Aviso a admins SOLO tras 2 fallos seguidos del mismo workflow (sin spam)."""
+    """Aviso a admins ante fallos persistentes, sin convertirlo en spam.
+
+    El endpoint solo llama aqui cuando el fallo ya va en racha (el run
+    anterior tambien fue error); la politica anti-spam vive aqui: primer
+    aviso inmediato, y mientras el workflow siga roto re-aviso como maximo
+    cada `_AUTOMATION_ALERT_COOLDOWN_S` (marcado «persiste»). Al volver a
+    ok, `_notify_automation_recovered` cierra el ciclo con un unico aviso.
+    """
     from src.config import settings
     from src.utils import severity as _sev
 
-    text = "%s [%s] *Automatización con 2 fallos seguidos*\nWorkflow: %s\nError: %s" % (
+    estado = _automation_alerts.get(workflow)
+    ahora = time.monotonic()
+    if estado is not None and ahora - estado.get("last", 0.0) < _AUTOMATION_ALERT_COOLDOWN_S:
+        logger.debug("Alerta de %s en cooldown: fallo omitido (%s)", workflow, error)
+        return False
+    persiste = bool(estado and estado.get("notified"))
+    _automation_alerts[workflow] = {"last": ahora, "notified": 1.0}
+    titulo = (
+        "Automatización que sigue fallando (aviso cada %dh)"
+        % (_AUTOMATION_ALERT_COOLDOWN_S // 3600)
+        if persiste
+        else "Automatización con 2 fallos seguidos"
+    )
+    text = "%s [%s] *%s*\nWorkflow: %s\nError: %s" % (
         _sev.emoji(_sev.ERROR),
         _sev.tag(_sev.ERROR),
+        titulo,
         workflow,
         error or "sin detalle",
     )
@@ -974,6 +1103,34 @@ async def _notify_automation_error(workflow: str, error: str | None) -> bool:
         except Exception as e:
             logger.error("n8n-run: fallo avisando a %s: %s", admin_id, e)
     return ok
+
+
+async def _notify_automation_recovered(workflow: str) -> None:
+    """Unico «recuperada» cuando un workflow alertado vuelve a terminar en ok."""
+    from src.config import settings
+    from src.utils import severity as _sev
+
+    estado = _automation_alerts.pop(workflow, None)
+    if not estado or not estado.get("notified"):
+        return
+    text = "%s [%s] *Automatización recuperada*\nWorkflow: %s" % (
+        _sev.emoji(_sev.INFO),
+        _sev.tag(_sev.INFO),
+        workflow,
+    )
+    try:
+        from src.services.push_service import send_web_push
+
+        await send_web_push("Automatización recuperada", "Workflow: %s" % workflow)
+    except Exception:
+        logger.debug("Aviso de recuperacion: web push omitido", exc_info=True)
+    if _bot_ref is None:
+        return
+    for admin_id in list(settings.admin_ids or []):
+        try:
+            await _bot_ref.send_proactive_message(admin_id, text)
+        except Exception as e:
+            logger.error("n8n-run: fallo avisando a %s: %s", admin_id, e)
 
 
 @app.post("/api/n8n/run")
@@ -1015,6 +1172,8 @@ async def n8n_run_report(request: Request):
     alerted = False
     if status == "error" and stored and previo and previo.get("status") == "error":
         alerted = await _notify_automation_error(workflow, error)
+    elif status == "ok" and stored:
+        await _notify_automation_recovered(workflow)
     return {"success": True, "duplicate": not stored, "alerted": alerted}
 
 

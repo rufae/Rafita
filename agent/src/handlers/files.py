@@ -848,7 +848,7 @@ async def _process_vision_image(
         if src_path.exists():
             src_path.unlink()
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     del image_path
 
@@ -985,7 +985,12 @@ async def _process_vision_image(
             )
 
     await db.save_chat_message(chat_id, MessageRole.assistant.value, text_to_save[:2000])
-    await update.effective_message.reply_text(text_to_save[:4096])
+    # Sin `[:4096]`: se parte en bloques y no se descarta contenido (antes
+    # las notas largas se cortaban silenciosamente).
+    from src.utils.telegram_fmt import split_html
+
+    for chunk in split_html(text_to_save):
+        await update.effective_message.reply_text(chunk)
 
     if context is not None:
         context.user_data["processing_image"] = False

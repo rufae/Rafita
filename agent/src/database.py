@@ -177,6 +177,20 @@ class DatabaseManager:
             ON finance_records(category)
             """,
             """
+            CREATE TABLE IF NOT EXISTS ai_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL DEFAULT (datetime('now')),
+                operation TEXT NOT NULL,
+                latency_ms REAL NOT NULL,
+                success INTEGER NOT NULL DEFAULT 1,
+                error TEXT
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ai_metrics_ts
+            ON ai_metrics(ts)
+            """,
+            """
             CREATE TABLE IF NOT EXISTS exports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -1433,6 +1447,37 @@ class DatabaseManager:
         )
         await self._conn.commit()
 
+    async def record_ai_metric(
+        self, operation: str, latency_ms: float, success: bool, error: str | None = None
+    ) -> None:
+        """Telemetria de llamadas a IA (auditoria 2026-10): una fila por llamada.
+
+        La escribe el circuit breaker de Ollama (unico punto por el que pasa
+        toda operacion LLM): latencia, exito y error acotado. El insert falla
+        silenciosamente (debug) si la BD no esta lista: la metrica nunca
+        puede tumbar una llamada de chat.
+        """
+        await self.execute(
+            "INSERT INTO ai_metrics (operation, latency_ms, success, error) VALUES (?, ?, ?, ?)",
+            (operation, round(latency_ms, 1), 1 if success else 0, (error or "")[:300]),
+        )
+        await self._conn.commit()
+
+    async def ai_metrics_summary(self, hours: int = 24) -> list[dict[str, Any]]:
+        """Resumen por operacion: llamadas, fallos y latencia media/p95."""
+        sql = """
+            SELECT operation,
+                   COUNT(*) AS llamadas,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS fallos,
+                   ROUND(AVG(latency_ms), 0) AS media_ms,
+                   ROUND(MAX(latency_ms), 0) AS max_ms
+            FROM ai_metrics
+            WHERE ts >= datetime('now', ?)
+            GROUP BY operation
+            ORDER BY llamadas DESC
+        """
+        return [dict(r) for r in await self.fetchall(sql, ("-%d hours" % max(1, int(hours)),))]
+
     async def kv_get(self, key: str) -> str | None:
         row = await self.fetchone("SELECT value, expires_at FROM kv_store WHERE key = ?", (key,))
         if row is None:
@@ -1447,7 +1492,7 @@ class DatabaseManager:
                     await self._conn.commit()
                     return None
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
         return row.get("value")
 
     async def kv_delete(self, key: str) -> None:

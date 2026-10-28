@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import settings
+from src.logger import logger
 
 WORKSPACE_ROOT = Path("/workspace")
 MAX_READ_SIZE = 100 * 1024
@@ -207,7 +208,7 @@ async def get_system_health() -> dict[str, Any]:
                         ):
                             recent_errors.append(line.strip())
                 except Exception:
-                    pass
+                    logger.debug("Fallo esperado e ignorado", exc_info=True)
             report["logs"] = {
                 "files_checked": len(log_files[:3]),
                 "last_lines": total_logs,

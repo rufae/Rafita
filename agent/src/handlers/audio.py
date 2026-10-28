@@ -135,17 +135,17 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         try:
             await message.reply_text("❌ Error en el pipeline de voz: %s" % str(e)[:300])
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
     finally:
         if tmp_ogg_path and tmp_ogg_path.exists():
             try:
                 tmp_ogg_path.unlink()
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
             try:
                 tmp_ogg_path.parent.rmdir()
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
 
 
 async def _transcribe_file(audio_path: Path) -> str | None:
@@ -228,7 +228,7 @@ async def _send_voice_reply_fast(
         try:
             await message.reply_text("❌ Error al generar respuesta de voz: %s" % str(e)[:200])
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
 
 
 def _split_text_for_streaming(text: str, max_chars: int = 200) -> list:

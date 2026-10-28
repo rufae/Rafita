@@ -333,7 +333,7 @@ async def setup_google_command(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             sa_email = json.loads(service_file.read_text(encoding="utf-8")).get("client_email", "")
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         await message.reply_text(
             "✅ Cuenta de servicio detectada.\n\n"
             "Email de la cuenta: %s\n\n"

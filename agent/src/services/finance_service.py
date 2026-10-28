@@ -211,3 +211,77 @@ async def registrar_gasto_banco(
         % (amount, settings.default_currency, _concepto_limpio(origen), record_id),
         "notify": True,
     }
+
+
+async def registrar_ingreso_banco(
+    chat_id: int,
+    amount: float,
+    merchant: str = "",
+    text: str = "",
+    dedupe_key: str = "",
+    recorded_at: str | None = None,
+) -> dict[str, Any]:
+    """Ingreso detectado en la notificacion de la app del banco (Tasker).
+
+    Simetrico a `registrar_gasto_banco` pero category='income': sin
+    filtro de domiciliaciones (un ingreso nunca es recibo domiciliado)
+    y con el mismo dedupe por hash para no duplicar reenvios de Tasker.
+    """
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        amount = 0.0
+    origen = " ".join(x for x in (merchant, text) if x)
+    if amount <= 0:
+        amount = extraer_importe(origen)
+    if amount <= 0:
+        return {
+            "success": False,
+            "message": "Importe no valido y no se pudo extraer del texto: %r"
+            % _concepto_limpio(origen),
+            "notify": False,
+        }
+
+    huella = hashlib.sha256(
+        (
+            "income|%.2f|%s|%s" % (amount, _concepto_limpio(origen, 120).lower(), recorded_at or "")
+        ).encode("utf-8", errors="replace")
+    ).hexdigest()[:32]
+    kv_key = "banco:dedupe:%s" % (dedupe_key.strip()[:100] or huella)
+    if await db.kv_get(kv_key) is not None:
+        return {
+            "success": True,
+            "duplicate": True,
+            "message": "Ingreso ya registrado (duplicado detectado).",
+            "notify": False,
+        }
+
+    record_id = await registrar_movimiento(
+        chat_id=chat_id,
+        amount=amount,
+        category="income",
+        subcategory="banco-auto",
+        description=_concepto_limpio(origen) or "Ingreso recibido",
+        recorded_at=recorded_at,
+    )
+    await db.kv_set(
+        kv_key,
+        str(record_id),
+        expires_at=(datetime.utcnow() + timedelta(hours=_DEDUPE_TTL_H)).isoformat(),
+    )
+    logger.info(
+        "Ingreso bancario auto: user=%d amount=%.2f concepto=%r id=%d",
+        chat_id,
+        amount,
+        origen[:60],
+        record_id,
+    )
+    return {
+        "success": True,
+        "record_id": record_id,
+        "amount": amount,
+        "concepto": _concepto_limpio(origen) or "Ingreso recibido",
+        "message": "Ingreso registrado: +%.2f %s — %s (ID: %d)"
+        % (amount, settings.default_currency, _concepto_limpio(origen), record_id),
+        "notify": True,
+    }

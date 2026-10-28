@@ -409,3 +409,109 @@ def test_keep_alive_por_backend(monkeypatch):
 
     # Un 0 explicito (descarga) se respeta siempre.
     assert client._ollama_extra_body(2048, keep_alive=0)["keep_alive"] == 0
+
+
+# ---------- embed_texts_async (auditoría 2026-10: no bloquear el event loop) ----------
+
+
+async def test_embed_texts_async_devuelve_embeddings(monkeypatch):
+    import httpx
+
+    llamadas: dict = {}
+
+    def _fake_post(url, json=None, timeout=None):
+        llamadas["url"] = url
+        llamadas["payload"] = json
+        return SimpleNamespace(
+            raise_for_status=lambda: None, json=lambda: {"embeddings": [[0.1, 0.2], [0.3, 0.4]]}
+        )
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    client = OllamaClient()
+    resultado = await client.embed_texts_async(["hola", "mundo"])
+    assert resultado == [[0.1, 0.2], [0.3, 0.4]]
+    assert llamadas["payload"]["input"] == ["hola", "mundo"]
+    assert llamadas["payload"]["model"] == settings.embedding_model
+    assert "/api/embed" in llamadas["url"]
+
+
+async def test_embed_texts_async_envuelve_error_en_ollamaclienterror(monkeypatch):
+    import httpx
+
+    def _fake_post(url, json=None, timeout=None):
+        raise httpx.ConnectError("Dell apagado")
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    client = OllamaClient()
+    with pytest.raises(OllamaClientError, match="Dell apagado"):
+        await client.embed_texts_async(["hola"])
+
+
+async def test_embed_texts_async_pasa_por_circuit_breaker(monkeypatch):
+    import httpx
+
+    def _fake_post(url, json=None, timeout=None):
+        raise httpx.ConnectError("caido")
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    client = OllamaClient()
+    with pytest.raises(OllamaClientError):
+        await client.embed_texts_async(["hola"])
+    # El circuit breaker registra los fallos de la operacion "embedding".
+    assert client._cb._failures.get("embedding", 0) >= 1
+
+
+# ---------- Telemetria de IA en el circuit breaker (auditoria 2026-10) ----------
+
+
+async def test_cb_execute_registra_metrica_de_exito(monkeypatch):
+    from src.database import db as db_singleton
+
+    capturas: dict = {}
+
+    async def _fake_record(operation, latency_ms, success, error=None):
+        capturas.update(op=operation, ms=latency_ms, ok=success)
+
+    async def _coro():
+        return "ok"
+
+    monkeypatch.setattr(db_singleton, "record_ai_metric", _fake_record)
+    client = OllamaClient()
+    assert await client._cb.execute("chat", _coro) == "ok"
+    assert capturas["op"] == "chat"
+    assert capturas["ok"] is True
+    assert capturas["ms"] >= 0.0
+
+
+async def test_cb_execute_registra_metrica_de_fallo(monkeypatch):
+    from src.database import db as db_singleton
+
+    capturas: dict = {}
+
+    async def _fake_record(operation, latency_ms, success, error=None):
+        capturas.update(op=operation, ok=success)
+
+    async def _coro():
+        raise ValueError("boom")
+
+    monkeypatch.setattr(db_singleton, "record_ai_metric", _fake_record)
+    client = OllamaClient()
+    with pytest.raises(OllamaClientError):
+        await client._cb.execute("chat", _coro)
+    assert capturas["ok"] is False
+
+
+async def test_cb_metrica_no_tumba_la_llamada(monkeypatch):
+    """Si la BD no esta lista, la metrica se descarta y el chat sigue."""
+    from src.database import db as db_singleton
+
+    async def _record_rota(*a, **k):
+        raise RuntimeError("BD no inicializada")
+
+    async def _coro():
+        return "ok"
+
+    monkeypatch.setattr(db_singleton, "record_ai_metric", _record_rota)
+    client = OllamaClient()
+    resultado = await client._cb.execute("chat", _coro)
+    assert resultado == "ok"

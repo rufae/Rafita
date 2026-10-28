@@ -115,3 +115,62 @@ def test_domiciliado_no_avisa(client, monkeypatch):
     )
     assert resp.status_code == 200
     assert bot.llamados == 0
+
+
+# ---------- /automation/banco-ingreso (auditoría 2026-10) ----------
+
+PAYLOAD_ING = {"amount": 1500.0, "merchant": "Nómina", "text": "Transferencia recibida"}
+
+
+def _post_ingreso(client, payload, headers=None):
+    body = json.dumps(payload).encode()
+    return client.post("/automation/banco-ingreso", content=body, headers=headers or {})
+
+
+def test_ingreso_fail_closed_y_401(client):
+    assert _post_ingreso(client, PAYLOAD_ING).status_code == 503
+
+
+def test_ingreso_token_invalido(client, monkeypatch):
+    monkeypatch.setattr(webhook_server.settings, "banco_webhook_token", "tok-bueno")
+    assert _post_ingreso(client, PAYLOAD_ING).status_code == 401
+    assert _post_ingreso(client, PAYLOAD_ING, headers={"X-Banco-Token": "otro"}).status_code == 401
+
+
+def test_ingreso_ok_registra_y_avisa(client, monkeypatch):
+    from src.services import finance_service
+
+    monkeypatch.setattr(webhook_server.settings, "banco_webhook_token", "tok-bueno")
+
+    capturas = {}
+
+    async def _falso_registrar(**kw):
+        capturas.update(kw)
+        return {
+            "success": True,
+            "notify": True,
+            "record_id": 11,
+            "amount": kw["amount"],
+            "concepto": kw.get("merchant") or "Ingreso",
+            "message": "ok",
+        }
+
+    monkeypatch.setattr(finance_service, "registrar_ingreso_banco", _falso_registrar)
+
+    class _Bot:
+        enviados = []
+
+        async def send_proactive_message(self, chat_id, text):
+            self.enviados.append((chat_id, text))
+
+    bot = _Bot()
+    monkeypatch.setattr(webhook_server, "_bot_ref", bot)
+
+    resp = _post_ingreso(client, PAYLOAD_ING, headers={"X-Banco-Token": "tok-bueno"})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert capturas["amount"] == 1500.0
+    assert len(bot.enviados) == 1
+    assert "1500.00" in bot.enviados[0][1]
+    assert "Ingreso" in bot.enviados[0][1]
+    assert "11" in bot.enviados[0][1]

@@ -73,6 +73,33 @@ class OllamaCircuitBreaker:
     async def execute(
         self, operation: str, coro_factory: Callable[[], Awaitable[T]], max_retries: int = 3
     ) -> T:
+        """Ejecuta con reintentos y registra telemetria de IA (auditoria 2026-10).
+
+        Este metodo es el UNICO punto por el que pasa toda operacion contra
+        Ollama (chat, embeddings, health, chat_with_tools): aqui se mide la
+        latencia y el resultado real. El registro es best-effort: si la BD no
+        esta lista, la metrica se descarta sin afectar a la llamada.
+        """
+        t0 = time.monotonic()
+        exito = False
+        try:
+            resultado = await self._execute_core(operation, coro_factory, max_retries)
+            exito = True
+            return resultado
+        finally:
+            await self._record_call(operation, (time.monotonic() - t0) * 1000.0, exito)
+
+    async def _record_call(self, operation: str, latency_ms: float, exito: bool) -> None:
+        try:
+            from src.database import db
+
+            await db.record_ai_metric(operation, latency_ms, exito)
+        except Exception:
+            logger.debug("Metrica de IA descartada (BD no lista)", exc_info=True)
+
+    async def _execute_core(
+        self, operation: str, coro_factory: Callable[[], Awaitable[T]], max_retries: int = 3
+    ) -> T:
         self.fail_if_open(operation)
         last_exc = None
         for attempt in range(max_retries):
@@ -601,6 +628,40 @@ class OllamaClient:
         response.raise_for_status()
         return response.json().get("embeddings", [])
 
+    async def embed_texts_async(self, texts: list[str]) -> list[list[float]]:
+        """Embeddings en lote desde codigo async sin bloquear el event loop.
+
+        `embed_texts` es sincrono (chromadb lo exige en algunos caminos) y
+        los callers deben envolverlo en to_thread/run_in_executor; esta es la
+        via oficial desde corrutinas: mueve la peticion a un hilo worker y
+        pasa por el circuit breaker, igual que el resto de operaciones.
+        """
+
+        def _post() -> list[list[float]]:
+            import httpx
+
+            payload = {
+                "model": settings.embedding_model,
+                "input": texts,
+                "keep_alive": self.keep_alive_cpu,
+            }
+            embed_host = settings.ollama_embed_host or settings.ollama_host
+            response = httpx.post(
+                "%s/api/embed" % embed_host.rstrip("/"),
+                json=payload,
+                timeout=httpx.Timeout(600.0, connect=10.0),
+            )
+            response.raise_for_status()
+            return response.json().get("embeddings", [])
+
+        try:
+            return await self._cb.execute("embedding", lambda: asyncio.to_thread(_post))
+        except OllamaClientError:
+            raise
+        except Exception as e:
+            logger.error("Batch embedding failed: %s", e)
+            raise OllamaClientError("Error generando embeddings: %s" % e) from e
+
     async def generate_embedding(self, text: str) -> list[float]:
         if not self._client:
             raise OllamaClientError("Client not initialized.")
@@ -738,7 +799,7 @@ class OllamaClient:
             try:
                 await self._client.close()
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
             self._client = AsyncOpenAI(
                 base_url=self.base_url,
                 api_key="ollama",

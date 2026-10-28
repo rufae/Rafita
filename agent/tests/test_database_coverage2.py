@@ -29,6 +29,25 @@ async def db(tmp_path, crypto):
     await manager.close()
 
 
+# ---------- Telemetria de IA (auditoria 2026-10) ----------
+
+
+async def test_record_ai_metric_y_resumen(db):
+    await db.record_ai_metric("chat", 120.45, True)
+    await db.record_ai_metric("chat", 480.0, False, error="Ollama caido")
+    await db.record_ai_metric("embedding", 15.0, True)
+    resumen = await db.ai_metrics_summary(hours=24)
+    por_ops = {r["operation"]: r for r in resumen}
+    assert por_ops["chat"]["llamadas"] == 2
+    assert por_ops["chat"]["fallos"] == 1
+    assert por_ops["chat"]["media_ms"] == 300  # (120.5 + 480) / 2
+    assert por_ops["embedding"]["fallos"] == 0
+
+
+async def test_ai_metrics_summary_ventana_vacia(db):
+    assert await db.ai_metrics_summary(hours=1) == []
+
+
 def _fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 

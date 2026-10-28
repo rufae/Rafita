@@ -592,7 +592,7 @@ async def _process_ai_message(
                         relevance,
                     )
                 except Exception:
-                    pass
+                    logger.debug("Fallo esperado e ignorado", exc_info=True)
             results.append(result)
 
         confirmation_parts = []
@@ -685,7 +685,7 @@ async def _save_diary_entry(chat_id: int, user_msg: str, bot_response: str) -> N
             folder=get_taxonomy().path("diary"),
         )
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
 
 async def _send_response_with_audio_interceptor(update, context, text: str) -> None:
@@ -798,22 +798,15 @@ def format_telegram_response(text: str) -> tuple[str, str | None]:
 
 async def _reply_formatted(message, text: str) -> None:
     """Envia la respuesta respetando tablas Markdown y el limite de Telegram."""
+    from src.utils.telegram_fmt import reply_rich, split_html
+
     formatted, mode = format_telegram_response(text)
-    max_len = 4000
-    if len(formatted) <= max_len:
-        await message.reply_text(formatted, parse_mode=mode)
+    if mode == "HTML":
+        # reply_rich parte en bloques y respalda a plano si Telegram
+        # rechaza el parseo (antes un bloque mal cortado perdia el mensaje).
+        await reply_rich(message, formatted)
         return
-    chunks: list[str] = []
-    current = ""
-    for line in formatted.split("\n"):
-        if current and len(current) + len(line) + 1 > max_len:
-            chunks.append(current)
-            current = line
-        else:
-            current = current + "\n" + line if current else line
-    if current:
-        chunks.append(current)
-    for chunk in chunks:
+    for chunk in split_html(formatted):
         await message.reply_text(chunk, parse_mode=mode)
 
 
@@ -2037,7 +2030,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                         if valor:
                             clientes_email.add(valor)
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
 
             # Contactos (People API) para distinguir PERSONAL de INFORMATIVO
             # (idea 14, taxonomia: urgente/clientes/facturas/personal/
@@ -2050,7 +2043,7 @@ async def _execute_tool(chat_id: int, func_name: str, args: dict[str, Any]) -> d
                     if valor:
                         contactos_email.add(valor)
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
 
             clasificados: list[dict[str, Any]] = []
             borradores = 0
