@@ -133,6 +133,12 @@ markers = [
 
 [tool.coverage.run]
 source = ["agent/src"]
+# Tracing multi-hilo (estándar). Ojo: NO basta para el hilo `asyncio-portal`
+# de AnyIO donde FastAPI ejecuta los endpoints vía TestClient — los tests de
+# endpoints del gateway por eso llaman las corrutinas directamente (ver el
+# docstring de agent/tests/test_gateway_endpoints.py); sin ese truco toda
+# petición HTTP contaba como no cubierta y el gate del90% era inalcanzable.
+concurrency = ["thread"]
 omit = [
     "*/tests/*",
     "*/test_*",
