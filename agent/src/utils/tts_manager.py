@@ -83,7 +83,7 @@ async def _wait_process(proc, timeout: float) -> bool:
         try:
             await proc.wait()
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         return False
 
 

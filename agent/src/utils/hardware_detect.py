@@ -8,6 +8,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+from src.logger import logger
+
 
 @dataclass
 class HardwareProfile:
@@ -112,7 +114,7 @@ def _get_total_ram_gb() -> float:
                 if line.isdigit():
                     return float(line) / (1024**3)
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         return 8.0
 
     try:
@@ -127,7 +129,7 @@ def _get_total_ram_gb() -> float:
                     if line.startswith("MemTotal:"):
                         return float(line.split()[1]) / (1024 * 1024)
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
     return 8.0
 
 

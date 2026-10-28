@@ -132,6 +132,10 @@ class Settings(BaseSettings):
 
     banco_webhook_token: str = Field("", alias="BANCO_WEBHOOK_TOKEN")
 
+    # Rate limit del gateway (auditoria 2026-10): peticiones por minuto e IP
+    # para los endpoints del webhook server. 0 = desactivado (CI/tests).
+    webhook_rate_limit: int = Field(600, alias="WEBHOOK_RATE_LIMIT")
+
     # Seguridad web (2026-09-28): origenes CORS permitidos (separados por
     # coma). Vacio = solo mismo origen/localhost.
     web_allowed_origins: str = Field("", alias="WEB_ALLOWED_ORIGINS")
@@ -341,13 +345,18 @@ _SECRET_ENVS = (
 
 
 def _value_in_env_file(name: str) -> bool:
+    import logging
+
     try:
         for line in ENV_FILE_PATH.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line.startswith(name + "="):
                 return True
     except Exception:
-        pass
+        # El .env puede no existir todavia (primer arranque): sin el fichero
+        # la respuesta es simplemente False. Se registra para auditoria sin
+        # ensuciar el arranque (S110: nada de silencio absoluto).
+        logging.getLogger(__name__).debug("_value_in_env_file sin .env legible", exc_info=True)
     return False
 
 

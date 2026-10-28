@@ -76,7 +76,7 @@ def _normalize_key(raw: str) -> bytes:
         Fernet(direct)
         return direct
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
     try:
         decoded = base64.urlsafe_b64decode(candidate.encode("utf-8"))
         Fernet(decoded)

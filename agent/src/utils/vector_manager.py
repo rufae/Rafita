@@ -193,7 +193,7 @@ class VectorManager:
             )
             existing_ids = set(existing["ids"] if existing and "ids" in existing else [])
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         new_ids = []
         new_docs = []
         new_metas = []

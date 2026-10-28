@@ -123,3 +123,63 @@ def test_gasto_banco_extrae_importe_del_texto(monkeypatch):
     assert res["success"] is True
     assert res["amount"] == 4.5
     assert res["notify"] is True
+
+
+# ---------- Ingresos bancarios automáticos (auditoría 2026-10) ----------
+
+
+def test_ingreso_banco_registra_como_income(monkeypatch):
+    guardados = {}
+    llamadas = []
+    monkeypatch.setattr(settings, "default_currency", "EUR")
+    monkeypatch.setattr(fs, "registrar_movimiento", lambda **k: llamadas.append(k) or _afn(55))
+    monkeypatch.setattr(fs.db, "kv_get", lambda k: _afn(guardados.get(k)))
+    monkeypatch.setattr(
+        fs.db, "kv_set", lambda k, v, expires_at=None: _afn(guardados.__setitem__(k, v))
+    )
+
+    res = _run(fs.registrar_ingreso_banco(chat_id=1, amount=1500.0, text="Nómina septiembre"))
+    assert res["success"] is True
+    assert res["record_id"] == 55
+    assert res["notify"] is True
+    assert llamadas[0]["category"] == "income"
+    assert llamadas[0]["subcategory"] == "banco-auto"
+
+
+def test_ingreso_banco_dedupe(monkeypatch):
+    guardados = {}
+    monkeypatch.setattr(settings, "default_currency", "EUR")
+    monkeypatch.setattr(fs, "registrar_movimiento", lambda **k: _afn(56))
+    monkeypatch.setattr(fs.db, "kv_get", lambda k: _afn(guardados.get(k)))
+    monkeypatch.setattr(
+        fs.db, "kv_set", lambda k, v, expires_at=None: _afn(guardados.__setitem__(k, v))
+    )
+
+    payload = {"chat_id": 1, "amount": 90.0, "text": "Bizum de Ana", "dedupe_key": "biz-1"}
+    primera = _run(fs.registrar_ingreso_banco(**payload))
+    assert primera["notify"] is True
+    segunda = _run(fs.registrar_ingreso_banco(**payload))
+    assert segunda["duplicate"] is True
+    assert segunda["notify"] is False
+
+
+def test_ingreso_banco_no_aplica_filtro_domiciliado(monkeypatch):
+    """Un texto con 'recibo' SI registra ingreso: el filtro es solo de gastos."""
+    guardados = {}
+    monkeypatch.setattr(settings, "default_currency", "EUR")
+    monkeypatch.setattr(fs, "registrar_movimiento", lambda **k: _afn(57))
+    monkeypatch.setattr(fs.db, "kv_get", lambda k: _afn(guardados.get(k)))
+    monkeypatch.setattr(
+        fs.db, "kv_set", lambda k, v, expires_at=None: _afn(guardados.__setitem__(k, v))
+    )
+    res = _run(fs.registrar_ingreso_banco(chat_id=1, amount=200.0, text="Devolución recibo luz"))
+    assert res["success"] is True
+    assert res["notify"] is True
+
+
+def test_ingreso_banco_importe_invalido(monkeypatch):
+    guardados = {}
+    monkeypatch.setattr(fs.db, "kv_get", lambda k: _afn(guardados.get(k)))
+    res = _run(fs.registrar_ingreso_banco(chat_id=1, amount=0, text="sin importe"))
+    assert res["success"] is False
+    assert res["notify"] is False

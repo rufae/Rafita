@@ -548,7 +548,7 @@ class Application:
         try:
             await self._proactive_worker.stop()
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         try:
             await self._briefing_worker.stop()
         except Exception as e:
@@ -570,7 +570,7 @@ class Application:
 
             await connector.close()
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         try:
             await bot.stop()
         except Exception as e:
@@ -634,7 +634,7 @@ class Application:
                 try:
                     await bot.stop()
                 except Exception:
-                    pass
+                    logger.debug("Fallo esperado e ignorado", exc_info=True)
                 if self._shutdown_event.is_set():
                     break
                 try:

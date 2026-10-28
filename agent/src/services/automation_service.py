@@ -80,7 +80,7 @@ async def _location() -> tuple[str, str, str]:
         if stored_n:
             nombre = str(stored_n).strip()
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
     return municipio, area, nombre
 
 
@@ -579,7 +579,7 @@ def _fmt_task(title: str, due: str) -> str:
         if vence < datetime.now().date():
             return "%s — ⚠️ VENCIDA (%s)" % (title, fecha)
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
     return "%s (vence %s)" % (title, fecha)
 
 
@@ -1148,13 +1148,13 @@ async def infra_report() -> dict[str, Any]:
             "pct": round(usage.used * 100 / usage.total, 1),
         }
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     db_size = ""
     try:
         db_size = "%.1f MB" % (Path(settings.db_path).stat().st_size / 1e6)
     except Exception:
-        pass
+        logger.debug("Fallo esperado e ignorado", exc_info=True)
 
     server = await _server_status()
     checks: list[dict[str, Any]] = []
@@ -1625,7 +1625,7 @@ async def check_unanswered_sent(
             try:
                 await db.kv_set("unanswered:last", hoy)
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
             return {"success": False, "message": "Google no conectado", "avisos": []}
 
         # Destinatarios con secuencia propia: no se duplica el aviso.
@@ -1637,7 +1637,7 @@ async def check_unanswered_sent(
                     if correo:
                         excluidos.add(correo)
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
 
         enviados = (
             await google_services.search_gmail(

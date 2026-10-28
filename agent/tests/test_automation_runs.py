@@ -191,10 +191,14 @@ def test_endpoint_alerta_tras_dos_fallos_seguidos(monkeypatch):
     assert "2 fallos seguidos" in bot.messages[0][1]
     assert "Inbox" in bot.messages[0][1]
 
-    # Un OK despues de un fallo no alerta (hacen falta 2 seguidos).
+    # Un OK tras una racha alertada cierra el ciclo con un unico «recuperada».
     _post(client, {"workflow": "Inbox", "execution_id": "e3", "status": "ok"})
+    assert len(bot.messages) == 2
+    assert "recuperada" in bot.messages[1][1]
+
+    # Y un fallo aislado tras recuperarse NO alerta (hacen falta 2 seguidos).
     _post(client, {"workflow": "Inbox", "execution_id": "e4", "status": "error"})
-    assert len(bot.messages) == 1
+    assert len(bot.messages) == 2
 
 
 def test_endpoint_no_alerta_si_no_hay_bot(monkeypatch):
@@ -205,6 +209,58 @@ def test_endpoint_no_alerta_si_no_hay_bot(monkeypatch):
     resp = _post(client, {"workflow": "X", "execution_id": "b", "status": "error"})
     assert resp.status_code == 200
     assert resp.json()["alerted"] is False
+
+
+# ---------- Anti-spam: cooldown y recuperación (auditoría 2026-10) ----------
+
+
+@pytest_asyncio.fixture
+async def alertas_limpias(monkeypatch):
+    """Aisla el estado en memoria de alertas entre tests."""
+    monkeypatch.setattr(webhook_server, "_automation_alerts", {})
+    yield
+
+
+async def test_cooldown_suprime_reavisos_inmediatos(monkeypatch, alertas_limpias):
+    """Un workflow roto no debe avisar cada 30 min (incidente 2026-10-12)."""
+    monkeypatch.setattr(settings, "admin_ids", [7])
+    bot = _FakeBot()
+    _client(monkeypatch, _FakeDB(), bot=bot)
+
+    assert await webhook_server._notify_automation_error("Inbox", "timeout") is True
+    assert len(bot.messages) == 1
+    # Mismo workflow roto minutos despues: en cooldown, sin nuevo aviso.
+    assert await webhook_server._notify_automation_error("Inbox", "timeout") is False
+    assert len(bot.messages) == 1
+    # Otro workflow si que avisa: el cooldown es por workflow.
+    assert await webhook_server._notify_automation_error("Briefing", "timeout") is True
+    assert len(bot.messages) == 2
+
+
+async def test_cooldown_expirado_reavisa_marcando_persistencia(monkeypatch, alertas_limpias):
+    monkeypatch.setattr(settings, "admin_ids", [7])
+    bot = _FakeBot()
+    _client(monkeypatch, _FakeDB(), bot=bot)
+
+    await webhook_server._notify_automation_error("Inbox", "timeout")
+    monkeypatch.setattr(webhook_server, "_AUTOMATION_ALERT_COOLDOWN_S", 0.0)
+    assert await webhook_server._notify_automation_error("Inbox", "timeout") is True
+    assert len(bot.messages) == 2
+    assert "sigue fallando" in bot.messages[1][1]
+
+
+async def test_recuperada_se_envia_una_sola_vez(monkeypatch, alertas_limpias):
+    monkeypatch.setattr(settings, "admin_ids", [7])
+    bot = _FakeBot()
+    _client(monkeypatch, _FakeDB(), bot=bot)
+
+    await webhook_server._notify_automation_error("Inbox", "timeout")
+    await webhook_server._notify_automation_recovered("Inbox")
+    assert len(bot.messages) == 2
+    # Sin alerta previa activa: silencioso (un ok normal no avisa nada).
+    await webhook_server._notify_automation_recovered("Inbox")
+    await webhook_server._notify_automation_recovered("Nunca-Roto")
+    assert len(bot.messages) == 2
 
 
 # ---------- Tool ----------

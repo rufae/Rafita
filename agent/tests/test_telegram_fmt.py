@@ -3,7 +3,16 @@
 import pytest
 from telegram.error import BadRequest
 
-from src.utils.telegram_fmt import escape_md, reply_md, send_md, strip_md
+from src.utils.telegram_fmt import (
+    escape_md,
+    reply_md,
+    reply_rich,
+    send_md,
+    send_rich,
+    split_html,
+    strip_md,
+    strip_tags,
+)
 
 
 class _Msg:
@@ -81,3 +90,106 @@ async def test_send_md_reenvia_en_plano_si_falla_el_parseo():
 
 async def test_send_md_con_bot_none_no_falla():
     await send_md(None, 123, "hola")
+
+
+# ---------- send_rich / split_html (auditoría 2026-10: envío HTML robusto) ----------
+
+
+class _HtmlFailMsg:
+    """Mensaje que rechaza SIEMPRE el parseo HTML pero acepta texto plano."""
+
+    def __init__(self):
+        self.replies = []
+
+    async def reply_text(self, text, **kwargs):
+        if kwargs.get("parse_mode") == "HTML":
+            raise BadRequest("Can't parse entities: Can't find end of the starting tag")
+        self.replies.append((text, kwargs))
+
+
+class _HtmlFailBot:
+    """Bot que rechaza SIEMPRE el parseo HTML pero acepta texto plano."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, chat_id=None, text=None, **kwargs):
+        if kwargs.get("parse_mode") == "HTML":
+            raise BadRequest("Can't parse entities: Can't find end of the starting tag")
+        self.sent.append((chat_id, text, kwargs))
+
+
+def test_split_html_parte_en_bloques_sin_perder_nada():
+    texto = "\n".join("linea %d" % i for i in range(2000))  # ~14k chars
+    chunks = split_html(texto, max_len=4000)
+    assert all(len(c) <= 4000 for c in chunks)
+    assert "\n".join(chunks) == texto
+
+
+def test_split_html_linea_gigante_se_trocea():
+    chunks = split_html("x" * 9000, max_len=4000)
+    assert [len(c) for c in chunks] == [4000, 4000, 1000]
+    assert "".join(chunks) == "x" * 9000
+
+
+def test_split_html_texto_corto_y_vacio():
+    assert split_html("hola") == ["hola"]
+    assert split_html("") == []
+
+
+def test_strip_tags_quita_html():
+    assert strip_tags("<b>hola</b> mundo<pre>x</pre>") == "hola mundox"
+    assert strip_tags("sin etiquetas") == "sin etiquetas"
+
+
+async def test_reply_rich_envia_html_y_respeta_kwargs():
+    msg = _Msg()
+    await reply_rich(msg, "<b>hola</b>", disable_web_page_preview=True)
+    assert msg.replies[0][0] == "<b>hola</b>"
+    assert msg.replies[0][1]["parse_mode"] == "HTML"
+    assert msg.replies[0][1]["disable_web_page_preview"] is True
+
+
+async def test_reply_rich_fallback_a_plano_por_bloque():
+    msg = _HtmlFailMsg()
+    await reply_rich(msg, "<b>hola</b>")
+    assert len(msg.replies) == 1
+    text, kwargs = msg.replies[0]
+    assert "hola" in text
+    assert "parse_mode" not in kwargs  # reenviado sin parseo, no perdido
+
+
+async def test_reply_rich_parte_y_fallback_bloque_a_bloque():
+    msg = _HtmlFailMsg()
+    texto = "<b>%s</b>" % ("\n".join("linea %d" % i for i in range(1200)))
+    await reply_rich(msg, texto)
+    assert len(msg.replies) >= 2
+    assert all("parse_mode" not in kw for _, kw in msg.replies)
+    # Nada perdido: los bloques reensamblados (con los \n de frontera)
+    # reproducen el original sin etiquetas.
+    assert strip_tags(texto) == strip_tags("\n".join(t for t, _ in msg.replies))
+
+
+async def test_reply_rich_con_mensaje_none_no_falla():
+    await reply_rich(None, "<b>x</b>")
+
+
+async def test_send_rich_envia_a_chat_correcto():
+    bot = _Bot()
+    await send_rich(bot, 42, "<b>hola</b>")
+    assert bot.sent[0][0] == 42
+    assert bot.sent[0][2]["parse_mode"] == "HTML"
+
+
+async def test_send_rich_fallback_a_plano():
+    bot = _HtmlFailBot()
+    await send_rich(bot, 42, "<b>hola</b>")
+    assert len(bot.sent) == 1
+    chat_id, text, kwargs = bot.sent[0]
+    assert chat_id == 42
+    assert "hola" in text
+    assert "parse_mode" not in kwargs
+
+
+async def test_send_rich_con_bot_none_no_falla():
+    await send_rich(None, 42, "x")

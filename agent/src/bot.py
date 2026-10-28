@@ -342,7 +342,7 @@ class RafitaBot:
             try:
                 await self._app.stop()
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
             logger.info("RafitaBot stopped")
 
     async def destroy(self) -> None:
@@ -350,7 +350,7 @@ class RafitaBot:
             try:
                 await self._app.shutdown()
             except Exception:
-                pass
+                logger.debug("Fallo esperado e ignorado", exc_info=True)
             logger.info("RafitaBot destroyed")
 
     def polling_status(self) -> dict[str, Any]:

@@ -28,8 +28,9 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
   diga «he creado el evento» si ninguna herramienta lo hizo.
 
 ### Segundo cerebro (RAG)
-- **Indexa tu vault de Obsidian** semánticamente (ChromaDB + `bge-m3`) con
-  chunking por encabezados y reindexado en vivo por watchdog.
+- **Indexa tu vault de Obsidian** semánticamente (ChromaDB + EmbeddingGemma 2,
+  con prefijos de rol y relevancia verificada sobre bge-m3) con chunking por
+  encabezados y reindexado en vivo por watchdog.
 - **Búsqueda híbrida con citas**: reranking léxico + entidades + embeddings
   (ideal para nombres propios) y respuestas con **citas `[S1]` y enlace
   `obsidian://`** a la nota de origen.
@@ -60,9 +61,15 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 - **Backups verificados**: restic cifrado al USB + Google Drive, copia horaria
   de la BD, restore-drill mensual y alertas si el backup falla. Copia
   completa **bajo demanda** con `/backup` o «hazme un backup ahora».
+- **Finance automática desde el móvil**: la app del banco notifica y Tasker
+  (+ `X-Banco-Token`) registra **gastos** (`/automation/banco-gasto`, filtra
+  domiciliaciones) e **ingresos** (`/automation/banco-ingreso`) con dedupe de
+  reintentos. Ver [docs/gastos-automaticos.md](docs/gastos-automaticos.md).
 - **Observabilidad**: métricas de latencia por herramienta y tokens LLM en
-  `/metrics`, y un vigilante de infraestructura (disco, IA, RAG, backup) que
-  avisa por Telegram solo cuando algo se degrada.
+  `/metrics`, telemetría `ai_metrics` por cada llamada IA (operación,
+  latencia, éxito), rate limit por IP en el gateway y un vigilante de
+  infraestructura (disco, IA, RAG, backup) que avisa por Telegram solo
+  cuando algo se degrada.
 - **RGPD**: `export_my_data` / `delete_my_data` y endpoints `/api/gdpr/*`.
 - **Secretos file-based** (Docker secrets), webhooks HMAC, bot privado por
   whitelist y cifrado fail-closed de credenciales.
@@ -82,16 +89,31 @@ Esto no es un SaaS. Es una herramienta que instalas y posees.
 
 ## Arquitectura
 
-Despliegue típico en dos nodos con GPU opcional (también funciona todo en una
-máquina):
+```mermaid
+flowchart LR
+    TG[Telegram] --> GW
+    WEB[PWA web] --> GW
+    GW[rafita-agent-core<br/>gateway :8010]
 
-```
-Tu Telegram/Web/Voz ──→ rafita-agent-core ──red privada──→ ollama (GPU torre o CPU Dell)
-                            │        │        │
-                       SQLite   ChromaDB  Obsidian vault
-                      (memoria)  (RAG)    (2º cerebro)
-                            │
-                            └── backup diario (restic cifrado) → USB (+ Drive)
+    subgraph DATOS[Nodo de aplicación HP]
+        GW --> DB[(SQLite WAL<br/>memoria + tokens Fernet)]
+        GW --> VDB[(ChromaDB<br/>RAG)]
+        GW --> VAULT[(Vault Obsidian<br/>2º cerebro)]
+    end
+
+    subgraph IA[Nodo de IA]
+        GPU[Ollama GPU torre] -.failover.-> CPU[Ollama CPU Dell]
+        CB[OllamaCircuitBreaker<br/>telemetría ai_metrics] --> GPU
+        GW --> CB
+        GW --> EMB[Embeddings eg2<br/>prefijos de rol]
+    end
+
+    N8N[n8n automatizaciones] -->|HMAC| GW
+    GW -->|avisos| TG
+    MOVIL[Móvil Tasker] -->|X-Banco-Token| GW
+    GW --> BK[backup diario<br/>restic cifrado]
+
+    style GW fill:#2d5,stroke:#040,color:#fff
 ```
 
 - **Nodo de aplicación** (HP u otro): agente, base vectorial, bóveda, web.
@@ -159,8 +181,8 @@ Rafita detecta tu hardware automáticamente y recomienda el perfil óptimo:
 
 | Perfil | Chat | Embeddings | Visión | Hardware |
 |---|---|---|---|---|
-| gpu-high | gemma4:12b | bge-m3 (1024d) | llava:7b | GPU ≥10GB VRAM |
-| cpu-mid | qwen2.5:7b | bge-m3 (1024d) | llava:7b | 16GB+ RAM |
+| gpu-high | gemma4:12b | embeddinggemma-2 (768d) | llava:7b | GPU ≥10GB VRAM |
+| cpu-mid | qwen2.5:7b | embeddinggemma-2 (768d) | llava:7b | 16GB+ RAM |
 | cpu-low | qwen2.5:3b | nomic-embed-text (768d) | moondream | 8GB RAM |
 
 También puedes configurar los modelos manualmente en `.env`.
@@ -193,10 +215,12 @@ datos al segundo cerebro.
 
 ## Limitaciones conocidas
 
-- **Relevancia RAG en español con bge-m3**: medida con el dataset de evaluación
-  propio (36 casos) en hardware con GPU: recall@3 = 1.0, MRR@5 = 0.98, umbral
-  calibrado 0.49 con 0 falsos positivos (ver [ADR-003](docs/adr/003-model-selection.md)).
-  Pendiente validar con bóvedas reales y más negativos.
+- **Relevancia RAG en español**: medida sobre EmbeddingGemma 2 (64 consultas
+  reales: MRR 0.579 con prefijos de rol frente a 0.304 de bge-m3; prefijos sin
+  rol caían a 0.174), tras la medición histórica con bge-m3 (recall@3 = 1.0,
+  MRR@5 = 0.98 en 36 casos, umbral 0.49 — ver
+  [ADR-003](docs/adr/003-model-selection.md)). Pendiente validar con bóvedas
+  reales y más negativos.
 - **Fiabilidad de tools con gemma4:12b**: suite de 21 tools (2 intentos) →
   **46/46 (100%)** con el thinking desactivado (`reasoning_effort=none`).
 - **Watchdog en Docker Desktop Windows**: `inotify` no propaga eventos a

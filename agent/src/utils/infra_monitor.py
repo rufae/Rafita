@@ -387,7 +387,7 @@ async def notify_issues(
         try:
             await db.kv_set(key, str(now))
         except Exception:
-            pass
+            logger.debug("Fallo esperado e ignorado", exc_info=True)
         nivel = severity.normalize(check.get("severity"))
         text = "%s [%s] *Infraestructura: %s*\n%s" % (
             severity.emoji(nivel),
