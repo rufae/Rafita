@@ -111,3 +111,21 @@ async def test_alerts_basico(db):
     assert len(activas) == 1
     await db.mark_alert_read(activas[0]["id"])
     assert await db.get_active_alerts(1) == []
+
+
+async def test_ai_metrics_retencion(db):
+    """La tabla crecia una fila por llamada LLM sin poda (revisión 2026-10-28)."""
+    await db.record_ai_metric("chat", 1.0, True)
+    await db.execute(
+        "INSERT INTO ai_metrics (ts, operation, latency_ms, success) "
+        "VALUES (datetime('now', '-60 days'), 'vieja', 1, 1)"
+    )
+    await db._conn.commit()
+
+    db._ai_metric_writes = 499  # la siguiente inserción dispara la poda
+    await db.record_ai_metric("chat", 1.0, True)
+
+    viejas = await db.fetchall("SELECT id FROM ai_metrics WHERE operation = 'vieja'")
+    assert viejas == []
+    vivas = await db.fetchall("SELECT id FROM ai_metrics WHERE operation = 'chat'")
+    assert len(vivas) == 2

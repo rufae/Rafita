@@ -5,8 +5,6 @@ que coverage no traza, así que estos tests invocan los handlers como
 corrutinas (los `Depends(require_user)` se resuelven pasando `user=` a mano).
 """
 
-from types import SimpleNamespace
-
 import pytest
 from fastapi import HTTPException
 
@@ -27,7 +25,12 @@ class _Req:
 
 
 def _usuario(id_=5, email="ana@x.es", admin=False):
-    return {"id": id_, "email": email, "is_admin": admin, "password_hash": hash_password("secret123")}
+    return {
+        "id": id_,
+        "email": email,
+        "is_admin": admin,
+        "password_hash": hash_password("secret123"),
+    }
 
 
 # ---------- auth ----------
@@ -279,7 +282,9 @@ async def test_push_config_subscribe_unsubscribe(monkeypatch):
     resp = await web_api.push_public_config()
     assert resp["publicKey"] == "vapid-pub"
 
-    resp = await web_api.push_subscribe(_Req({"endpoint": "https://push.example/abc"}), user={"id": 7})
+    resp = await web_api.push_subscribe(
+        _Req({"endpoint": "https://push.example/abc"}), user={"id": 7}
+    )
     assert resp["uid"] == 7
 
     with pytest.raises(HTTPException) as e:
@@ -291,3 +296,20 @@ async def test_push_config_subscribe_unsubscribe(monkeypatch):
     with pytest.raises(HTTPException) as e:
         await web_api.push_unsubscribe(_Req(json_malo=True))
     assert e.value.status_code == 400
+
+
+def test_podar_estados_auth():
+    """Estados OAuth abandonados se quedaban para siempre (revisión 2026-10-28)."""
+    import time as _t
+
+    web_api._GOOGLE_STATES.clear()
+    web_api._DEVICE_SESSIONS.clear()
+    web_api._GOOGLE_STATES["caduco"] = _t.time() - 1
+    web_api._GOOGLE_STATES["vivo"] = _t.time() + 999
+    web_api._DEVICE_SESSIONS["caduco"] = {"device_code": "x", "exp": _t.time() - 1}
+
+    web_api._podar_estados_auth()
+
+    assert set(web_api._GOOGLE_STATES) == {"vivo"}
+    assert web_api._DEVICE_SESSIONS == {}
+    web_api._GOOGLE_STATES.clear()

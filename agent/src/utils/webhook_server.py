@@ -36,15 +36,27 @@ class _IpRateLimiter:
     60 s por IP; `WEBHOOK_RATE_LIMIT=0` lo desactiva (CI/tests).
     """
 
+    # Al superar este número de IPs se purgan las ventanas ya vacías: sin
+    # esto la dict crece para siempre (una entrada por IP que haya pasado).
+    _SWEEP_AT = 4096
+
     def __init__(self, max_requests: int, window_s: float = 60.0):
         self.max_requests = max_requests
         self.window_s = window_s
         self._hits: dict[str, list[float]] = {}
 
+    def _sweep(self, ahora: float) -> None:
+        """Purga oportunista de IPs sin actividad reciente (fuga de memoria)."""
+        vivas = {k: v for k, v in self._hits.items() if v and ahora - v[-1] <= self.window_s}
+        self._hits.clear()
+        self._hits.update(vivas)
+
     def allow(self, key: str) -> bool:
         if self.max_requests <= 0:
             return True
         ahora = time.monotonic()
+        if len(self._hits) >= self._SWEEP_AT:
+            self._sweep(ahora)
         ventana = self._hits.setdefault(key, [])
         while ventana and ahora - ventana[0] > self.window_s:
             ventana.pop(0)

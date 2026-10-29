@@ -106,3 +106,18 @@ def test_middleware_devuelve_429(monkeypatch):
         assert r1.status_code != 429
         assert r2.status_code == 429
         assert "Too Many Requests" in r2.json()["detail"]
+
+
+def test_rate_limiter_purga_ips_antiguas(monkeypatch):
+    """Fuga de memoria: la dict de IPs crecia para siempre (revisión 2026-10-28)."""
+    import unittest.mock as mock
+
+    monkeypatch.setattr(webhook_server._IpRateLimiter, "_SWEEP_AT", 3)
+    reloj = {"t": 100.0}
+    with mock.patch.object(webhook_server.time, "monotonic", side_effect=lambda: reloj["t"]):
+        limiter = webhook_server._IpRateLimiter(max_requests=5, window_s=60.0)
+        for ip in ("a", "b", "c"):
+            assert limiter.allow(ip) is True
+        reloj["t"] = 200.0  # las tres caducadas
+        limiter.allow("d")  # supera _SWEEP_AT -> purga oportuna
+        assert set(limiter._hits) == {"d"}
