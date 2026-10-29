@@ -42,6 +42,22 @@ _STATE_TTL_S = 600
 _MAX_NOTE_BYTES = 512_000
 
 
+def _podar_estados_auth() -> None:
+    """Limpia estados OAuth caducados.
+
+    Fuga detectada en la revisión 2026-10-28: los estados/sesiones de flujo
+    abandonados (el usuario cancela el consentimiento) se quedaban en memoria
+    para siempre. Poda oportunista al insertar.
+    """
+    ahora = time.time()
+    caducados = [k for k, exp in _GOOGLE_STATES.items() if ahora > exp]
+    for k in caducados:
+        _GOOGLE_STATES.pop(k, None)
+    caducados = [k for k, s in _DEVICE_SESSIONS.items() if ahora > s.get("exp", 0.0)]
+    for k in caducados:
+        _DEVICE_SESSIONS.pop(k, None)
+
+
 def _vault_root() -> Path:
     return settings.obsidian_vault_path
 
@@ -144,6 +160,7 @@ async def auth_google_start(request: Request):
         return RedirectResponse("/app/#google-error=no_config")
     base = str(request.base_url)
     state = secrets.token_urlsafe(24)
+    _podar_estados_auth()
     _GOOGLE_STATES[state] = time.time() + _STATE_TTL_S
     return RedirectResponse(google_auth_url(state, base))
 
@@ -200,6 +217,7 @@ async def auth_google_device_start():
     if not datos or not datos.get("device_code"):
         raise HTTPException(status_code=502, detail="Google no respondio al iniciar el flujo")
     state = secrets.token_urlsafe(16)
+    _podar_estados_auth()
     _DEVICE_SESSIONS[state] = {
         "device_code": datos["device_code"],
         "exp": time.time() + int(datos.get("expires_in", 1800) or 1800),

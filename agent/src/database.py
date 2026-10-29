@@ -1462,6 +1462,15 @@ class DatabaseManager:
             (operation, round(latency_ms, 1), 1 if success else 0, (error or "")[:300]),
         )
         await self._conn.commit()
+        # Retención (fuga de crecimiento detectada en la revisión 2026-10-28):
+        # una fila por llamada LLM sin poda crece para siempre. Cada 500
+        # inserciones se descartan las de más de 30 días; el histórico mensual
+        # para /metrics y ai_metrics_summary se conserva.
+        self._ai_metric_writes = getattr(self, "_ai_metric_writes", 0) + 1
+        if self._ai_metric_writes >= 500:
+            self._ai_metric_writes = 0
+            await self.execute("DELETE FROM ai_metrics WHERE ts < datetime('now', '-30 days')")
+            await self._conn.commit()
 
     async def ai_metrics_summary(self, hours: int = 24) -> list[dict[str, Any]]:
         """Resumen por operacion: llamadas, fallos y latencia media/p95."""
