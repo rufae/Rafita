@@ -204,9 +204,12 @@ async def test_alerts_crud(db):
     active = await db.get_active_alerts(2)
     assert [a["id"] for a in active] == [alert_id]
 
-    assert await db.get_unread_alert_count(2) == 2
-    await db.mark_alert_read(alert_id)
+    # 2026-11-11: el aviso "Tienes N alertas pendientes" debe coincidir con lo
+    # que enseña /alertas (get_active_alerts): NO cuenta caducadas. Antes se
+    # contaban y salía "5 pendientes" que /alertas ocultaba (bug reportado).
     assert await db.get_unread_alert_count(2) == 1
+    await db.mark_alert_read(alert_id)
+    assert await db.get_unread_alert_count(2) == 0
 
     now = datetime.utcnow()
     await db.add_alert(3, "Proxima", expires_at=_fmt(now + timedelta(hours=30)))

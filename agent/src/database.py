@@ -1113,7 +1113,8 @@ class DatabaseManager:
 
     async def get_unread_alert_count(self, chat_id: int) -> int:
         row = await self.fetchone(
-            "SELECT COUNT(*) as count FROM alerts WHERE chat_id = ? AND is_read = 0",
+            "SELECT COUNT(*) as count FROM alerts WHERE chat_id = ? AND is_read = 0 "
+            "AND (expires_at IS NULL OR expires_at >= datetime('now'))",
             (chat_id,),
         )
         return row["count"] if row else 0

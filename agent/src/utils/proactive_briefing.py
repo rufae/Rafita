@@ -188,6 +188,8 @@ async def send_proactive_reminders(bot: Any) -> int:
             start = datetime.fromisoformat(str(ev.get("start", "")).replace("Z", "+00:00"))
         except Exception:
             continue
+        if start.tzinfo is None and now.tzinfo is not None:
+            start = start.replace(tzinfo=now.tzinfo)
         hours = (start - now).total_seconds() / 3600.0
         if not (0 <= hours <= 24):
             continue
