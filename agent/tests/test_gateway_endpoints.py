@@ -358,7 +358,7 @@ async def test_automation_send_voice_bran(secreto, monkeypatch):
     # TTS no disponible -> 500
     monkeypatch.setattr(webhook_server, "_bot_ref", object())
 
-    async def _tts_none(text):
+    async def _tts_none(text, engine=None):
         return None
 
     monkeypatch.setattr(tts_manager, "text_to_speech", _tts_none)
@@ -372,7 +372,7 @@ async def test_automation_send_voice_bran(secreto, monkeypatch):
         async def send_voice(self, chat_id, path):
             llamado.update(chat=chat_id, path=str(path))
 
-    async def _tts(text):
+    async def _tts(text, engine=None):
         return Path("/tmp/nota.wav")
 
     async def _ogg(wav):
@@ -619,7 +619,7 @@ async def test_automation_send_voice_fallos_intermedios(secreto, monkeypatch):
 
     monkeypatch.setattr(settings, "admin_ids", [9])
 
-    async def _tts(text):
+    async def _tts(text, engine=None):
         return Path("/tmp/a.wav")
 
     async def _ogg_falla(wav):

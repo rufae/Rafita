@@ -104,7 +104,8 @@ async def text_to_speech(text: str, engine: str | None = None) -> Path | None:
     """Sintetiza a WAV con el motor configurado (TTS_ENGINE).
 
     Cadena de respaldo: motor pedido -> piper (si no era el pedido) -> espeak.
-    Motores disponibles: `piper`, `kokoro`, `voicebox` (REST externo).
+    Motores disponibles: `piper`, `kokoro`, `voicebox` (REST externo),
+    `voicestudio` (voz clonada, REST lenta en CPU; solo notas de voz).
     """
     # Limpieza para voz (2026-09-28): quita Markdown (se leia "asterisco
     # asterisco") y emojis (piper balbuceaba al inicio con ellos).
@@ -126,6 +127,8 @@ async def text_to_speech(text: str, engine: str | None = None) -> Path | None:
             result = await _synth_kokoro_to_wav(text, output_path)
         elif name == "voicebox":
             result = await _synth_voicebox_to_wav(text, output_path)
+        elif name == "voicestudio":
+            result = await _synth_voicestudio_to_wav(text, output_path)
         else:
             result = await _synth_piper_to_wav(text, output_path)
         if result is not None:
@@ -227,6 +230,47 @@ async def _synth_voicebox_to_wav(text: str, output_path: Path) -> Path | None:
             return None
     except Exception as e:
         logger.warning("Voicebox TTS failed: %s", e)
+        return None
+
+
+async def _synth_voicestudio_to_wav(text: str, output_path: Path) -> Path | None:
+    """VoiceStudio (voz clonada de Rafael, VoxCPM2) via REST.
+
+    Requiere VOICESTUDIO_URL + VOICESTUDIO_PROFILE_ID y, si la API la pide,
+    VOICESTUDIO_API_KEY. Genera por perfil (sin subir audio de referencia).
+    La respuesta es audio WAV directo (48 kHz). Es LENTA en CPU (RTF ~30),
+    por eso solo la usan las notas de voz (VOICE_NOTE_ENGINE) y con timeout
+    amplio; si falta perfil o servicio, se cae a Piper.
+    """
+    import httpx
+
+    base_url = (settings.voicestudio_url or "").strip().rstrip("/")
+    profile = (settings.voicestudio_profile_id or "").strip()
+    if not base_url or not profile:
+        return None
+    headers: dict[str, str] = {}
+    api_key = (settings.voicestudio_api_key or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    form = {
+        "text": text,
+        "profile_id": profile,
+        "language": (settings.voicestudio_language or "es").strip(),
+    }
+    try:
+        # Timeout amplio: VoxCPM2 en CPU tarda ~35-45 min por nota larga.
+        async with httpx.AsyncClient(timeout=3600.0) as client:
+            resp = await client.post(base_url + "/generate", data=form, headers=headers)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            if content_type.startswith("audio/") or resp.content[:4] == b"RIFF":
+                output_path.write_bytes(resp.content)
+                logger.info("VoiceStudio: %s (%d bytes)", output_path.name, len(resp.content))
+                return output_path
+            logger.warning("VoiceStudio: respuesta no reconocida (%s)", content_type)
+            return None
+    except Exception as e:
+        logger.warning("VoiceStudio TTS failed: %s", e)
         return None
 
 

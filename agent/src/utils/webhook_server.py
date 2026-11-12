@@ -837,7 +837,7 @@ async def automation_send_voice(request: Request):
 
     from src.utils.tts_manager import cleanup_tts_dir, convert_to_ogg, text_to_speech
 
-    wav = await text_to_speech(text[:1500])
+    wav = await text_to_speech(text[:1500], engine=settings.voice_note_engine)
     if wav is None:
         return JSONResponse(status_code=500, content=_fallo("TTS no disponible"))
     ogg = await convert_to_ogg(wav)
