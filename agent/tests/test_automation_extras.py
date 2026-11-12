@@ -395,7 +395,7 @@ async def test_send_voice_endpoint(monkeypatch, tmp_path):
             self.sent.append((chat_id, path))
             return True
 
-    async def fake_tts(text):
+    async def fake_tts(text, engine=None):
         wav = tmp_path / "voz.wav"
         wav.write_bytes(b"RIFF")
         return wav

@@ -99,6 +99,16 @@ class Settings(BaseSettings):
     voicebox_url: str = Field("", alias="VOICEBOX_URL")
     voicebox_profile_id: str = Field("", alias="VOICEBOX_PROFILE_ID")
     voicebox_language: str = Field("es", alias="VOICEBOX_LANGUAGE")
+    # VoiceStudio (2026-11-12): voz clonada de Rafael (VoxCPM2 en el Dell).
+    # Solo para las notas de voz generadas (VOICE_NOTE_ENGINE); el chat en
+    # vivo se queda en piper/kokoro por latencia. VoxCPM2 es lento en CPU
+    # (RTF ~30: una nota de 76 s tarda ~35-45 min) por eso el motor es
+    # configurable y con fallback a piper si falta perfil o servicio.
+    voicestudio_url: str = Field("http://192.168.1.121:3900", alias="VOICESTUDIO_URL")
+    voicestudio_api_key: str = Field("", alias="VOICESTUDIO_API_KEY")
+    voicestudio_profile_id: str = Field("", alias="VOICESTUDIO_PROFILE_ID")
+    voicestudio_language: str = Field("es", alias="VOICESTUDIO_LANGUAGE")
+    voice_note_engine: str = Field("voicestudio", alias="VOICE_NOTE_ENGINE")
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
 
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.
