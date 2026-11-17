@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -45,7 +45,7 @@ RUN set -eux; \
     rm /tmp/obscura.tar.gz
 
 
-FROM python:3.11-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 LABEL maintainer="RafAI-Rafita"
 LABEL rafita.version="0.2.0"
