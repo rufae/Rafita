@@ -25,6 +25,7 @@ ESPERADOS = {
     "90-sub-errores.json": "Rafita · Sub · Errores",
     "90-sub-validacion.json": "Rafita · Sub · Validación",
     "90-sub-ia.json": "Rafita · Sub · IA",
+    "90-sub-openshorts-aprobacion.json": "Rafita · 12 OpenShorts · Aprobación (clip)",
 }
 
 

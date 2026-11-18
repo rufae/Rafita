@@ -1,0 +1,363 @@
+{
+ "name": "Rafita · 11 OpenShorts · Clips (pipeline)",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "openshorts",
+    "responseMode": "onReceived",
+    "options": {}
+   },
+   "id": "webhook",
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    -200,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const j = $input.first().json;\nconst sec = (j.headers && (j.headers['x-openshorts-secret'] || j.headers['X-OpenShorts-Secret'])) || '';\nconst esperado = $env.OPENSHORTS_WEBHOOK_SECRET || '';\nif (esperado && sec !== esperado) { return []; }\nconst body = typeof j.body === 'string' ? JSON.parse(j.body) : (j.body || {});\nif (!body.url) { return []; }\nconst gd = $getWorkflowStaticData('global');\ngd['intentos_' + body.url] = 0;\nreturn [{ json: { url: body.url, chat_id: body.chat_id || $env.RAFITA_CHAT_ID } }];"
+   },
+   "id": "clave",
+   "name": "Clave",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ $env.OPENSHORTS_API_URL + '/api/process' }}",
+    "sendBody": true,
+    "contentType": "json",
+    "specifyBody": "json",
+    "jsonBody": "={{ { url: $json.url, acknowledged: true, output_format: 'vertical', target_clips: 5, clip_min_seconds: 25, clip_max_seconds: 60, captions: true } }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "crear-trabajo",
+   "name": "Crear trabajo",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    200,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "resume": "timeInterval",
+    "resumeAmount": 45,
+    "resumeUnit": "seconds"
+   },
+   "id": "espera",
+   "name": "Espera",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1.1,
+   "position": [
+    400,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "method": "GET",
+    "url": "={{ $env.OPENSHORTS_API_URL + '/api/status/' + $('Crear trabajo').first().json.job_id }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "estado",
+   "name": "Estado",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    600,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "c-listo",
+       "leftValue": "={{ (() => { const s = String($json.status || ''); const jobId = $('Crear trabajo').first().json.job_id; const gd = $getWorkflowStaticData('global'); const k = 'intentos_' + jobId; gd[k] = (gd[k] || 0) + 1; return (s === 'completed' || s === 'failed' || gd[k] > 160); })() }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "listo",
+   "name": "Listo?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    800,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "c-ok",
+       "leftValue": "={{ String($json.status || '') }}",
+       "rightValue": "completed",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "completado",
+   "name": "Completado?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1000,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const job = $('Crear trabajo').first().json.job_id;\nconst chat = $('Clave').first().json.chat_id || $env.RAFITA_CHAT_ID;\nconst clips = (($input.first().json || {}).result || {}).clips || [];\nreturn clips.map((c, i) => {\n  const archivo = String(c.video_url || '').split('/').pop();\n  return { json: {\n    job_id: job,\n    archivo,\n    video_url: $env.OPENSHORTS_API_URL + (c.video_url || ''),\n    titulo: c.video_title_for_youtube_short || ('Clip ' + (i + 1)),\n    descripcion_yt: [c.viral_hook_text, c.why].filter(Boolean).join('\\n\\n'),\n    descripcion_ig: c.video_description_for_instagram || '',\n    descripcion_tt: c.video_description_for_tiktok || '',\n    score: c.predicted_score || 0,\n    hook: c.viral_hook_text || '',\n    plataformas: ['youtube', 'instagram'],\n    chat_id: chat\n  } };\n});"
+   },
+   "id": "repartir",
+   "name": "Repartir",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1200,
+    60
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "call_workflow",
+    "source": "database",
+    "workflowId": {
+     "value": "__SUB__:Rafita · 12 OpenShorts · Aprobación (clip)"
+    },
+    "mode": "each",
+    "options": {}
+   },
+   "id": "por-clip",
+   "name": "Por clip",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1400,
+    60
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_TOKEN + '/sendMessage' }}",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ { chat_id: $('Clave').first().json.chat_id || $env.RAFITA_CHAT_ID, text: '🎬 Clips listos: te los he enviado uno a uno para que apruebes cuáles subir.' } }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "fin",
+   "name": "Fin",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1600,
+    60
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_TOKEN + '/sendMessage' }}",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ { chat_id: $('Clave').first().json.chat_id || $env.RAFITA_CHAT_ID, text: '❌ El trabajo de clips falló en OpenShorts. Revisa el panel.' } }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "aviso-fallo",
+   "name": "Aviso fallo",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1200,
+    320
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Clave",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Clave": {
+   "main": [
+    [
+     {
+      "node": "Crear trabajo",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Crear trabajo": {
+   "main": [
+    [
+     {
+      "node": "Espera",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Espera": {
+   "main": [
+    [
+     {
+      "node": "Estado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Estado": {
+   "main": [
+    [
+     {
+      "node": "Listo?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Listo?": {
+   "main": [
+    [
+     {
+      "node": "Completado?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Espera",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Completado?": {
+   "main": [
+    [
+     {
+      "node": "Repartir",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Aviso fallo",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Repartir": {
+   "main": [
+    [
+     {
+      "node": "Por clip",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Por clip": {
+   "main": [
+    [
+     {
+      "node": "Fin",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "errorWorkflow": "__SUB__:Rafita · Sub · Errores"
+ },
+ "id": "dPP1Xy6nr6BJBSQr"
+}
