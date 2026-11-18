@@ -1,0 +1,514 @@
+{
+ "name": "Rafita · 12 OpenShorts · Aprobación (clip)",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "entrada",
+   "name": "Entrada",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1,
+   "position": [
+    -200,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "method": "GET",
+    "url": "={{ $json.video_url }}",
+    "options": {
+     "response": {
+      "response": {
+       "responseFormat": "file",
+       "outputPropertyName": "video"
+      }
+     },
+     "timeout": 300000
+    }
+   },
+   "id": "descargar",
+   "name": "Descargar",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    0,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_TOKEN + '/sendVideo' }}",
+    "sendBody": true,
+    "contentType": "multipart-form-data",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "parameterType": "formBinaryData",
+       "name": "video",
+       "inputDataFieldName": "video"
+      },
+      {
+       "parameterType": "formData",
+       "name": "chat_id",
+       "value": "={{ $('Entrada').first().json.chat_id || $env.RAFITA_CHAT_ID }}"
+      },
+      {
+       "parameterType": "formData",
+       "name": "caption",
+       "value": "={{ (() => { const c = $('Entrada').first().json; const l = ['🎬 ' + (c.titulo || 'Clip')]; if (c.score) l.push('⭐ Score viral: ' + c.score); if (c.hook) l.push('🪝 ' + c.hook); l.push('', '✅ Subir a redes · ❌ Descartar'); return l.join('\\n').slice(0, 950); })() }}"
+      },
+      {
+       "parameterType": "formData",
+       "name": "reply_markup",
+       "value": "={{ JSON.stringify({ inline_keyboard: [[ { text: '✅ Subir a redes', url: (() => { const u = $execution.resumeUrl; const i = u.indexOf('?'); const base = i === -1 ? u : u.slice(0, i); const q = i === -1 ? '' : u.slice(i); return base + '/aprobacion' + (q ? q + '&' : '?') + 'accion=si'; })() }, { text: '❌ Descartar', url: (() => { const u = $execution.resumeUrl; const i = u.indexOf('?'); const base = i === -1 ? u : u.slice(0, i); const q = i === -1 ? '' : u.slice(i); return base + '/aprobacion' + (q ? q + '&' : '?') + 'accion=no'; })() } ] ] }) }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 300000
+    }
+   },
+   "id": "aprobacion",
+   "name": "Aprobacion",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    200,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "resume": "webhook",
+    "limitWaitTime": true,
+    "limitType": "afterTimeInterval",
+    "resumeAmount": 7,
+    "resumeUnit": "days",
+    "options": {
+     "webhookSuffix": "aprobacion"
+    }
+   },
+   "id": "espera",
+   "name": "Espera",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1.1,
+   "position": [
+    400,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "c-aprueba-si",
+       "leftValue": "={{ ($json.query && String($json.query.accion || '')) || '' }}",
+       "rightValue": "si",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "aprueba",
+   "name": "Aprueba?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    600,
+    120
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const c = $('Entrada').first().json;\nreturn [{ json: { payload: { job_id: c.job_id, archivo: c.archivo, titulo: c.titulo,\n    descripcion_yt: c.descripcion_yt || '', descripcion_ig: c.descripcion_ig || '',\n    descripcion_tt: c.descripcion_tt || '', hashtags: [],\n    plataformas: c.plataformas || ['youtube', 'instagram'],\n    chat_id: c.chat_id } } }];"
+   },
+   "id": "payload",
+   "name": "Payload",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    900,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "call_workflow",
+    "source": "database",
+    "workflowId": {
+     "value": "__SUB__:Rafita · Sub · Autenticación"
+    },
+    "mode": "once",
+    "options": {
+     "waitForSubWorkflow": true
+    }
+   },
+   "id": "firmar",
+   "name": "Firmar",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1100,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://rafita-agent-core:8000/automation/clip-upload",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Webhook-Signature",
+       "value": "={ $('Firmar').first().json.signature }"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "raw",
+    "rawContentType": "application/json",
+    "body": "={ $('Firmar').first().json.body }",
+    "options": {
+     "timeout": 600000
+    }
+   },
+   "id": "llamada",
+   "name": "Llamada",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1300,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "const subida = $('Llamada').first().json || {};\nconst fallo = Boolean(subida.error) || subida.success === false;\nlet texto;\nif (fallo) {\n  const detalle = subida.error || (subida.errores || []).join('; ') || 'error desconocido';\n  texto = '⚠️ No pude subir el clip: ' + String(detalle).slice(0, 400);\n} else {\n  const enlaces = subida.links || {};\n  const lineas = ['✅ Clip subido a redes.'];\n  if (enlaces.youtube) lineas.push('▶️ YouTube: ' + enlaces.youtube);\n  if (enlaces.instagram) lineas.push('📸 Instagram: ' + enlaces.instagram);\n  if (enlaces.tiktok) lineas.push('🎵 TikTok: ' + enlaces.tiktok);\n  texto = lineas.join('\\n');\n}\nreturn [{ json: { texto, fallo } }];"
+   },
+   "id": "resultado",
+   "name": "Resultado",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1500,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_TOKEN + '/sendMessage' }}",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ { chat_id: $('Entrada').first().json.chat_id || $env.RAFITA_CHAT_ID, text: $('Resultado').first().json.texto } }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "aviso",
+   "name": "Aviso",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1700,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "const r = $('Resultado').first().json;\nif (r.fallo) { throw new Error('Subida de clip falló: ' + r.texto); }\nreturn $input.all();"
+   },
+   "id": "comprobar",
+   "name": "Comprobar",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1900,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const c = $('Entrada').first().json;\nreturn [{ json: { payload: { job_id: c.job_id, archivo: c.archivo } } }];"
+   },
+   "id": "borrar-payload",
+   "name": "Borrar Payload",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    900,
+    200
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "call_workflow",
+    "source": "database",
+    "workflowId": {
+     "value": "__SUB__:Rafita · Sub · Autenticación"
+    },
+    "mode": "once",
+    "options": {
+     "waitForSubWorkflow": true
+    }
+   },
+   "id": "borrar-firmar",
+   "name": "Borrar Firmar",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.1,
+   "position": [
+    1100,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://rafita-agent-core:8000/automation/clip-delete",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Webhook-Signature",
+       "value": "={ $('Borrar Firmar').first().json.signature }"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "raw",
+    "rawContentType": "application/json",
+    "body": "={ $('Borrar Firmar').first().json.body }",
+    "options": {
+     "timeout": 600000
+    }
+   },
+   "id": "borrar-llamada",
+   "name": "Borrar Llamada",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1300,
+    200
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_TOKEN + '/sendMessage' }}",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ { chat_id: $('Entrada').first().json.chat_id || $env.RAFITA_CHAT_ID, text: '🗑️ Clip descartado y borrado.' } }}",
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "id": "aviso2",
+   "name": "Aviso2",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.5,
+   "position": [
+    1300,
+    420
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "Entrada": {
+   "main": [
+    [
+     {
+      "node": "Descargar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Descargar": {
+   "main": [
+    [
+     {
+      "node": "Aprobacion",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Aprobacion": {
+   "main": [
+    [
+     {
+      "node": "Espera",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Espera": {
+   "main": [
+    [
+     {
+      "node": "Aprueba?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Aprueba?": {
+   "main": [
+    [
+     {
+      "node": "Payload",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Borrar Payload",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Payload": {
+   "main": [
+    [
+     {
+      "node": "Firmar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Firmar": {
+   "main": [
+    [
+     {
+      "node": "Llamada",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Llamada": {
+   "main": [
+    [
+     {
+      "node": "Resultado",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resultado": {
+   "main": [
+    [
+     {
+      "node": "Aviso",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Aviso": {
+   "main": [
+    [
+     {
+      "node": "Comprobar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Borrar Payload": {
+   "main": [
+    [
+     {
+      "node": "Borrar Firmar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Borrar Firmar": {
+   "main": [
+    [
+     {
+      "node": "Borrar Llamada",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Borrar Llamada": {
+   "main": [
+    [
+     {
+      "node": "Aviso2",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "id": "CcJNf2EeSYsqqvWW"
+}

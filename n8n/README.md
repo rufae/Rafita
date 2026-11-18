@@ -17,12 +17,14 @@ valores sensibles se sustituyen desde el `.env` del proyecto.
 | `08-plantilla-aviso-programado.json` | Plantillas | Cada día 09:00 (inactivo) | Ejemplo mínimo: aviso programado a Telegram. |
 | `09-crm-seguimiento.json` | Clientes | Lunes 09:00 | Avisa de clientes del CRM sin contacto reciente o con seguimiento vencido. |
 | `10-secuencias-email.json` | Secuencias | Cada día 09:30 | Envía los emails vencidos de las secuencias y avisa si algún contacto respondió (secuencia detenida). |
+| `11-openshorts-clips.json` | OpenShorts | Webhook `openshorts` | Crea un trabajo de clips en OpenShorts desde `/openshorts <url>`, espera los clips y lanza su aprobación uno a uno. |
 | `90-sub-logs.json` | Sub | Invocado | Firma y postea el informe de ejecución a `/api/n8n/run` (o el error vía Sub · Errores). |
 | `90-sub-telegram.json` | Sub | Invocado | Envía el payload canónico a Telegram (`sendMessage`). |
 | `90-sub-autenticacion.json` | Sub | Invocado | Firma HMAC de la petición `{payload}` para el gateway. |
 | `90-sub-errores.json` | Sub | errorWorkflow | Recoge las caídas duras de los 10 flujos y las reporta vía Sub · Logs. |
 | `90-sub-validacion.json` | Sub | Invocado | Valida la entrada del webhook (sin texto válido no devuelve items). |
 | `90-sub-ia.json` | Sub | Invocado | Resume texto con el LLM local (Ollama `/api/generate`). |
+| `90-sub-openshorts-aprobacion.json` | Sub | Invocado por el 11 | Envía cada clip a Telegram con botones ✅/❌ y sube los aprobados a redes desde Rafita. |
 
 Los flujos están etiquetados por categoría (Briefing, Correo, Bóveda, Google,
 Infra, Radar, Automatización, Plantillas) para poder filtrarlos en n8n.
@@ -150,6 +152,23 @@ degrada (lo reporta en `automation_runs`) en vez de tumbarse.
 - **Resultado**: emails enviados + aviso si algún contacto respondió.
 - **Dependencias**: Gmail conectado, secuencias creadas (BD), `TELEGRAM_TOKEN`.
 
+### 11 · OpenShorts · Clips — vía webhook
+- **Disparador**: `POST http://n8n:5678/webhook/openshorts` con
+  `{"url": "https://…", "chat_id": 1685877486}` y cabecera
+  `X-OpenShorts-Secret` (lo manda Rafita al recibir `/openshorts <url>`).
+- **Cómo se ejecuta**: crea el trabajo en OpenShorts
+  (`POST /api/process`), consulta `GET /api/status/{job_id}` cada 45 s
+  (máx. 160 intentos) y, cuando termina, reparte los clips con su copy
+  (título YT, descripciones IG/TT, hook, score) invocando por clip el sub
+  de aprobación.
+- **Resultado**: cada clip llega a Telegram con botones ✅/❌; el flujo
+  informa si el trabajo falló en OpenShorts.
+- **Dependencias**: OpenShorts accesible (`OPENSHORTS_API_URL`),
+  `OPENSHORTS_WEBHOOK_SECRET`, `TELEGRAM_TOKEN`.
+- **Probarlo**: `curl -X POST http://127.0.0.1:5678/webhook/openshorts
+  -H 'Content-Type: application/json' -H 'X-OpenShorts-Secret: <clave>'
+  -d '{"url":"https://www.youtube.com/watch?v=…","chat_id":1685877486}'`
+
 ---
 
 ## Sub-workflows reutilizables (D14, 2026-10-05)
@@ -197,6 +216,15 @@ padres**, que es lo que exige n8n).
   Ollama no está: degrada, no tumba).
 - **Dependencias**: `OLLAMA_URL`, `OLLAMA_MODEL` (Ollama accesible desde el
   contenedor n8n).
+
+### Sub · OpenShorts · Aprobación — invocado por el 11 (uno por clip)
+- **Qué hace**: descarga el clip de OpenShorts, lo envía a Telegram con
+  botones ✅/❌ (webhook de espera 7 días) y, según la respuesta, firma con
+  Sub · Autenticación y llama al gateway: `POST /automation/clip-upload`
+  (sube a YouTube/Instagram desde el Dell y devuelve enlaces) o
+  `POST /automation/clip-delete` (descarta y borra la copia local).
+- **Dependencias**: OpenShorts (`OPENSHORTS_API_URL`), `TELEGRAM_TOKEN`,
+  `WEBHOOK_SECRET` y las claves de redes en el agente (`YT_*`, `IG_*`).
 
 > **Reintentos (D14)**: además de los HTTP, todo nodo *Execute Workflow*
 > lleva `retryOnFail` 3× con 2 s de backoff (test

@@ -109,6 +109,26 @@ class Settings(BaseSettings):
     voicestudio_profile_id: str = Field("", alias="VOICESTUDIO_PROFILE_ID")
     voicestudio_language: str = Field("es", alias="VOICESTUDIO_LANGUAGE")
     voice_note_engine: str = Field("voicestudio", alias="VOICE_NOTE_ENGINE")
+    # OpenShorts (2026-11-18): clips automaticos desde URL -> revision en
+    # Telegram (botones) -> subida a redes. La API corre en la torre; n8n
+    # orquesta y el agente sube los clips (YouTube/Instagram/TikTok) desde
+    # el Dell. LLM local para la seleccion (sin Gemini key).
+    openshorts_api_url: str = Field("http://192.168.1.110:8010", alias="OPENSHORTS_API_URL")
+    openshorts_n8n_webhook: str = Field("", alias="OPENSHORTS_N8N_WEBHOOK")
+    openshorts_webhook_secret: str = Field("", alias="OPENSHORTS_WEBHOOK_SECRET")
+    clips_dir: str = Field("~/clips", alias="CLIPS_DIR")
+    # Credenciales de publicacion (mismos nombres que MoneyPrinterTurbo/n8n).
+    # YouTube: OAuth de escritorio (refresh token). Instagram: Graph API.
+    yt_client_id: str = Field("", alias="YT_CLIENT_ID")
+    yt_client_secret: str = Field("", alias="YT_CLIENT_SECRET")
+    yt_refresh_token: str = Field("", alias="YT_REFRESH_TOKEN")
+    ig_user_id: str = Field("", alias="IG_USER_ID")
+    ig_access_token: str = Field("", alias="IG_ACCESS_TOKEN")
+    # TikTok (opcional): Content Posting API; requiere app auditada por TikTok.
+    tiktok_client_key: str = Field("", alias="TIKTOK_CLIENT_KEY")
+    tiktok_client_secret: str = Field("", alias="TIKTOK_CLIENT_SECRET")
+    tiktok_access_token: str = Field("", alias="TIKTOK_ACCESS_TOKEN")
+    tiktok_open_id: str = Field("", alias="TIKTOK_OPEN_ID")
     proactive_check_time: str = Field("09:00", alias="PROACTIVE_CHECK_TIME")
 
     # Voz (2026-09-28): token de la pagina de llamadas y STT especulativo.

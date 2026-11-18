@@ -114,6 +114,7 @@ class RafitaBot:
             TelegramBotCommand("setup_google", "Configurar Google Calendar"),
             TelegramBotCommand("sync_google", "Copiar Google al segundo cerebro"),
             TelegramBotCommand("ubicacion", "Fijar tu ciudad (tiempo y avisos)"),
+            TelegramBotCommand("openshorts", "Crear clips de un vídeo y subirlos a redes"),
         ]
         await self._app.bot.set_my_commands(bot_commands)
 
@@ -157,6 +158,7 @@ class RafitaBot:
             gasto_command,
             ingreso_command,
         )
+        from src.handlers.openshorts import openshorts_command
         from src.handlers.settings import modo_voz_command
         from src.utils.backup import backup_command, backup_zip_command
 
@@ -177,6 +179,7 @@ class RafitaBot:
 
         self._app.add_handler(CommandHandler("backup", self._wrap(backup_command)))
         self._app.add_handler(CommandHandler("backup_zip", self._wrap(backup_zip_command)))
+        self._app.add_handler(CommandHandler("openshorts", self._wrap(openshorts_command)))
 
         self._app.add_handler(CommandHandler("setup_google", self._wrap(setup_google_command)))
         self._app.add_handler(CommandHandler("sync_google", self._wrap(sync_google_command)))

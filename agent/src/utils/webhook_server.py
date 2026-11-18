@@ -856,6 +856,52 @@ async def automation_send_voice(request: Request):
         cleanup_tts_dir(wav)
 
 
+@app.post("/automation/clip-upload")
+async def automation_clip_upload(request: Request):
+    """Descarga un clip de OpenShorts al Dell y lo sube a las redes aprobadas.
+
+    Payload: {job_id, archivo, titulo, descripcion_yt, descripcion_ig,
+              descripcion_tt, hashtags, plataformas, chat_id}.
+    """
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
+    if not payload.get("job_id") or not payload.get("archivo"):
+        raise HTTPException(status_code=400, detail=_fallo("job_id y archivo requeridos"))
+    from src.services.clip_upload_service import upload_clip
+
+    resultado = await upload_clip(payload)
+    if not resultado.get("success"):
+        return JSONResponse(
+            status_code=502, content=_fallo("; ".join(resultado.get("errores") or []))
+        )
+    return _resultado(resultado)
+
+
+@app.post("/automation/clip-delete")
+async def automation_clip_delete(request: Request):
+    """Borra la copia local de un clip descartado. Payload: {job_id, archivo}."""
+    body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    _check_webhook_auth(body, signature)
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=_fallo("Invalid JSON"))
+    job_id = str(payload.get("job_id") or "")
+    archivo = str(payload.get("archivo") or "")
+    if not job_id or not archivo:
+        raise HTTPException(status_code=400, detail=_fallo("job_id y archivo requeridos"))
+    from src.services.clip_upload_service import delete_clip
+
+    borrado = await asyncio.to_thread(delete_clip, job_id, archivo)
+    return _resultado({"success": borrado, "job_id": job_id, "archivo": archivo})
+
+
 @app.post("/automation/sync")
 async def automation_sync(request: Request):
     """Sync bidireccional Google <-> boveda (automatizacion A)."""
