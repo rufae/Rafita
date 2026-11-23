@@ -13,6 +13,20 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
 
 ---
 
+## Highlights
+
+| | |
+|---|---|
+| **Stack** | Python 3.11 · FastAPI · Telegram Bot API · React/PWA · ChromaDB · Docker Compose · n8n |
+| **IA aplicada** | LLMs locales (Ollama) · RAG con citas y grafo de conocimiento · voz en tiempo real (STT/TTS/clonación) · agente con **48 herramientas** |
+| **Calidad** | **2.020 tests** · cobertura **90,5 %** · mypy + ruff · CI con *gitleaks* y *pip-audit* |
+| **Automatización** | **17 workflows n8n** versionados y testeados (reintentos, errores visibles, firmas HMAC) |
+| **Operación** | Self-hosted multi-nodo (servidor + GPU) · copias restic con verificación · health gates y rollback automático en despliegues |
+
+> 🇬🇧 *Privacy-first, self-hosted AI personal assistant: Obsidian-powered semantic second brain with cited answers, real-time voice calls, 48 agent tools and n8n automation — shipped with a 2.020-test suite, 90,5 % coverage and a security-scanned CI.*
+
+---
+
 ## Qué hace Rafita
 
 ### Conversación y herramientas
@@ -78,6 +92,18 @@ segundo cerebro buscable y auto-organizado, 100% local y privado.
   controlado; cada ejecución se informa a Rafita y puedes preguntarle
   «¿qué automatizaciones han fallado esta semana?». Ver
   [n8n/README.md](n8n/README.md).
+
+## Cómo se ve
+
+<p align="center">
+  <img src="web/app/icons/shot-desktop.png" width="760" alt="Chat de Rafita: el asistente responde con datos de la bóveda del usuario" />
+</p>
+
+| Chat en móvil | Llamada de voz |
+|:---:|:---:|
+| <img src="web/app/icons/shot-mobile.png" width="260" alt="Rafita en el móvil" /> | Misma IA en Telegram, web y llamada en tiempo real |
+
+---
 
 ## Filosofía
 
